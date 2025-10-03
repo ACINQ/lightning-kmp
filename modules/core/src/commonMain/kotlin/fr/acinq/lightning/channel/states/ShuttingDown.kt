@@ -8,15 +8,14 @@ import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.wire.*
-import kotlinx.serialization.Transient
 
 data class ShuttingDown(
     override val commitments: Commitments,
+    override val remoteNextCommitNonces: Map<TxId, IndividualNonce>,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
     val closeCommand: ChannelCommand.Close.MutualClose?,
-    @Transient override val remoteCommitNonces: Map<TxId, IndividualNonce>,
-    @Transient val localCloseeNonce: Transactions.LocalNonce?
+    val localCloseeNonce: Transactions.LocalNonce?
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -52,12 +51,11 @@ data class ShuttingDown(
                                 commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
                                     closeCommand,
                                     commitments1,
+                                    remoteNextCommitNonces,
                                     localShutdown,
+                                    localCloseeNonce,
                                     remoteShutdown,
                                     listOf(ChannelAction.Message.Send(revocation)),
-                                    this@ShuttingDown.remoteCommitNonces,
-                                    localCloseeNonce,
-                                    remoteShutdown.closeeNonce
                                 )
                                 else -> {
                                     val nextState = this@ShuttingDown.copy(commitments = commitments1)
@@ -82,15 +80,14 @@ data class ShuttingDown(
                                 commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
                                     closeCommand,
                                     commitments1,
+                                    remoteNextCommitNonces,
                                     localShutdown,
+                                    localCloseeNonce,
                                     remoteShutdown,
                                     actions,
-                                    this@ShuttingDown.remoteCommitNonces,
-                                    localCloseeNonce,
-                                    remoteShutdown.closeeNonce
                                 )
                                 else -> {
-                                    val nextState = this@ShuttingDown.copy(commitments = commitments1)
+                                    val nextState = this@ShuttingDown.copy(commitments = commitments1, remoteNextCommitNonces = cmd.message.nextCommitNonces)
                                     val actions1 = buildList {
                                         addAll(actions)
                                         add(ChannelAction.Storage.StoreState(nextState))
@@ -132,7 +129,7 @@ data class ShuttingDown(
                     logger.debug { "already in the process of signing, will sign again as soon as possible" }
                     Pair(this@ShuttingDown, listOf())
                 } else {
-                    when (val result = commitments.sendCommit(channelKeys(), remoteCommitNonces, logger)) {
+                    when (val result = commitments.sendCommit(channelKeys(), remoteNextCommitNonces, logger)) {
                         is Either.Left -> handleCommandError(cmd, result.value)
                         is Either.Right -> {
                             val commitments1 = result.value.first

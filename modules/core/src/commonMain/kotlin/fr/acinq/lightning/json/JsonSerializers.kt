@@ -25,6 +25,8 @@
     JsonSerializers.PrivateKeySerializer::class,
     JsonSerializers.IndividualNonceSerializer::class,
     JsonSerializers.PartialSignatureWithNonceSerializer::class,
+    JsonSerializers.LocalNonceSerializer::class,
+    JsonSerializers.CloserNoncesSerializer::class,
     JsonSerializers.TxIdSerializer::class,
     JsonSerializers.KeyPathSerializer::class,
     JsonSerializers.SatoshiSerializer::class,
@@ -372,6 +374,9 @@ object JsonSerializers {
         delegateSerializer = RemoteFundingStatusSurrogate.serializer()
     )
 
+    @Serializer(forClass = Transactions.CloserNonces::class)
+    object CloserNoncesSerializer
+
     @Serializer(forClass = Transactions.ClosingTx::class)
     object ClosingTxSerializer
 
@@ -432,6 +437,7 @@ object JsonSerializers {
     object PublicKeySerializer : StringSerializer<PublicKey>()
     object IndividualNonceSerializer : StringSerializer<IndividualNonce>()
     object PartialSignatureWithNonceSerializer : StringSerializer<ChannelSpendSignature.PartialSignatureWithNonce>()
+    object LocalNonceSerializer : StringSerializer<Transactions.LocalNonce>()
     object TxIdSerializer : StringSerializer<TxId>()
     object KeyPathSerializer : StringSerializer<KeyPath>()
     object ShortChannelIdSerializer : StringSerializer<ShortChannelId>()

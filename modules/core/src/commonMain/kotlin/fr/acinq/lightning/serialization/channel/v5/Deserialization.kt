@@ -67,11 +67,11 @@ object Deserialization {
         remoteSecondPerCommitmentPoint = readPublicKey(),
         liquidityPurchase = readNullable { readLiquidityPurchase() },
         channelOrigin = readNullable { readChannelOrigin() },
-        remoteCommitNonces = mapOf()
     )
 
     private fun Input.readWaitForFundingConfirmed() = WaitForFundingConfirmed(
         commitments = readCommitments(),
+        remoteNextCommitNonces = mapOf(),
         waitingSinceBlock = readNumber(),
         deferred = readNullable { readLightningMessage() as ChannelReady },
         rbfStatus = when (val discriminator = read()) {
@@ -79,20 +79,20 @@ object Deserialization {
             0x01 -> RbfStatus.WaitingForSigs(readInteractiveTxSigningSession(emptySet()))
             else -> error("unknown discriminator $discriminator for class ${RbfStatus::class}")
         },
-        remoteCommitNonces = mapOf()
     )
 
     private fun Input.readWaitForChannelReady() = WaitForChannelReady(
         commitments = readCommitments(),
+        remoteNextCommitNonces = mapOf(),
         shortChannelId = ShortChannelId(readNumber()),
         lastSent = readLightningMessage() as ChannelReady,
-        remoteCommitNonces = mapOf()
     )
 
     private fun Input.readNormal(): Normal {
         val commitments = readCommitments()
         return Normal(
             commitments = commitments,
+            remoteNextCommitNonces = mapOf(),
             shortChannelId = ShortChannelId(readNumber()),
             channelUpdate = readLightningMessage() as ChannelUpdate,
             remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate },
@@ -104,21 +104,23 @@ object Deserialization {
             localShutdown = readNullable { readLightningMessage() as Shutdown },
             remoteShutdown = readNullable { readLightningMessage() as Shutdown },
             closeCommand = readNullable { readCloseCommand() },
-            remoteCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null, remoteCloseeNonce = null
+            localCloseeNonce = null,
+            localCloserNonces = null,
         )
     }
 
     private fun Input.readShuttingDown(): ShuttingDown = ShuttingDown(
         commitments = readCommitments(),
+        remoteNextCommitNonces = mapOf(),
         localShutdown = readLightningMessage() as Shutdown,
         remoteShutdown = readLightningMessage() as Shutdown,
         closeCommand = readNullable { readCloseCommand() },
-        remoteCommitNonces = mapOf(),
         localCloseeNonce = null
     )
 
     private fun Input.readNegotiating(): Negotiating = Negotiating(
         commitments = readCommitments(),
+        remoteNextCommitNonces = mapOf(),
         localScript = readDelimitedByteArray().byteVector(),
         remoteScript = readDelimitedByteArray().byteVector(),
         proposedClosingTxs = readCollection {
@@ -131,7 +133,9 @@ object Deserialization {
         publishedClosingTxs = readCollection { readClosingTx() }.toList(),
         waitingSinceBlock = readNumber(),
         closeCommand = readNullable { readCloseCommand() },
-        remoteCommitNonces = mapOf(), localCloserNonces = null, remoteCloseeNonce = null, localCloseeNonce = null
+        localCloserNonces = null,
+        remoteCloseeNonce = null,
+        localCloseeNonce = null
     )
 
     private fun Input.readClosing(): Closing = Closing(
@@ -191,7 +195,6 @@ object Deserialization {
     private fun Input.readWaitForRemotePublishFutureCommitment(): WaitForRemotePublishFutureCommitment = WaitForRemotePublishFutureCommitment(
         commitments = readCommitments(),
         remoteChannelReestablish = readLightningMessage() as ChannelReestablish,
-        remoteCommitNonces = mapOf()
     )
 
     private fun Input.readClosed(): Closed = Closed(

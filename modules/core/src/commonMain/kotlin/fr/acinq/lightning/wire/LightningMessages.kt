@@ -1396,6 +1396,31 @@ data class ChannelReestablish(
     val myCurrentPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelReestablishTlv> = TlvStream.empty()
 ) : HasChannelId {
+
+    constructor(
+        channelId: ByteVector32,
+        nextLocalCommitmentNumber: Long,
+        nextRemoteRevocationNumber: Long,
+        yourLastCommitmentSecret: PrivateKey,
+        myCurrentPerCommitmentPoint: PublicKey,
+        nextCommitNonces: List<Pair<TxId, IndividualNonce>>,
+        nextFundingTxId: TxId? = null,
+        currentCommitNonce: IndividualNonce? = null
+    ) : this(
+        channelId = channelId,
+        nextLocalCommitmentNumber = nextLocalCommitmentNumber,
+        nextRemoteRevocationNumber = nextRemoteRevocationNumber,
+        yourLastCommitmentSecret = yourLastCommitmentSecret,
+        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+        tlvStream = TlvStream(
+            setOfNotNull(
+                if (nextCommitNonces.isNotEmpty()) ChannelReestablishTlv.NextLocalNonces(nextCommitNonces) else null,
+                nextFundingTxId?.let { ChannelReestablishTlv.NextFunding(it) },
+                currentCommitNonce?.let { ChannelReestablishTlv.CurrentCommitNonce(it) },
+            )
+        )
+    )
+
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId

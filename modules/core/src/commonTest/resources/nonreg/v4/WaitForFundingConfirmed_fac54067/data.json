@@ -125,7 +125,8 @@
                     },
                     "txId": "75adc69132706111bfaa36188f158d5c967a831be2d154cda1e901666bf05f63",
                     "remoteSig": {
-                        "sig": "b717883c313d0e73ed638ac1e8bdd4b205138e260a321fe92e7c4ac80073b0955ecbb02b165d9c8201f4da4b92a298fd0dc8a35f878651319f8eacaef468640a"
+                        "sig": "b717883c313d0e73ed638ac1e8bdd4b205138e260a321fe92e7c4ac80073b0955ecbb02b165d9c8201f4da4b92a298fd0dc8a35f878651319f8eacaef468640a",
+                        "nonce": null
                     },
                     "htlcRemoteSigs": []
                 },
@@ -159,6 +160,7 @@
         },
         "remotePerCommitmentSecrets": "<redacted>"
     },
+    "remoteNextCommitNonces": {},
     "waitingSinceBlock": 400000,
     "deferred": {
         "channelId": "2a6bf35f6378987185051faa8cc4ca745d380181bad61ba770056e4911aab062",

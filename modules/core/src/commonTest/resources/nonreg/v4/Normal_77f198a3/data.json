@@ -223,7 +223,8 @@
                     },
                     "txId": "bb7efa64ea149ca3f74c33e00ca72dbe096971d0ebb3a241c468771c187711ff",
                     "remoteSig": {
-                        "sig": "30b7c66f20b7ac100387047a159c1045364fc1fce5f1996f1230618a768819762f4d20baf053ab8058fcb9b8e81e931a7d4f9c31f5f1cd0b16791af1e54046c0"
+                        "sig": "30b7c66f20b7ac100387047a159c1045364fc1fce5f1996f1230618a768819762f4d20baf053ab8058fcb9b8e81e931a7d4f9c31f5f1cd0b16791af1e54046c0",
+                        "nonce": null
                     },
                     "htlcRemoteSigs": [
                         "700471e0f8758cb5fde4c66a365feb2864ee80cb7946abfc2c1a15c94c9f6e9d00796b8f818a4e263112b4a04c6a904e8db076960549c22c8e9eb728367c24fb",
@@ -490,7 +491,8 @@
                     },
                     "txId": "dcfb0ef853173058809a407afd88a3d99164bdbe6961194256fd944146872266",
                     "remoteSig": {
-                        "sig": "182390e02cd28be5673c229bc99c39033e9dbd1942616d30b69efa9cd4fc25694df27bd1aa9c2fe5e2901e6ecab2479417ddb277d201880968c0f46212e16c74"
+                        "sig": "182390e02cd28be5673c229bc99c39033e9dbd1942616d30b69efa9cd4fc25694df27bd1aa9c2fe5e2901e6ecab2479417ddb277d201880968c0f46212e16c74",
+                        "nonce": null
                     },
                     "htlcRemoteSigs": [
                         "3229c56a2efa5d18d72805abfd61bbc0f6dfcd3cbbbaa1bf9e64061468518af86959a247ae8e3e60f964cc5e9d824bc7c35f24c8e0e40aabd36e0642806615e1",
@@ -642,6 +644,7 @@
         },
         "remotePerCommitmentSecrets": "<redacted>"
     },
+    "remoteNextCommitNonces": {},
     "shortChannelId": "42x0x0",
     "channelUpdate": {
         "signature": "6e9bd75886e3aa18389c5f5419bb2acf003c949be1b72c47c725e6705cf3b68e6387bab8a47da2bdf9e2f530debc375a0dc9f3d4700a7cde1ddc1cd3eb393fcd",
@@ -662,5 +665,7 @@
     },
     "localShutdown": null,
     "remoteShutdown": null,
-    "closeCommand": null
+    "closeCommand": null,
+    "localCloseeNonce": null,
+    "localCloserNonces": null
 }

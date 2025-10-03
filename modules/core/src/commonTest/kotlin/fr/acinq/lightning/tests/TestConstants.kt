@@ -76,6 +76,7 @@ object TestConstants {
                 Feature.Wumbo to FeatureSupport.Optional,
                 Feature.StaticRemoteKey to FeatureSupport.Mandatory,
                 Feature.AnchorOutputs to FeatureSupport.Mandatory,
+                Feature.SimpleTaprootChannels to FeatureSupport.Optional,
                 Feature.RouteBlinding to FeatureSupport.Optional,
                 Feature.DualFunding to FeatureSupport.Mandatory,
                 Feature.ShutdownAnySegwit to FeatureSupport.Mandatory,

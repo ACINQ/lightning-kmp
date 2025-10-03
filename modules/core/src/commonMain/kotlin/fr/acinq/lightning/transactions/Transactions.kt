@@ -153,7 +153,9 @@ object Transactions {
         }
     }
 
-    data class LocalNonce(val secretNonce: SecretNonce, val publicNonce: IndividualNonce)
+    data class LocalNonce(val secretNonce: SecretNonce, val publicNonce: IndividualNonce) {
+        override fun toString(): String = publicNonce.toString()
+    }
 
     sealed class TransactionWithInputInfo {
         abstract val input: InputInfo

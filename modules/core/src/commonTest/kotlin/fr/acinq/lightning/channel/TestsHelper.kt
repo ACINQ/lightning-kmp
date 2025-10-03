@@ -152,12 +152,20 @@ data class LNChannel<out S : ChannelState>(
     private fun checkSerialization(state: PersistedChannelState) {
 
         // We don't persist unsigned funding RBF or splice attempts.
+        // We don't persist taproot nonces either, they will be retransmitted on reconnection.
         fun removeTemporaryStatuses(state: PersistedChannelState): PersistedChannelState = when (state) {
-            is Normal -> when (state.spliceStatus) {
-                is SpliceStatus.WaitingForSigs -> state.copy(spliceStatus = state.spliceStatus.copy(session = state.spliceStatus.session.copy(nextRemoteCommitNonce = null)))
-                else -> state.copy(spliceStatus = SpliceStatus.None)
+            is WaitForFundingSigned -> state.copy(signingSession = state.signingSession.copy(nextRemoteCommitNonce = null))
+            is WaitForFundingConfirmed -> when (state.rbfStatus) {
+                is RbfStatus.WaitingForSigs -> state.copy(remoteNextCommitNonces = mapOf(), rbfStatus = state.rbfStatus.copy(session = state.rbfStatus.session.copy(nextRemoteCommitNonce = null)))
+                else -> state.copy(remoteNextCommitNonces = mapOf(), rbfStatus = RbfStatus.None)
             }
-            is WaitForFundingSigned -> state.copy(signingSession = state.signingSession.copy(nextRemoteCommitNonce = null), remoteCommitNonces = mapOf())
+            is WaitForChannelReady -> state.copy(remoteNextCommitNonces = mapOf())
+            is Normal -> when (state.spliceStatus) {
+                is SpliceStatus.WaitingForSigs -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null, spliceStatus = state.spliceStatus.copy(session = state.spliceStatus.session.copy(nextRemoteCommitNonce = null)))
+                else -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null, spliceStatus = SpliceStatus.None)
+            }
+            is ShuttingDown -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null)
+            is Negotiating -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)
             else -> state
         }
 
@@ -171,7 +179,7 @@ data class LNChannel<out S : ChannelState>(
 
         val serialized = Serialization.serialize(state)
         val deserialized = Serialization.deserialize(serialized).value
-//        assertEquals(removeTemporaryStatuses(ignoreClosingReplyTo(state)), ignoreClosingReplyTo(deserialized), "serialization error")
+        assertEquals(removeTemporaryStatuses(ignoreClosingReplyTo(state)), ignoreClosingReplyTo(deserialized), "serialization error")
     }
 
     private fun checkSerialization(actions: List<ChannelAction>) {
@@ -195,22 +203,14 @@ object TestsHelper {
         zeroConf: Boolean = false,
         channelOrigin: Origin? = null
     ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForOpenChannel>, OpenDualFundedChannel> {
-        val (aliceFeatures1, bobFeatures1) = when (channelType) {
-            ChannelType.SupportedChannelType.SimpleTaprootChannels -> Pair(
-                aliceFeatures.add(Feature.SimpleTaprootChannels to FeatureSupport.Mandatory),
-                bobFeatures.add(Feature.SimpleTaprootChannels to FeatureSupport.Mandatory)
-            )
-
-            else -> Pair(aliceFeatures, bobFeatures)
-        }
         val (aliceNodeParams, bobNodeParams) = when (zeroConf) {
             true -> Pair(
-                TestConstants.Alice.nodeParams.copy(features = aliceFeatures1, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId), usePeerStorage = false),
-                TestConstants.Bob.nodeParams.copy(features = bobFeatures1, zeroConfPeers = setOf(TestConstants.Alice.nodeParams.nodeId), usePeerStorage = bobUsePeerStorage)
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId), usePeerStorage = false),
+                TestConstants.Bob.nodeParams.copy(features = bobFeatures, zeroConfPeers = setOf(TestConstants.Alice.nodeParams.nodeId), usePeerStorage = bobUsePeerStorage)
             )
             false -> Pair(
-                TestConstants.Alice.nodeParams.copy(features = aliceFeatures1, usePeerStorage = false),
-                TestConstants.Bob.nodeParams.copy(features = bobFeatures1, usePeerStorage = bobUsePeerStorage)
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, usePeerStorage = false),
+                TestConstants.Bob.nodeParams.copy(features = bobFeatures, usePeerStorage = bobUsePeerStorage)
             )
         }
         val alice = LNChannel(
@@ -233,10 +233,10 @@ object TestsHelper {
         )
 
         val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = requestRemoteFunding != null)
-        val aliceChannelParams = TestConstants.Alice.channelParams(payCommitTxFees = !channelFlags.nonInitiatorPaysCommitFees).copy(features = aliceFeatures1.initFeatures())
-        val bobChannelParams = TestConstants.Bob.channelParams(payCommitTxFees = channelFlags.nonInitiatorPaysCommitFees).copy(features = bobFeatures1.initFeatures())
-        val aliceInit = Init(aliceFeatures1)
-        val bobInit = Init(bobFeatures1)
+        val aliceChannelParams = TestConstants.Alice.channelParams(payCommitTxFees = !channelFlags.nonInitiatorPaysCommitFees).copy(features = aliceFeatures.initFeatures())
+        val bobChannelParams = TestConstants.Bob.channelParams(payCommitTxFees = channelFlags.nonInitiatorPaysCommitFees).copy(features = bobFeatures.initFeatures())
+        val aliceInit = Init(aliceFeatures)
+        val bobInit = Init(bobFeatures)
         val cmd = ChannelCommand.Init.Initiator(
             CompletableDeferred(),
             aliceFundingAmount,

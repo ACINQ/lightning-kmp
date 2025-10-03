@@ -141,7 +141,8 @@
                     },
                     "txId": "fd49c1c1b8a84d2b00a0a1210c822cbbac8fc8fbf1afbbd69908c9b7e5df7cc4",
                     "remoteSig": {
-                        "sig": "4c028ec20ee39c107bc73033becdbb1cf6588e309e6e25f5a036c8b6504e04ea4a7d08b9739426c1bbbb4d15ff7984651506bbfb0a8af8b5acf6013d8eedcd67"
+                        "sig": "4c028ec20ee39c107bc73033becdbb1cf6588e309e6e25f5a036c8b6504e04ea4a7d08b9739426c1bbbb4d15ff7984651506bbfb0a8af8b5acf6013d8eedcd67",
+                        "nonce": null
                     },
                     "htlcRemoteSigs": [
                         "6cdad11404a129da5b7b41869b8d3e319e27ceffb590214c730c8b2afa8f18ed0495867aa19597357ae3bd0c8c9e5addcc850008a8f66395b8bee5c78af6f031"
@@ -230,7 +231,8 @@
                     },
                     "txId": "c9dfa8a557f54092d5f72d6ec6236e6ee71246a14f0bd79c6c4804443c483f4c",
                     "remoteSig": {
-                        "sig": "9dc287c5a78ad3480738aab05a14e8b36bdf1d3e97fa11af7e75edefcd6e5cbf404e33cc770464604896c65acbc31d7c403b90cf94c2c8a0e4ccd56af7ef68a5"
+                        "sig": "9dc287c5a78ad3480738aab05a14e8b36bdf1d3e97fa11af7e75edefcd6e5cbf404e33cc770464604896c65acbc31d7c403b90cf94c2c8a0e4ccd56af7ef68a5",
+                        "nonce": null
                     },
                     "htlcRemoteSigs": [
                         "df602798b869e7f8176bea759bf5da249d4c00dfb47ebe14177e5c8634c9ca987c7a6895e46ed12aa0f3e6016dbccdff92c3d16c001b1a00958ab0987d1ae4ff"
@@ -288,6 +290,7 @@
         },
         "remotePerCommitmentSecrets": "<redacted>"
     },
+    "remoteNextCommitNonces": {},
     "shortChannelId": "0x8022898x0",
     "channelUpdate": {
         "signature": "df9689bc36fc0633fc8df8a8bedd183eb85b80f129ac56cb42c9f080ae61156339fe89171b01534633328ae9bba8d3ccd44629b7922b821ee1f96cef29672fea",
@@ -308,5 +311,7 @@
     },
     "localShutdown": null,
     "remoteShutdown": null,
-    "closeCommand": null
+    "closeCommand": null,
+    "localCloseeNonce": null,
+    "localCloserNonces": null
 }
