@@ -797,7 +797,7 @@ object OfferTypes {
                 chainHash: BlockHash,
                 nodePrivateKey: PrivateKey,
                 trampolineNodeId: PublicKey,
-                amount: MilliSatoshi?,
+                amount: Long?,
                 description: String?,
                 features: Features,
                 blindedPathSessionKey: PrivateKey,
@@ -811,7 +811,8 @@ object OfferTypes {
                 )
                 val tlvs = setOfNotNull(
                     if (chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chainHash)) else null,
-                    amount?.let { OfferAmount(it.toLong()) },
+                    amount?.let { OfferAmount(it) },
+                    amount?.let { OfferCurrency("EUR") },
                     description?.let { OfferDescription(it) },
                     features.bolt12Features().let { if (it != Features.empty) OfferFeatures(it.toByteArray().toByteVector()) else null },
                     // Note that we don't include an offer_node_id since we're using a blinded path.

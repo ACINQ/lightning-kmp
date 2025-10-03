@@ -283,7 +283,7 @@ data class NodeParams(
     fun randomOffer(trampolineNodeId: PublicKey, amount: MilliSatoshi?, description: String?): Pair<OfferTypes.Offer, PrivateKey> {
         // We generate a random nonce to ensure that this offer is unique.
         val nonce = randomBytes32()
-        return OfferManager.deterministicOffer(chainHash, nodePrivateKey, trampolineNodeId, amount, description, nonce)
+        return OfferManager.deterministicOffer(chainHash, nodePrivateKey, trampolineNodeId, amount?.toLong(), description, nonce)
     }
 
 }
