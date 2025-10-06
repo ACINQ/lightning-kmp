@@ -1,7 +1,6 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Feature
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -32,18 +31,17 @@ import kotlinx.coroutines.runBlocking
 import kotlin.math.abs
 import kotlin.test.*
 
-open class SpliceTestsCommon : LightningTestSuite() {
-    open val defaultChannelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels
+class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice funds out`() {
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         spliceOut(alice, bob, 50_000.sat)
     }
 
     @Test
     fun `splice funds out and upgrade to taproot`() {
-        val (alice, bob) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice.commitments.latest.commitmentFormat)
         assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob.commitments.latest.commitmentFormat)
 
@@ -54,24 +52,24 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice funds in`() {
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         spliceIn(alice, bob, listOf(50_000.sat))
     }
 
     @Test
     fun `splice funds in and upgrade to taproot`() {
-        val (alice, bob) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice.commitments.latest.commitmentFormat)
         assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob.commitments.latest.commitmentFormat)
 
-        val (alice1, bob1) = spliceIn(alice, bob, listOf(50_000.sat), ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        val (alice1, bob1) = spliceIn(alice, bob, listOf(50_000.sat))
         assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, alice1.commitments.latest.commitmentFormat)
         assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, bob1.commitments.latest.commitmentFormat)
     }
 
     @Test
     fun `splice funds in and out with pending htlcs`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice1, bob1, htlcs) = setupHtlcs(alice, bob)
         val (alice2, bob2) = spliceInAndOut(alice1, bob1, inAmounts = listOf(50_000.sat), outAmount = 100_000.sat)
 
@@ -106,7 +104,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice funds in and out with pending htlcs -- upgrade to taproot`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         val (alice1, bob1, htlcs) = setupHtlcs(alice, bob)
         val (alice2, bob2) = spliceInAndOut(alice1, bob1, inAmounts = listOf(50_000.sat), outAmount = 100_000.sat)
 
@@ -141,7 +139,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice funds in and out with pending htlcs resolved after splice locked`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice1, bob1, htlcs) = setupHtlcs(alice, bob)
         val (alice2, bob2) = spliceInAndOut(alice1, bob1, inAmounts = listOf(50_000.sat), outAmount = 100_000.sat)
         val spliceTx = alice2.commitments.latest.localFundingStatus.signedTx!!
@@ -156,24 +154,13 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice funds in -- non-initiator`() {
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         spliceIn(bob, alice, listOf(50_000.sat))
     }
 
     @Test
-    fun `splice funds in and upgrade to taproot -- non initiator`() {
-        val (alice, bob) = reachNormal(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice.commitments.latest.commitmentFormat)
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob.commitments.latest.commitmentFormat)
-
-        val (bob1, alice1) = spliceIn(bob, alice, listOf(50_000.sat), ChannelType.SupportedChannelType.SimpleTaprootChannels)
-        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, alice1.commitments.latest.commitmentFormat)
-        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, bob1.commitments.latest.commitmentFormat)
-    }
-
-    @Test
     fun `splice funds in -- many utxos`() {
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         spliceIn(alice, bob, listOf(30_000.sat, 40_000.sat, 25_000.sat))
     }
 
@@ -181,7 +168,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
     fun `splice funds in -- local and remote commit index mismatch`() {
         // Alice and Bob asynchronously exchange HTLCs, which makes their commit indices diverge.
         val (nodes, preimages) = run {
-            val (alice0, bob0) = reachNormal(defaultChannelType)
+            val (alice0, bob0) = reachNormal()
             // Alice sends an HTLC to Bob and signs it.
             val (nodes1, preimage1, _) = addHtlc(15_000_000.msat, alice0, bob0)
             val (alice1, bob1) = nodes1
@@ -226,8 +213,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice funds out -- would go below reserve`() {
-        if (defaultChannelType.permanentChannelFeatures.contains(Feature.ZeroReserveChannels)) return
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx(channelType = ChannelType.SupportedChannelType.AnchorOutputs)
         val (alice1, bob1, _) = setupHtlcs(alice, bob)
         val cmd = createSpliceOutRequest(810_000.sat)
         val (alice2, actionsAlice2) = alice1.process(cmd)
@@ -245,7 +231,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice cpfp`() {
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         val (nodes, preimage, _) = addHtlc(15_000_000.msat, alice, bob)
         val (alice0, bob0) = crossSign(nodes.first, nodes.second)
         val (alice1, bob1) = spliceIn(alice0, bob0, listOf(50_000.sat))
@@ -262,7 +248,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice cpfp -- not enough funds`() {
-        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 75_000.sat, bobFundingAmount = 25_000.sat)
+        val (alice, bob) = reachNormal(aliceFundingAmount = 75_000.sat, bobFundingAmount = 25_000.sat)
         val (alice1, bob1) = spliceOut(alice, bob, 65_000.sat)
         // After the splice-out, Alice doesn't have enough funds to pay the mining fees to CPFP.
         val spliceCpfp = ChannelCommand.Commitment.Splice.Request(
@@ -290,7 +276,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice to purchase inbound liquidity`() {
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         val fundingRates = LiquidityAds.WillFundRates(
             fundingRates = listOf(LiquidityAds.FundingRate(100_000.sat, 500_000.sat, 0, 250 /* 2.5% */, 0.sat, 1000.sat)),
             paymentTypes = setOf(LiquidityAds.PaymentType.FromChannelBalance),
@@ -305,11 +291,11 @@ open class SpliceTestsCommon : LightningTestSuite() {
         val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(spliceInit))
         val defaultSpliceAck = actionsBob2.findOutgoingMessage<SpliceAck>()
         assertNull(defaultSpliceAck.willFund)
-        val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey, defaultChannelType.commitmentFormat).pubkeyScript
+        val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubkey, defaultSpliceAck.fundingPubkey, Transactions.CommitmentFormat.SimpleTaprootChannels).pubkeyScript
         run {
             val willFund = fundingRates.validateRequest(bob.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)?.willFund
             assertNotNull(willFund)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund, channelType = null)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.InProgress>(alice2.state.spliceStatus)
@@ -328,7 +314,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
             // Bob uses a different funding script than what Alice expects.
             val willFund = fundingRates.validateRequest(bob.staticParams.nodeParams.nodePrivateKey, ByteVector("deadbeef"), cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)?.willFund
             assertNotNull(willFund)
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund, channelType = null)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
@@ -336,7 +322,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
         }
         run {
             // Bob doesn't fund the splice.
-            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund = null)
+            val spliceAck = SpliceAck(alice.channelId, liquidityRequest.requestedAmount, defaultSpliceAck.fundingPubkey, willFund = null, channelType = null)
             val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(spliceAck))
             assertIs<Normal>(alice2.state)
             assertIs<SpliceStatus.Aborted>(alice2.state.spliceStatus)
@@ -346,7 +332,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice to purchase inbound liquidity -- not enough funds`() {
-        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, aliceFundingAmount = 100_000.sat, bobFundingAmount = 10_000.sat)
+        val (alice, bob) = reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 10_000.sat)
         val fundingRate = LiquidityAds.FundingRate(100_000.sat, 10_000_000.sat, 0, 100 /* 1% */, 0.sat, 1000.sat)
         val fundingRates = LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalance, LiquidityAds.PaymentType.FromFutureHtlc))
         run {
@@ -385,7 +371,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
             val spliceAck = actionsAlice2.hasOutgoingMessage<SpliceAck>()
             // We don't implement the liquidity provider side, so we must fake it.
             assertNull(spliceAck.willFund)
-            val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey, Transactions.CommitmentFormat.AnchorOutputs).pubkeyScript
+            val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey, Transactions.CommitmentFormat.SimpleTaprootChannels).pubkeyScript
             val willFund = fundingRates.validateRequest(alice.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)!!.willFund
             val (_, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(spliceAck.copy(fundingContribution = liquidityRequest.requestedAmount, tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))))
             assertEquals(1, actionsBob3.size)
@@ -406,7 +392,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
             val spliceAck = actionsAlice2.hasOutgoingMessage<SpliceAck>()
             // We don't implement the liquidity provider side, so we must fake it.
             assertNull(spliceAck.willFund)
-            val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey, Transactions.CommitmentFormat.AnchorOutputs).pubkeyScript
+            val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey, Transactions.CommitmentFormat.SimpleTaprootChannels).pubkeyScript
             val willFund = fundingRates.validateRequest(alice.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)!!.willFund
             val (_, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(spliceAck.copy(fundingContribution = liquidityRequest.requestedAmount, tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))))
             assertEquals(1, actionsBob3.size)
@@ -416,7 +402,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `splice to purchase inbound liquidity -- not enough funds but on-the-fly funding`() {
-        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, bobFundingAmount = 0.sat)
+        val (alice, bob) = reachNormal(bobFundingAmount = 0.sat)
         val fundingRate = LiquidityAds.FundingRate(0.sat, 500_000.sat, 0, 50, 0.sat, 1000.sat)
         val fundingRates = LiquidityAds.WillFundRates(listOf(fundingRate), setOf(LiquidityAds.PaymentType.FromChannelBalanceForFutureHtlc, LiquidityAds.PaymentType.FromFutureHtlc))
         val origin = Origin.OffChainPayment(randomBytes32(), 25_000_000.msat, ChannelManagementFees(0.sat, 500.sat))
@@ -472,7 +458,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
             val spliceAck = actionsAlice2.hasOutgoingMessage<SpliceAck>()
             // We don't implement the liquidity provider side, so we must fake it.
             assertNull(spliceAck.willFund)
-            val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey, Transactions.CommitmentFormat.AnchorOutputs).pubkeyScript
+            val fundingScript = Transactions.makeFundingScript(spliceInit.fundingPubkey, spliceAck.fundingPubkey, Transactions.CommitmentFormat.SimpleTaprootChannels).pubkeyScript
             val willFund = fundingRates.validateRequest(alice.staticParams.nodeParams.nodePrivateKey, fundingScript, cmd.feerate, spliceInit.requestFunding!!, isChannelCreation = false, 0.msat)!!.willFund
             val (_, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(spliceAck.copy(fundingContribution = fundingRequest.requestedAmount, tlvStream = TlvStream(ChannelTlv.ProvideFundingTlv(willFund)))))
             actionsBob3.hasOutgoingMessage<TxAddInput>()
@@ -482,7 +468,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `reject splice_init`() {
         val cmd = createSpliceOutRequest(25_000.sat)
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(15_000_000.msat, alice, bob)
         val (alice0, bob0) = crossSign(nodes.first, nodes.second)
         val (alice1, _, _) = reachQuiescent(cmd, alice0, bob0)
@@ -496,7 +482,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `reject splice_init -- cancel on-the-fly funding`() {
         val cmd = createSpliceOutRequest(50_000.sat)
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         val (alice1, _, _) = reachQuiescent(cmd, alice, bob)
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(CancelOnTheFlyFunding(alice.channelId, listOf(randomBytes32()), "cancelling on-the-fly funding")))
         assertIs<Normal>(alice2.state)
@@ -507,7 +493,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `reject splice_ack`() {
         val cmd = createSpliceOutRequest(25_000.sat)
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(15_000_000.msat, alice, bob)
         val (alice0, bob0) = crossSign(nodes.first, nodes.second)
         val (_, bob1, spliceInit) = reachQuiescent(cmd, alice0, bob0)
@@ -524,7 +510,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `abort before tx_complete`() {
         val cmd = createSpliceOutRequest(20_000.sat)
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(15_000_000.msat, alice, bob)
         val (alice0, bob0) = crossSign(nodes.first, nodes.second)
         val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice0, bob0)
@@ -553,7 +539,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `abort after tx_complete`() {
         val cmd = createSpliceOutRequest(31_000.sat)
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(15_000_000.msat, alice, bob)
         val (alice0, bob0) = crossSign(nodes.first, nodes.second)
         val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice0, bob0)
@@ -590,7 +576,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `abort after tx_complete then receive commit_sig`() {
         val cmd = createSpliceOutRequest(50_000.sat)
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         val (nodes, _, _) = addHtlc(15_000_000.msat, alice, bob)
         val (alice0, bob0) = crossSign(nodes.first, nodes.second)
         val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice0, bob0)
@@ -625,7 +611,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `exchange splice_locked`() {
-        val (alice, bob) = reachNormal(defaultChannelType)
+        val (alice, bob) = reachNormal()
         val (alice1, bob1) = spliceOut(alice, bob, 60_000.sat)
         val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
 
@@ -806,7 +792,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `disconnect -- commit_sig not received`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, htlcs) = setupHtlcs(alice, bob)
         val aliceCommitIndex = alice0.commitments.localCommitIndex
         val bobCommitIndex = bob0.commitments.localCommitIndex
@@ -836,7 +822,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `disconnect -- commit_sig received by alice`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice1, bob1, htlcs) = setupHtlcs(alice, bob)
         val aliceCommitIndex = alice1.commitments.localCommitIndex
         val bobCommitIndex = bob1.commitments.localCommitIndex
@@ -891,7 +877,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `disconnect -- commit_sig received by bob`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, htlcs) = setupHtlcs(alice, bob)
         val aliceCommitIndex = alice0.commitments.localCommitIndex
         val bobCommitIndex = bob0.commitments.localCommitIndex
@@ -1007,7 +993,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `disconnect -- tx_signatures received by alice -- confirms while bob is offline`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, htlcs) = setupHtlcs(alice, bob)
         val (alice1, commitSigAlice, bob1, commitSigBob) = spliceInAndOutWithoutSigs(alice0, bob0, inAmounts = listOf(70_000.sat, 60_000.sat), outAmount = 150_000.sat)
 
@@ -1061,7 +1047,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `disconnect -- tx_signatures received by alice`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, htlcs) = setupHtlcs(alice, bob)
         val (alice1, commitSigAlice, bob1, commitSigBob) = spliceInAndOutWithoutSigs(alice0, bob0, inAmounts = listOf(315_000.sat), outAmount = 25_000.sat)
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(commitSigBob))
@@ -1100,7 +1086,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `disconnect -- new changes before splice_locked`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice1, bob1) = spliceOut(alice, bob, 70_000.sat)
         val (nodes2, _, htlc) = addHtlc(50_000_000.msat, alice1, bob1)
         val (alice3, actionsAlice3) = nodes2.first.process(ChannelCommand.Commitment.Sign)
@@ -1166,7 +1152,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `disconnect -- splice_locked sent`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, htlcs) = setupHtlcs(alice, bob)
         val (alice1, bob1) = spliceInAndOut(alice0, bob0, inAmounts = listOf(150_000.sat, 25_000.sat, 15_000.sat), outAmount = 250_000.sat)
         val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
@@ -1255,7 +1241,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `disconnect -- latest commitment locked remotely but not locally`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, htlcs) = setupHtlcs(alice, bob)
         val (alice1, bob1) = spliceIn(alice0, bob0, listOf(50_000.sat))
         val spliceTx1 = alice1.commitments.latest.localFundingStatus.signedTx!!
@@ -1318,7 +1304,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `disconnect -- splice tx published`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, _) = setupHtlcs(alice, bob)
         val (alice1, bob1) = spliceOut(alice0, bob0, 40_000.sat)
         val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
@@ -1338,7 +1324,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `force-close -- latest active commitment`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, _) = setupHtlcs(alice, bob)
         val (alice1, bob1) = spliceOut(alice0, bob0, 75_000.sat)
 
@@ -1365,15 +1351,12 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `force-close -- latest active commitment -- alternative feerate`() {
-        // README: we skip alternative feerate tests for taproot channels
-        if (defaultChannelType.commitmentFormat is Transactions.CommitmentFormat.SimpleTaprootChannels) return
-
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         val (alice1, commitSigAlice, bob1, commitSigBob) = spliceOutWithoutSigs(alice, bob, 75_000.sat)
         val (alice2, bob2) = exchangeSpliceSigs(alice1, commitSigAlice, bob1, commitSigBob)
 
         // Bob force-closes using the latest active commitment and an optional feerate.
-        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), commitSigAlice.alternativeFeerateSigs.last())
+        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), Commitments.alternativeFeerates.last())
         val commitment = alice1.commitments.active.first()
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTx)))
         assertIs<LNChannel<Closing>>(alice3)
@@ -1383,7 +1366,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `force-close -- previous active commitment`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, _) = setupHtlcs(alice, bob)
         val (alice1, bob1) = spliceOut(alice0, bob0, 75_000.sat)
 
@@ -1395,10 +1378,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `force-close -- previous active commitment -- alternative feerate`() {
-        // README: we skip alternative feerate tests for taproot channels
-        if (defaultChannelType.commitmentFormat is Transactions.CommitmentFormat.SimpleTaprootChannels) return
-
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         val (alice1, commitSigAlice1, bob1, commitSigBob1) = spliceOutWithoutSigs(alice, bob, 75_000.sat)
         val (alice2, bob2) = exchangeSpliceSigs(alice1, commitSigAlice1, bob1, commitSigBob1)
         val (alice3, commitSigAlice3, bob3, commitSigBob3) = spliceOutWithoutSigs(alice2, bob2, 75_000.sat)
@@ -1406,7 +1386,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
         // Bob force-closes using an older active commitment with an alternative feerate.
         assertEquals(bob4.commitments.active.map { it.localCommit.txId }.toSet().size, 3)
-        val bobCommitTx = useAlternativeCommitSig(bob4, bob4.commitments.active[1], commitSigAlice1.alternativeFeerateSigs.first())
+        val bobCommitTx = useAlternativeCommitSig(bob4, bob4.commitments.active[1], Commitments.alternativeFeerates.first())
         handlePreviousRemoteClose(alice4, bobCommitTx)
     }
 
@@ -1431,7 +1411,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `force-close -- revoked latest active commitment`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, _) = setupHtlcs(alice, bob)
         val (alice1, bob1) = spliceOut(alice0, bob0, 50_000.sat)
         val bobCommitTx = bob1.commitments.active.first().fullySignedCommitTx(bob.commitments.channelParams, bob.channelKeys)
@@ -1448,13 +1428,10 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `force-close -- revoked latest active commitment -- alternative feerate`() {
-        // README: we skip alternative feerate tests for taproot channels
-        if (defaultChannelType.commitmentFormat is Transactions.CommitmentFormat.SimpleTaprootChannels) return
-
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         val (alice1, commitSigAlice, bob1, commitSigBob) = spliceOutWithoutSigs(alice, bob, 50_000.sat)
         val (alice2, bob2) = exchangeSpliceSigs(alice1, commitSigAlice, bob1, commitSigBob)
-        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), commitSigAlice.alternativeFeerateSigs.first())
+        val bobCommitTx = useAlternativeCommitSig(bob2, bob2.commitments.active.first(), Commitments.alternativeFeerates.first())
 
         // Alice sends an HTLC to Bob, which revokes the previous commitment.
         val (nodes3, _, _) = addHtlc(25_000_000.msat, alice2, bob2)
@@ -1468,7 +1445,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `force-close -- revoked previous active commitment`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, htlcs) = setupHtlcs(alice, bob)
         // We make a first splice transaction, but don't exchange splice_locked.
         val (alice1, bob1) = spliceOut(alice0, bob0, 50_000.sat)
@@ -1548,7 +1525,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `force-close -- revoked previous active commitment -- after taproot upgrade`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
         val (alice0, bob0, htlcs) = setupHtlcs(alice, bob)
         assertEquals(alice0.commitments.latest.commitmentFormat, Transactions.CommitmentFormat.AnchorOutputs)
         assertEquals(bob0.commitments.latest.commitmentFormat, Transactions.CommitmentFormat.AnchorOutputs)
@@ -1738,7 +1715,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv invalid htlc signatures during splice`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx(defaultChannelType)
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice1, bob1, htlcs) = setupHtlcs(alice, bob)
         val (alice2, commitSigAlice, bob2, commitSigBob) = spliceInAndOutWithoutSigs(alice1, bob1, inAmounts = listOf(50_000.sat), outAmount = 100_000.sat)
         assertEquals(commitSigAlice.htlcSignatures.size, 4)
@@ -1759,7 +1736,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
     companion object {
         private val spliceFeerate = FeeratePerKw(253.sat)
 
-        private fun reachNormalWithConfirmedFundingTx(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs, zeroConf: Boolean = false): Pair<LNChannel<Normal>, LNChannel<Normal>> {
+        private fun reachNormalWithConfirmedFundingTx(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels, zeroConf: Boolean = false): Pair<LNChannel<Normal>, LNChannel<Normal>> {
             val (alice, bob) = reachNormal(channelType = channelType, zeroConf = zeroConf)
             return when (val fundingStatus = alice.commitments.latest.localFundingStatus) {
                 is LocalFundingStatus.UnconfirmedFundingTx -> {
@@ -1819,7 +1796,7 @@ open class SpliceTestsCommon : LightningTestSuite() {
             return UnsignedSpliceFixture(alice5, commitSigAlice, bob6, commitSigBob)
         }
 
-        fun spliceIn(alice: LNChannel<Normal>, bob: LNChannel<Normal>, amounts: List<Satoshi>, channelType: ChannelType? = null): Pair<LNChannel<Normal>, LNChannel<Normal>> {
+        fun spliceIn(alice: LNChannel<Normal>, bob: LNChannel<Normal>, amounts: List<Satoshi>): Pair<LNChannel<Normal>, LNChannel<Normal>> {
             val parentCommitment = alice.commitments.active.first()
             val cmd = ChannelCommand.Commitment.Splice.Request(
                 replyTo = CompletableDeferred(),
@@ -2212,8 +2189,4 @@ open class SpliceTestsCommon : LightningTestSuite() {
 
     }
 
-}
-
-class SpliceWithTaprootChannelsTestsCommon : SpliceTestsCommon() {
-    override val defaultChannelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels
 }

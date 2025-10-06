@@ -13,7 +13,6 @@ import fr.acinq.lightning.channel.ChannelSpendSignature
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.utils.*
-import fr.acinq.lightning.wire.ChannelTlv.SpliceChannelTypeTlv
 import fr.acinq.secp256k1.Hex
 import io.ktor.utils.io.charsets.*
 import io.ktor.utils.io.core.*
@@ -456,10 +455,8 @@ data class TxComplete(
     val commitNonces: TxCompleteTlv.CommitNonces? = tlvs.get<TxCompleteTlv.CommitNonces>()
     val fundingNonce: IndividualNonce? = tlvs.get<TxCompleteTlv.FundingInputNonce>()?.nonce
 
-    constructor(channelId: ByteVector32, commitNonces: TxCompleteTlv.CommitNonces?, fundingNonce: IndividualNonce?, swapInNonces: List<IndividualNonce>)
-            : this(channelId, TlvStream(setOfNotNull(TxCompleteTlv.SwapInNonces(swapInNonces), commitNonces, fundingNonce?.let { TxCompleteTlv.FundingInputNonce(it) })))
-
-    constructor(channelId: ByteVector32, swapInNonces: List<IndividualNonce>) : this(channelId, TlvStream(TxCompleteTlv.SwapInNonces(swapInNonces)))
+    constructor(channelId: ByteVector32, commitNonce: IndividualNonce, nextCommitNonce: IndividualNonce, fundingNonce: IndividualNonce?, swapInNonces: List<IndividualNonce>)
+            : this(channelId, TlvStream(setOfNotNull(TxCompleteTlv.SwapInNonces(swapInNonces), TxCompleteTlv.CommitNonces(commitNonce, nextCommitNonce), fundingNonce?.let { TxCompleteTlv.FundingInputNonce(it) })))
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)
@@ -904,6 +901,13 @@ data class ChannelReady(
     val nextPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelReadyTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId {
+
+    constructor(channelId: ByteVector32, nextPerCommitmentPoint: PublicKey, alias: ShortChannelId, nextLocalNonce: IndividualNonce) : this(
+        channelId,
+        nextPerCommitmentPoint,
+        TlvStream(ChannelReadyTlv.ShortChannelIdTlv(alias), ChannelReadyTlv.NextLocalNonce(nextLocalNonce))
+    )
+
     override val type: Long get() = ChannelReady.type
     val alias: ShortChannelId? = tlvStream.get<ChannelReadyTlv.ShortChannelIdTlv>()?.alias
     val nextLocalNonce: IndividualNonce? = tlvStream.get<ChannelReadyTlv.NextLocalNonce>()?.nonce
@@ -967,19 +971,6 @@ data class SpliceInit(
     val requestFunding: LiquidityAds.RequestFunding? = tlvStream.get<ChannelTlv.RequestFundingTlv>()?.request
     val channelType: ChannelType? = tlvStream.get<ChannelTlv.SpliceChannelTypeTlv>()?.channelType
 
-    constructor(channelId: ByteVector32, fundingContribution: Satoshi, feerate: FeeratePerKw, lockTime: Long, fundingPubkey: PublicKey, requestFunding: LiquidityAds.RequestFunding?) : this(
-        channelId,
-        fundingContribution,
-        feerate,
-        lockTime,
-        fundingPubkey,
-        TlvStream(
-            setOfNotNull(
-                requestFunding?.let { ChannelTlv.RequestFundingTlv(it) },
-            )
-        )
-    )
-
     constructor(channelId: ByteVector32, fundingContribution: Satoshi, feerate: FeeratePerKw, lockTime: Long, fundingPubkey: PublicKey, requestFunding: LiquidityAds.RequestFunding?, channelType: ChannelType?) : this(
         channelId,
         fundingContribution,
@@ -1036,16 +1027,6 @@ data class SpliceAck(
     val feeCreditUsed: MilliSatoshi = tlvStream.get<ChannelTlv.FeeCreditUsedTlv>()?.amount ?: 0.msat
     val channelType: ChannelType? = tlvStream.get<ChannelTlv.SpliceChannelTypeTlv>()?.channelType
 
-    constructor(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubkey: PublicKey, willFund: LiquidityAds.WillFund?) : this(
-        channelId,
-        fundingContribution,
-        fundingPubkey,
-        TlvStream(
-            setOfNotNull(
-                willFund?.let { ChannelTlv.ProvideFundingTlv(it) }
-            ))
-    )
-
     constructor(channelId: ByteVector32, fundingContribution: Satoshi, fundingPubkey: PublicKey, willFund: LiquidityAds.WillFund?, channelType: ChannelType?) : this(
         channelId,
         fundingContribution,
@@ -1054,7 +1035,8 @@ data class SpliceAck(
             setOfNotNull(
                 willFund?.let { ChannelTlv.ProvideFundingTlv(it) },
                 channelType?.let { ChannelTlv.SpliceChannelTypeTlv(it) }
-            ))
+            )
+        )
     )
 
     override fun write(out: Output) {
@@ -1072,7 +1054,7 @@ data class SpliceAck(
             ChannelTlv.RequireConfirmedInputsTlv.tag to ChannelTlv.RequireConfirmedInputsTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.ProvideFundingTlv.tag to ChannelTlv.ProvideFundingTlv as TlvValueReader<ChannelTlv>,
             ChannelTlv.FeeCreditUsedTlv.tag to ChannelTlv.FeeCreditUsedTlv.Companion as TlvValueReader<ChannelTlv>,
-            SpliceChannelTypeTlv.tag to ChannelTlv.SpliceChannelTypeTlv as TlvValueReader<ChannelTlv>,
+            ChannelTlv.SpliceChannelTypeTlv.tag to ChannelTlv.SpliceChannelTypeTlv as TlvValueReader<ChannelTlv>,
         )
 
         override fun read(input: Input): SpliceAck = SpliceAck(
@@ -1273,14 +1255,20 @@ data class CommitSig(
     val tlvStream: TlvStream<CommitSigTlv> = TlvStream.empty()
 ) : CommitSigs() {
 
-   constructor(channelId: ByteVector32, signature: ChannelSpendSignature, htlcSignatures: List<ByteVector64>, batchSize: Int) : this(
+    constructor(channelId: ByteVector32, signature: ChannelSpendSignature, htlcSignatures: List<ByteVector64>, batchSize: Int) : this(
         channelId,
-        if (signature is ChannelSpendSignature.IndividualSignature) signature else ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes),
+        when (signature) {
+            is ChannelSpendSignature.IndividualSignature -> signature
+            is ChannelSpendSignature.PartialSignatureWithNonce -> ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes)
+        },
         htlcSignatures,
         TlvStream(
             setOfNotNull(
                 if (batchSize > 1) CommitSigTlv.Batch(batchSize) else null,
-                if (signature is ChannelSpendSignature.PartialSignatureWithNonce) CommitSigTlv.PartialSignatureWithNonce(signature) else null
+                when (signature) {
+                    is ChannelSpendSignature.PartialSignatureWithNonce -> CommitSigTlv.PartialSignatureWithNonce(signature)
+                    is ChannelSpendSignature.IndividualSignature -> null
+                }
             )
         )
     )
@@ -1289,7 +1277,6 @@ data class CommitSig(
 
     val partialSignature: ChannelSpendSignature.PartialSignatureWithNonce? = tlvStream.get<CommitSigTlv.PartialSignatureWithNonce>()?.psig
     val sigOrPartialSig: ChannelSpendSignature = partialSignature ?: signature
-    val alternativeFeerateSigs: List<CommitSigTlv.AlternativeFeerateSig> = tlvStream.get<CommitSigTlv.AlternativeFeerateSigs>()?.sigs ?: listOf()
     val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
 
     override fun write(out: Output) {
@@ -1306,9 +1293,7 @@ data class CommitSig(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             CommitSigTlv.PartialSignatureWithNonce.tag to CommitSigTlv.PartialSignatureWithNonce.Companion as TlvValueReader<CommitSigTlv>,
-            CommitSigTlv.AlternativeFeerateSigs.tag to CommitSigTlv.AlternativeFeerateSigs.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
-            CommitSigTlv.AlternativeFeeratePartialSigs.tag to CommitSigTlv.AlternativeFeeratePartialSigs.Companion as TlvValueReader<CommitSigTlv>,
         )
 
         override fun read(input: Input): CommitSig {
@@ -1345,6 +1330,18 @@ data class RevokeAndAck(
     val nextPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<RevokeAndAckTlv> = TlvStream.empty()
 ) : HtlcMessage, HasChannelId, RequirePeerStorageStore {
+
+    constructor(channelId: ByteVector32, perCommitmentSecret: PrivateKey, nextPerCommitmentPoint: PublicKey, nextCommitNonces: List<Pair<TxId, IndividualNonce>>) : this(
+        channelId,
+        perCommitmentSecret,
+        nextPerCommitmentPoint,
+        TlvStream(
+            setOfNotNull(
+                if (nextCommitNonces.isNotEmpty()) RevokeAndAckTlv.NextLocalNonces(nextCommitNonces) else null
+            )
+        )
+    )
+
     val nextCommitNonces: Map<TxId, IndividualNonce> = tlvStream.get<RevokeAndAckTlv.NextLocalNonces>()?.nonces?.toMap() ?: mapOf()
 
     override val type: Long get() = RevokeAndAck.type
@@ -1406,10 +1403,34 @@ data class ChannelReestablish(
     val myCurrentPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelReestablishTlv> = TlvStream.empty()
 ) : HasChannelId {
+
+    constructor(
+        channelId: ByteVector32,
+        nextLocalCommitmentNumber: Long,
+        nextRemoteRevocationNumber: Long,
+        yourLastCommitmentSecret: PrivateKey,
+        myCurrentPerCommitmentPoint: PublicKey,
+        nextCommitNonces: List<Pair<TxId, IndividualNonce>>,
+        nextFundingTxId: TxId? = null,
+        currentCommitNonce: IndividualNonce? = null
+    ) : this(
+        channelId = channelId,
+        nextLocalCommitmentNumber = nextLocalCommitmentNumber,
+        nextRemoteRevocationNumber = nextRemoteRevocationNumber,
+        yourLastCommitmentSecret = yourLastCommitmentSecret,
+        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
+        tlvStream = TlvStream(
+            setOfNotNull(
+                if (nextCommitNonces.isNotEmpty()) ChannelReestablishTlv.NextLocalNonces(nextCommitNonces) else null,
+                nextFundingTxId?.let { ChannelReestablishTlv.NextFunding(it) },
+                currentCommitNonce?.let { ChannelReestablishTlv.CurrentCommitNonce(it) },
+            )
+        )
+    )
+
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
-
     val nextCommitNonces: Map<TxId, IndividualNonce> = tlvStream.get<ChannelReestablishTlv.NextLocalNonces>()?.nonces?.toMap() ?: mapOf()
     val currentCommitNonce: IndividualNonce? = tlvStream.get<ChannelReestablishTlv.CurrentCommitNonce>()?.nonce
 
@@ -1625,6 +1646,9 @@ data class Shutdown(
     val scriptPubKey: ByteVector,
     val tlvStream: TlvStream<ShutdownTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId, RequirePeerStorageStore, ForbiddenMessageDuringSplice {
+
+    constructor(channelId: ByteVector32, scriptPubKey: ByteVector, localNonce: IndividualNonce) : this(channelId, scriptPubKey, TlvStream(ShutdownTlv.ShutdownNonce(localNonce)))
+
     override val type: Long get() = Shutdown.type
     val closeeNonce: IndividualNonce? = tlvStream.get<ShutdownTlv.ShutdownNonce>()?.nonce
 

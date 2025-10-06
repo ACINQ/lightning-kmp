@@ -8,22 +8,22 @@ import fr.acinq.lightning.channel.ChannelAction
 import fr.acinq.lightning.channel.ChannelCommand
 import fr.acinq.lightning.channel.Commitments
 import fr.acinq.lightning.wire.ChannelReestablish
-import kotlinx.serialization.Transient
 
 data class WaitForRemotePublishFutureCommitment(
     override val commitments: Commitments,
     val remoteChannelReestablish: ChannelReestablish,
-    @Transient override val remoteCommitNonces: Map<TxId, IndividualNonce>
 ) : ChannelStateWithCommitments() {
+    override val remoteNextCommitNonces: Map<TxId, IndividualNonce> get() = mapOf()
+
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
-        return when {
-            cmd is ChannelCommand.WatchReceived -> when (cmd.watch) {
+        return when (cmd) {
+            is ChannelCommand.WatchReceived -> when (cmd.watch) {
                 is WatchSpentTriggered -> handlePotentialForceClose(cmd.watch)
                 is WatchConfirmedTriggered -> Pair(this@WaitForRemotePublishFutureCommitment, listOf())
             }
-            cmd is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForRemotePublishFutureCommitment), listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForRemotePublishFutureCommitment), listOf())
             else -> unhandled(cmd)
         }
     }

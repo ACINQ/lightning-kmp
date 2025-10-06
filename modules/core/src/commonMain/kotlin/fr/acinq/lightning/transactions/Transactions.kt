@@ -149,12 +149,13 @@ object Transactions {
          */
         data class TaprootScriptPath(val internalKey: XonlyPublicKey, val scriptTree: ScriptTree, val leafHash: ByteVector32) : RedeemInfo() {
             val leaf: ScriptTree.Leaf = scriptTree.findScript(leafHash) ?: throw IllegalArgumentException("script tree must contain the provided leaf")
-            val redeemScript: ByteVector = leaf.script
             override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, scriptTree)).byteVector()
         }
     }
 
-    data class LocalNonce(val secretNonce: SecretNonce, val publicNonce: IndividualNonce)
+    data class LocalNonce(val secretNonce: SecretNonce, val publicNonce: IndividualNonce) {
+        override fun toString(): String = publicNonce.toString()
+    }
 
     sealed class TransactionWithInputInfo {
         abstract val input: InputInfo
@@ -175,10 +176,6 @@ object Transactions {
 
         fun sign(key: PrivateKey, sigHash: Int, redeemInfo: RedeemInfo, extraUtxos: Map<OutPoint, TxOut>): ByteVector64 {
             val spentOutputs = buildSpentOutputs(extraUtxos)
-            // Note that we only need to provide details about all transaction inputs when using taproot, but we want to
-            // test that we're always correctly providing all inputs in all code paths to benefit from our existing test coverage.
-            val inputsMap = extraUtxos + (input.outPoint to input.txOut)
-            tx.txIn.forEach { require(inputsMap.contains(it.outPoint)) { "cannot sign txId=${tx.txid}: missing input details for ${it.outPoint}" } }
             return when (redeemInfo) {
                 is RedeemInfo.P2wsh -> {
                     val sigDER = tx.signInput(inputIndex, redeemInfo.redeemScript, sigHash, amountIn, SigVersion.SIGVERSION_WITNESS_V0, key)
@@ -187,7 +184,6 @@ object Transactions {
                 is RedeemInfo.TaprootKeyPath -> {
                     tx.signInputTaprootKeyPath(key, inputIndex, spentOutputs, sigHash, redeemInfo.scriptTree_opt)
                 }
-
                 is RedeemInfo.TaprootScriptPath -> {
                     tx.signInputTaprootScriptPath(key, inputIndex, spentOutputs, sigHash, redeemInfo.leafHash)
                 }
@@ -206,7 +202,6 @@ object Transactions {
                         val data = tx.hashForSigningTaprootKeyPath(inputIndex, listOf(input.txOut), sigHash)
                         Crypto.verifySignatureSchnorr(data, sig, publicKey.xOnly())
                     }
-
                     is RedeemInfo.TaprootScriptPath -> {
                         val data = tx.hashForSigningTaprootScriptPath(inputIndex, listOf(input.txOut), sigHash, redeemInfo.leafHash)
                         Crypto.verifySignatureSchnorr(data, sig, publicKey.xOnly())
@@ -238,7 +233,7 @@ object Transactions {
             return ChannelSpendSignature.IndividualSignature(sig)
         }
 
-        /** Create a partial transaction for the channel's musig2 funding output when using a [[TaprootCommitmentFormat]]. */
+        /** Create a partial transaction for the channel's musig2 funding output when using [CommitmentFormat.SimpleTaprootChannels]. */
         fun partialSign(
             localFundingKey: PrivateKey,
             remoteFundingPubkey: PublicKey,
@@ -257,7 +252,7 @@ object Transactions {
             return tx.updateWitness(inputIndex, witness)
         }
 
-        /** Aggregate local and remote channel spending partial signatures for a [[TaprootCommitmentFormat]]. */
+        /** Aggregate local and remote channel spending partial signatures when using [CommitmentFormat.SimpleTaprootChannels]. */
         fun aggregateSigs(
             localFundingPubkey: PublicKey,
             remoteFundingPubkey: PublicKey,
@@ -274,9 +269,10 @@ object Transactions {
                 Scripts.sort(listOf(localFundingPubkey, remoteFundingPubkey)),
                 listOf(localSig.nonce, remoteSig.nonce),
                 null
-            )
-                .map { Script.witnessKeyPathPay2tr(it) }
-                .map { tx.updateWitness(inputIndex, it) }
+            ).map {
+                val witness = Script.witnessKeyPathPay2tr(it)
+                tx.updateWitness(inputIndex, witness)
+            }
         }
 
         /** Verify a signature received from the remote channel participant. */
@@ -303,7 +299,6 @@ object Transactions {
                 scriptTree = null
             )
         }
-
     }
 
     /** This transaction collaboratively spends the channel funding output to change its capacity. */
@@ -533,7 +528,6 @@ object Transactions {
                     val sig = sign(commitKeys.ourDelayedPaymentKey, sigHash, RedeemInfo.P2wsh(redeemScript), extraUtxos = mapOf())
                     Scripts.witnessToLocalDelayedAfterDelay(sig, redeemScript)
                 }
-
                 CommitmentFormat.SimpleTaprootChannels -> {
                     val scriptTree: ScriptTree.Leaf = Scripts.Taproot.htlcDelayedScriptTree(commitKeys.publicKeys, toLocalDelay)
                     val redeemInfo = RedeemInfo.TaprootScriptPath(commitKeys.revocationPublicKey.xOnly(), scriptTree, scriptTree.hash())
@@ -767,8 +761,7 @@ object Transactions {
                 commitmentFormat: CommitmentFormat
             ): Either<TxGenerationSkipped, ClaimLocalDelayedOutputTx> {
                 val redeemInfo = when (commitmentFormat) {
-                    CommitmentFormat.AnchorOutputs ->
-                        RedeemInfo.P2wsh(Scripts.toLocalDelayed(commitKeys.publicKeys, toLocalDelay))
+                    CommitmentFormat.AnchorOutputs -> RedeemInfo.P2wsh(Scripts.toLocalDelayed(commitKeys.publicKeys, toLocalDelay))
                     CommitmentFormat.SimpleTaprootChannels -> {
                         val toLocalTree = Scripts.Taproot.toLocalScriptTree(commitKeys.publicKeys, toLocalDelay)
                         RedeemInfo.TaprootScriptPath(NUMS_POINT.xOnly(), toLocalTree.scriptTree, toLocalTree.localDelayed.hash())
@@ -1306,7 +1299,7 @@ object Transactions {
     }
 
     /**
-     * When sending [[fr.acinq.lightning.wire.ClosingComplete]], we use a different nonce for each closing transaction we create.
+     * When sending [fr.acinq.lightning.wire.ClosingComplete], we use a different nonce for each closing transaction we create.
      * We generate nonces for all variants of the closing transaction for simplicity, even though we never use them all.
      */
     data class CloserNonces(val localAndRemote: LocalNonce, val localOnly: LocalNonce, val remoteOnly: LocalNonce) {

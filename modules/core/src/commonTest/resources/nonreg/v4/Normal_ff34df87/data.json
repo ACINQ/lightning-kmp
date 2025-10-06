@@ -223,7 +223,8 @@
                     },
                     "txId": "0c74f8e6e0749a7815952ceedf0ee33f8f6e3298cf86eb83e45bf0f875a73044",
                     "remoteSig": {
-                        "sig": "bd71081f466344fb018eceabab814bdaf9d34df35327a43560677a13b96bbc3f1669df9f5075854a415a6ebd32bcf1e6fe482510930da7abfc15f319f29e7f00"
+                        "sig": "bd71081f466344fb018eceabab814bdaf9d34df35327a43560677a13b96bbc3f1669df9f5075854a415a6ebd32bcf1e6fe482510930da7abfc15f319f29e7f00",
+                        "nonce": null
                     },
                     "htlcRemoteSigs": [
                         "47f187dab4904e505d7eecb6fa0ab9d1dd3ae4194a215d73c0ed3310bba02e3455dc93c903bee48ed0613431dd771030e0ba43007300570463934cdda090b7c4",
@@ -375,6 +376,7 @@
         },
         "remotePerCommitmentSecrets": "<redacted>"
     },
+    "remoteNextCommitNonces": {},
     "shortChannelId": "42x0x0",
     "channelUpdate": {
         "signature": "6f5237d843822495a739a69f8dc75755940490826264170a707523c5dbee8f423d14ea56f7b2d2a07dfbc37b18d27fe301550d047fc109a3638e183c05b1edc7",
@@ -647,5 +649,7 @@
     },
     "localShutdown": null,
     "remoteShutdown": null,
-    "closeCommand": null
+    "closeCommand": null,
+    "localCloseeNonce": null,
+    "localCloserNonces": null
 }

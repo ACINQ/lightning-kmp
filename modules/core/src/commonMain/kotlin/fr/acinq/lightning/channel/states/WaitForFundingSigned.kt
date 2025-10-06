@@ -2,9 +2,7 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
-import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.crypto.Pack
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.LiquidityEvents
@@ -12,12 +10,12 @@ import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.SwapInEvents
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.NonceGenerator
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toMilliSatoshi
 import fr.acinq.lightning.wire.*
-import kotlinx.serialization.Transient
 import kotlin.math.absoluteValue
 
 /*
@@ -47,7 +45,6 @@ data class WaitForFundingSigned(
     val remoteSecondPerCommitmentPoint: PublicKey,
     val liquidityPurchase: LiquidityAds.Purchase?,
     val channelOrigin: Origin?,
-    @Transient val remoteCommitNonces: Map<TxId, IndividualNonce>
 ) : PersistedChannelState() {
     override val channelId: ByteVector32 = channelParams.channelId
 
@@ -122,6 +119,7 @@ data class WaitForFundingSigned(
             remoteNextCommitInfo = Either.Right(remoteSecondPerCommitmentPoint),
             remotePerCommitmentSecrets = ShaChain.init
         )
+        val remoteNextCommitNonce = signingSession.nextRemoteCommitNonce?.let { mapOf(signingSession.fundingTxId to it) } ?: mapOf()
         val commonActions = buildList {
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
             add(ChannelAction.Blockchain.SendWatch(watchConfirmed))
@@ -166,13 +164,15 @@ data class WaitForFundingSigned(
         }
         return if (staticParams.useZeroConf) {
             logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }
-            val nextPerCommitmentPoint = channelParams.localParams.channelKeys(keyManager).commitmentPoint(1)
-            val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
+            val channelKeys = channelParams.localParams.channelKeys(keyManager)
+            val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
+            val nextCommitNonce = NonceGenerator.verificationNonce(action.commitment.fundingTxId, channelKeys.fundingKey(action.commitment.fundingTxIndex), action.commitment.remoteFundingPubkey, commitIndex = 1)
+            val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, ShortChannelId.peerId(staticParams.nodeParams.nodeId), nextCommitNonce.publicNonce)
             // We use part of the funding txid to create a dummy short channel id.
             // This gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
             // Collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed).
             val shortChannelId = ShortChannelId(0, Pack.int32BE(action.commitment.fundingTxId.value.slice(0, 16).toByteArray()).absoluteValue, fundingInput.outPoint.index.toInt())
-            val nextState = WaitForChannelReady(commitments, shortChannelId, channelReady, this@WaitForFundingSigned.remoteCommitNonces)
+            val nextState = WaitForChannelReady(commitments, remoteNextCommitNonce, shortChannelId, channelReady)
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))
                 add(ChannelAction.EmitEvent(ChannelEvents.Created(nextState)))
@@ -184,10 +184,10 @@ data class WaitForFundingSigned(
             logger.info { "will wait for ${staticParams.nodeParams.minDepthBlocks} confirmations" }
             val nextState = WaitForFundingConfirmed(
                 commitments,
+                remoteNextCommitNonce,
                 currentBlockHeight.toLong(),
                 null,
                 RbfStatus.None,
-                this@WaitForFundingSigned.remoteCommitNonces
             )
             val actions = buildList {
                 add(ChannelAction.Storage.StoreState(nextState))

@@ -143,7 +143,8 @@
                     },
                     "txId": "46e675be5b612cef94dbf2fe5d82dbfaa9f2f2f1542c941a711324f3f479ec66",
                     "remoteSig": {
-                        "sig": "4fbc9db98fa48f937fb60e364bbb8e32e8f7c6419745cf0f16b04b75d46e6cbe587cffe2a58b5ad40659ec171991b6a80fb63fbcf41b3757f511615dc3ba4703"
+                        "sig": "4fbc9db98fa48f937fb60e364bbb8e32e8f7c6419745cf0f16b04b75d46e6cbe587cffe2a58b5ad40659ec171991b6a80fb63fbcf41b3757f511615dc3ba4703",
+                        "nonce": null
                     },
                     "htlcRemoteSigs": [
                         "b93c1ee4c31a629d64e8ec83f229db9cd9ea67dccf2fffc1f08c5443cdc548bf0ac41485cda6c3c40b019db559094ee0e7e2a7deb47f73d6d50ec0a7cd60685d",
@@ -200,6 +201,7 @@
         },
         "remotePerCommitmentSecrets": "<redacted>"
     },
+    "remoteNextCommitNonces": {},
     "localShutdown": {
         "channelId": "85ad5df602e4b1517db06754a5c1f3aa68d59973bd19e29798a825f3fb22babf",
         "scriptPubKey": "0014571c5ecb495ec4aeb6bd6f532af6817d70b8bc98"
@@ -211,5 +213,6 @@
     "closeCommand": {
         "scriptPubKey": "0014571c5ecb495ec4aeb6bd6f532af6817d70b8bc98",
         "feerate": 10000
-    }
+    },
+    "localCloseeNonce": null
 }

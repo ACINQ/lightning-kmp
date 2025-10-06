@@ -28,7 +28,6 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.io.peer.*
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
-import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -129,7 +128,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
-        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat)))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
         bob.forward(open)
@@ -140,12 +139,12 @@ class PeerTest : LightningTestSuite() {
         val txAddInput = alice2bob.expect<TxAddInput>()
         assertNotEquals(txAddInput.channelId, open.temporaryChannelId) // we now have the final channel_id
         bob.forward(txAddInput)
-        val txCompleteBob = bob2alice.expect<TxComplete>()
-        alice.forward(txCompleteBob)
+        val txCompleteBob1 = bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob1)
         val txAddOutput = alice2bob.expect<TxAddOutput>()
         bob.forward(txAddOutput)
-        bob2alice.expect<TxComplete>()
-        alice.forward(txCompleteBob)
+        val txCompleteBob2 = bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob2)
         val txCompleteAlice = alice2bob.expect<TxComplete>()
         bob.forward(txCompleteAlice)
         val commitSigBob = bob2alice.expect<CommitSig>()
@@ -189,7 +188,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
-        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat), ChannelType.SupportedChannelType.AnchorOutputsZeroReserve))
+        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat)))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
         bob.forward(open)
@@ -200,12 +199,12 @@ class PeerTest : LightningTestSuite() {
         val txAddInput = alice2bob.expect<TxAddInput>()
         assertNotEquals(txAddInput.channelId, open.temporaryChannelId) // we now have the final channel_id
         bob.forward(txAddInput)
-        val txCompleteBob = bob2alice.expect<TxComplete>()
-        alice.forward(txCompleteBob)
+        val txCompleteBob1 = bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob1)
         val txAddOutput = alice2bob.expect<TxAddOutput>()
         bob.forward(txAddOutput)
-        bob2alice.expect<TxComplete>()
-        alice.forward(txCompleteBob)
+        val txCompleteBob2 = bob2alice.expect<TxComplete>()
+        alice.forward(txCompleteBob2)
         val txCompleteAlice = alice2bob.expect<TxComplete>()
         bob.forward(txCompleteAlice)
         val commitSigBob = bob2alice.expect<CommitSig>()
@@ -367,8 +366,9 @@ class PeerTest : LightningTestSuite() {
             .first { it.size == 1 }
             .values
             .first()
+        assertIs<Normal>(restoredChannel)
         assertEquals(bob1.state, restoredChannel)
-        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel))
+        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel.copy(remoteNextCommitNonces = mapOf())))
     }
 
     @Test
@@ -398,8 +398,9 @@ class PeerTest : LightningTestSuite() {
             .first { it.size == 1 && it.values.first() is Normal }
             .values
             .first()
+        assertIs<Normal>(restoredChannel)
         assertEquals(bob1.state, restoredChannel)
-        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel))
+        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel.copy(remoteNextCommitNonces = mapOf())))
     }
 
     @Test

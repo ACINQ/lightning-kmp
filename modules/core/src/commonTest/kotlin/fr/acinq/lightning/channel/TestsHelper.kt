@@ -152,14 +152,20 @@ data class LNChannel<out S : ChannelState>(
     private fun checkSerialization(state: PersistedChannelState) {
 
         // We don't persist unsigned funding RBF or splice attempts.
+        // We don't persist taproot nonces either, they will be retransmitted on reconnection.
         fun removeTemporaryStatuses(state: PersistedChannelState): PersistedChannelState = when (state) {
-            is Normal -> when (state.spliceStatus) {
-                is SpliceStatus.WaitingForSigs -> state.copy(spliceStatus = state.spliceStatus.copy(session = state.spliceStatus.session.copy(nextRemoteNonce = null)))
-                else -> state.copy(spliceStatus = SpliceStatus.None)
+            is WaitForFundingSigned -> state.copy(signingSession = state.signingSession.copy(nextRemoteCommitNonce = null))
+            is WaitForFundingConfirmed -> when (state.rbfStatus) {
+                is RbfStatus.WaitingForSigs -> state.copy(remoteNextCommitNonces = mapOf(), rbfStatus = state.rbfStatus.copy(session = state.rbfStatus.session.copy(nextRemoteCommitNonce = null)))
+                else -> state.copy(remoteNextCommitNonces = mapOf(), rbfStatus = RbfStatus.None)
             }
-
-            is WaitForFundingSigned -> state.copy(signingSession = state.signingSession.copy(nextRemoteNonce = null), remoteCommitNonces = mapOf())
-
+            is WaitForChannelReady -> state.copy(remoteNextCommitNonces = mapOf())
+            is Normal -> when (state.spliceStatus) {
+                is SpliceStatus.WaitingForSigs -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null, spliceStatus = state.spliceStatus.copy(session = state.spliceStatus.session.copy(nextRemoteCommitNonce = null)))
+                else -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null, spliceStatus = SpliceStatus.None)
+            }
+            is ShuttingDown -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null)
+            is Negotiating -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)
             else -> state
         }
 
@@ -173,7 +179,7 @@ data class LNChannel<out S : ChannelState>(
 
         val serialized = Serialization.serialize(state)
         val deserialized = Serialization.deserialize(serialized).value
-//        assertEquals(removeTemporaryStatuses(ignoreClosingReplyTo(state)), ignoreClosingReplyTo(deserialized), "serialization error")
+        assertEquals(removeTemporaryStatuses(ignoreClosingReplyTo(state)), ignoreClosingReplyTo(deserialized), "serialization error")
     }
 
     private fun checkSerialization(actions: List<ChannelAction>) {
@@ -186,7 +192,7 @@ data class LNChannel<out S : ChannelState>(
 object TestsHelper {
 
     fun init(
-        channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+        channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
         bobFeatures: Features = TestConstants.Bob.nodeParams.features,
         bobUsePeerStorage: Boolean = true,
@@ -197,22 +203,14 @@ object TestsHelper {
         zeroConf: Boolean = false,
         channelOrigin: Origin? = null
     ): Triple<LNChannel<WaitForAcceptChannel>, LNChannel<WaitForOpenChannel>, OpenDualFundedChannel> {
-        val (aliceFeatures1, bobFeatures1) = when (channelType) {
-            ChannelType.SupportedChannelType.SimpleTaprootChannels -> Pair(
-                aliceFeatures.add(Feature.SimpleTaprootChannels to FeatureSupport.Mandatory),
-                bobFeatures.add(Feature.SimpleTaprootChannels to FeatureSupport.Mandatory)
-            )
-
-            else -> Pair(aliceFeatures, bobFeatures)
-        }
         val (aliceNodeParams, bobNodeParams) = when (zeroConf) {
             true -> Pair(
-                TestConstants.Alice.nodeParams.copy(features = aliceFeatures1, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId), usePeerStorage = false),
-                TestConstants.Bob.nodeParams.copy(features = bobFeatures1, zeroConfPeers = setOf(TestConstants.Alice.nodeParams.nodeId), usePeerStorage = bobUsePeerStorage)
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, zeroConfPeers = setOf(TestConstants.Bob.nodeParams.nodeId), usePeerStorage = false),
+                TestConstants.Bob.nodeParams.copy(features = bobFeatures, zeroConfPeers = setOf(TestConstants.Alice.nodeParams.nodeId), usePeerStorage = bobUsePeerStorage)
             )
             false -> Pair(
-                TestConstants.Alice.nodeParams.copy(features = aliceFeatures1, usePeerStorage = false),
-                TestConstants.Bob.nodeParams.copy(features = bobFeatures1, usePeerStorage = bobUsePeerStorage)
+                TestConstants.Alice.nodeParams.copy(features = aliceFeatures, usePeerStorage = false),
+                TestConstants.Bob.nodeParams.copy(features = bobFeatures, usePeerStorage = bobUsePeerStorage)
             )
         }
         val alice = LNChannel(
@@ -235,10 +233,10 @@ object TestsHelper {
         )
 
         val channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = requestRemoteFunding != null)
-        val aliceChannelParams = TestConstants.Alice.channelParams(payCommitTxFees = !channelFlags.nonInitiatorPaysCommitFees).copy(features = aliceFeatures1.initFeatures())
-        val bobChannelParams = TestConstants.Bob.channelParams(payCommitTxFees = channelFlags.nonInitiatorPaysCommitFees).copy(features = bobFeatures1.initFeatures())
-        val aliceInit = Init(aliceFeatures1)
-        val bobInit = Init(bobFeatures1)
+        val aliceChannelParams = TestConstants.Alice.channelParams(payCommitTxFees = !channelFlags.nonInitiatorPaysCommitFees).copy(features = aliceFeatures.initFeatures())
+        val bobChannelParams = TestConstants.Bob.channelParams(payCommitTxFees = channelFlags.nonInitiatorPaysCommitFees).copy(features = bobFeatures.initFeatures())
+        val aliceInit = Init(aliceFeatures)
+        val bobInit = Init(bobFeatures)
         val cmd = ChannelCommand.Init.Initiator(
             CompletableDeferred(),
             aliceFundingAmount,
@@ -290,7 +288,7 @@ object TestsHelper {
     }
 
     fun reachNormal(
-        channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+        channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features.initFeatures(),
         bobFeatures: Features = TestConstants.Bob.nodeParams.features.initFeatures(),
         bobUsePeerStorage: Boolean = true,
@@ -386,7 +384,7 @@ object TestsHelper {
 
     fun localClose(s: LNChannel<ChannelState>, htlcSuccessCount: Int = 0, htlcTimeoutCount: Int = 0): Triple<LNChannel<Closing>, LocalCommitPublished, LocalCloseTxs> {
         assertIs<LNChannel<ChannelStateWithCommitments>>(s)
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, s.state.commitments.latest.commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, s.state.commitments.latest.commitmentFormat)
         // An error occurs and we publish our commit tx.
         val commitTxId = s.state.commitments.latest.localCommit.txId
         val (s1, actions1) = s.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
@@ -448,7 +446,7 @@ object TestsHelper {
 
     fun remoteClose(rCommitTx: Transaction, s: LNChannel<ChannelState>, htlcSuccessCount: Int = 0, htlcTimeoutCount: Int = 0): Triple<LNChannel<Closing>, RemoteCommitPublished, RemoteCloseTxs> {
         assertIs<LNChannel<ChannelStateWithCommitments>>(s)
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, s.state.commitments.latest.commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, s.state.commitments.latest.commitmentFormat)
         // Our peer has unilaterally closed the channel.
         val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchSpentTriggered(s.state.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), rCommitTx)))
         assertIs<LNChannel<Closing>>(s1)
@@ -507,13 +505,13 @@ object TestsHelper {
         return Triple(closingState, remoteCommitPublished, RemoteCloseTxs(mainTx, htlcSuccessTxs, htlcTimeoutTxs))
     }
 
-    fun useAlternativeCommitSig(s: LNChannel<ChannelState>, commitment: Commitment, alternative: CommitSigTlv.AlternativeFeerateSig): Transaction {
+    fun useAlternativeCommitSig(s: LNChannel<ChannelState>, commitment: Commitment, feerate: FeeratePerKw): Transaction {
         val channelKeys = s.commitments.channelKeys(s.ctx.keyManager)
         val fundingKey = commitment.localFundingKey(channelKeys)
         val commitKeys = channelKeys.localCommitmentKeys(s.commitments.channelParams, commitment.localCommit.index)
-        val alternativeSpec = commitment.localCommit.spec.copy(feerate = alternative.feerate)
-        val alternativeSig = ChannelSpendSignature.IndividualSignature(alternative.sig)
+        val alternativeSpec = commitment.localCommit.spec.copy(feerate = feerate)
         val remoteFundingPubKey = commitment.remoteFundingPubkey
+        // This commitment transaction isn't signed, but we don't care, we will make it look like it was confirmed anyway.
         val (localCommitTx, _) = Commitments.makeLocalTxs(
             channelParams = s.commitments.channelParams,
             commitParams = commitment.localCommitParams,
@@ -525,10 +523,7 @@ object TestsHelper {
             commitmentFormat = commitment.commitmentFormat,
             spec = alternativeSpec,
         )
-        val localSig = localCommitTx.sign(fundingKey, remoteFundingPubKey)
-        val signedCommitTx = localCommitTx.aggregateSigs(fundingKey.publicKey(), remoteFundingPubKey, localSig, alternativeSig)
-        Transaction.correctlySpends(signedCommitTx, mapOf(commitment.fundingInput to commitment.localFundingStatus.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        return signedCommitTx
+        return localCommitTx.tx
     }
 
     fun signAndRevack(alice: LNChannel<ChannelState>, bob: LNChannel<ChannelState>): Pair<LNChannel<ChannelState>, LNChannel<ChannelState>> {

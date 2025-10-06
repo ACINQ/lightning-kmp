@@ -7,12 +7,10 @@ import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
-import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelSpendSignature
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.serialization.InputExtensions.readIndividualNonce
 import fr.acinq.lightning.utils.msat
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector64
 
 sealed class ChannelTlv : Tlv {
@@ -59,8 +57,12 @@ sealed class ChannelTlv : Tlv {
         }
     }
 
-    // TLV used to upgrade to "simple taproot channels" format during splices.
-    // We cannot reuse the channel_type TLV defined above because the tag is different
+    /**
+     * TLV used to upgrade to [ChannelType.SupportedChannelType.SimpleTaprootChannels] during splices.
+     * We don't reuse the [ChannelTypeTlv] above because updating the channel type during a splice is a custom
+     * protocol extension that may not be accepted into the BOLTs. If it is eventually added to the BOLTs, we
+     * should remove this TLV in favor of [ChannelTypeTlv].
+     */
     data class SpliceChannelTypeTlv(val channelType: ChannelType) : ChannelTlv() {
         override val tag: Long get() = SpliceChannelTypeTlv.tag
 
@@ -139,6 +141,7 @@ sealed class ChannelReadyTlv : Tlv {
         }
     }
 
+    /** Verification nonce used for the next commitment transaction that will be signed (when using taproot channels). */
     data class NextLocalNonce(val nonce: IndividualNonce) : ChannelReadyTlv() {
         override val tag: Long get() = NextLocalNonce.tag
         override fun write(out: Output) = LightningCodecs.writeBytes(nonce.toByteArray(), out)
@@ -151,6 +154,7 @@ sealed class ChannelReadyTlv : Tlv {
 }
 
 sealed class CommitSigTlv : Tlv {
+    /** Partial signature along with the signer's nonce, which is usually randomly created at signing time (when using taproot channels). */
     data class PartialSignatureWithNonce(val psig: ChannelSpendSignature.PartialSignatureWithNonce) : CommitSigTlv() {
         override val tag: Long get() = PartialSignatureWithNonce.tag
 
@@ -168,72 +172,6 @@ sealed class CommitSigTlv : Tlv {
                         IndividualNonce(LightningCodecs.bytes(input, 66))
                     )
                 )
-            }
-        }
-    }
-
-    data class AlternativeFeerateSig(val feerate: FeeratePerKw, val sig: ByteVector64)
-
-    /**
-     * When there are no pending HTLCs, we provide a list of signatures for the commitment transaction signed at various feerates.
-     * This gives more options to the remote node to recover their funds if the user disappears without closing channels.
-     */
-    data class AlternativeFeerateSigs(val sigs: List<AlternativeFeerateSig>) : CommitSigTlv() {
-        override val tag: Long get() = AlternativeFeerateSigs.tag
-        override fun write(out: Output) {
-            LightningCodecs.writeByte(sigs.size, out)
-            sigs.forEach {
-                LightningCodecs.writeU32(it.feerate.toLong().toInt(), out)
-                LightningCodecs.writeBytes(it.sig, out)
-            }
-        }
-
-        companion object : TlvValueReader<AlternativeFeerateSigs> {
-            const val tag: Long = 0x47010001
-            override fun read(input: Input): AlternativeFeerateSigs {
-                val count = LightningCodecs.byte(input)
-                val sigs = (0 until count).map {
-                    AlternativeFeerateSig(
-                        FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
-                        LightningCodecs.bytes(input, 64).toByteVector64()
-                    )
-                }
-                return AlternativeFeerateSigs(sigs)
-            }
-        }
-    }
-
-    data class AlternativeFeeratePartialSig(val feerate: FeeratePerKw, val psig: ChannelSpendSignature.PartialSignatureWithNonce)
-
-    /**
-     * When there are no pending HTLCs, we provide a list of signatures for the commitment transaction signed at various feerates.
-     * This gives more options to the remote node to recover their funds if the user disappears without closing channels.
-     */
-    data class AlternativeFeeratePartialSigs(val psigs: List<AlternativeFeeratePartialSig>) : CommitSigTlv() {
-        override val tag: Long get() = AlternativeFeeratePartialSigs.tag
-        override fun write(out: Output) {
-            LightningCodecs.writeByte(psigs.size, out)
-            psigs.forEach {
-                LightningCodecs.writeU32(it.feerate.toLong().toInt(), out)
-                LightningCodecs.writeBytes(it.psig.partialSig, out)
-                LightningCodecs.writeBytes(it.psig.nonce.toByteArray(), out)
-            }
-        }
-
-        companion object : TlvValueReader<AlternativeFeeratePartialSigs> {
-            const val tag: Long = 0x47010003
-            override fun read(input: Input): AlternativeFeeratePartialSigs {
-                val count = LightningCodecs.byte(input)
-                val sigs = (0 until count).map {
-                    AlternativeFeeratePartialSig(
-                        FeeratePerKw(LightningCodecs.u32(input).toLong().sat),
-                        ChannelSpendSignature.PartialSignatureWithNonce(
-                            LightningCodecs.bytes(input, 32).byteVector32(),
-                            IndividualNonce(LightningCodecs.bytes(input, 66))
-                        )
-                    )
-                }
-                return AlternativeFeeratePartialSigs(sigs)
             }
         }
     }
@@ -326,6 +264,7 @@ sealed class ChannelReestablishTlv : Tlv {
 }
 
 sealed class ShutdownTlv : Tlv {
+    /** When closing taproot channels, local nonce that will be used to sign the remote closing transaction. */
     data class ShutdownNonce(val nonce: IndividualNonce) : ShutdownTlv() {
         override val tag: Long get() = ShutdownNonce.tag
 

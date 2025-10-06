@@ -11,8 +11,7 @@ import fr.acinq.lightning.channel.Commitments
  */
 data class Closed(val state: Closing) : ChannelStateWithCommitments() {
     override val commitments: Commitments get() = state.commitments
-
-    override val remoteCommitNonces: Map<TxId, IndividualNonce> get() = state.remoteCommitNonces
+    override val remoteNextCommitNonces: Map<TxId, IndividualNonce> get() = mapOf()
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments {
         return this.copy(state = state.updateCommitments(input) as Closing)

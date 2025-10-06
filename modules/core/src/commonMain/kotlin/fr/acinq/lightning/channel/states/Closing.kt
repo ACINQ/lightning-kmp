@@ -35,7 +35,6 @@ data class RevokedClose(val revokedCommitPublished: RevokedCommitPublished) : Cl
 
 data class Closing(
     override val commitments: Commitments,
-    override val remoteCommitNonces: Map<TxId, IndividualNonce> = mapOf(), // TODO: check this
     val waitingSinceBlock: Long, // how many blocks since we initiated the closing
     val mutualCloseProposed: List<ClosingTx> = emptyList(), // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
     val mutualClosePublished: List<ClosingTx> = emptyList(),
@@ -45,6 +44,8 @@ data class Closing(
     val futureRemoteCommitPublished: RemoteCommitPublished? = null,
     val revokedCommitPublished: List<RevokedCommitPublished> = emptyList()
 ) : ChannelStateWithCommitments() {
+
+    override val remoteNextCommitNonces: Map<TxId, IndividualNonce> = mapOf()
 
     private val spendingTxs: List<Transaction> by lazy {
         mutualClosePublished.map { it.tx } + revokedCommitPublished.map { it.commitTx } + listOfNotNull(

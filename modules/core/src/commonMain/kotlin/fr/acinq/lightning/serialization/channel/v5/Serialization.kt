@@ -415,7 +415,6 @@ object Serialization {
 
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
-        writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
         writeCommitParams(localCommitParams)
         when (localCommit) {

@@ -48,7 +48,6 @@ data class OpenChannel(
     val walletInputs: List<WalletState.Utxo>,
     val commitTxFeerate: FeeratePerKw,
     val fundingTxFeerate: FeeratePerKw,
-    val channelType: ChannelType.SupportedChannelType
 ) : PeerCommand()
 
 /** Consume all the spendable utxos in the wallet state provided to open a channel or splice into an existing channel. */
@@ -1417,7 +1416,7 @@ class Peer(
                         remoteInit = theirInit!!,
                         channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
                         channelConfig = ChannelConfig.standard,
-                        channelType = cmd.channelType,
+                        channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
                         requestRemoteFunding = null,
                         channelOrigin = null,
                     )
@@ -1659,7 +1658,7 @@ class Peer(
                                         remoteInit = theirInit!!,
                                         channelFlags = channelFlags,
                                         channelConfig = ChannelConfig.standard,
-                                        channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
+                                        channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
                                         requestRemoteFunding = LiquidityAds.RequestFunding(cmd.requestedAmount, cmd.fundingRate, paymentDetails),
                                         channelOrigin = Origin.OffChainPayment(cmd.preimage, cmd.paymentAmount, totalFees),
                                     )

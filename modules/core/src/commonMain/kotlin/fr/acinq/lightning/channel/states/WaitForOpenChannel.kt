@@ -107,12 +107,11 @@ data class WaitForOpenChannel(
                                         channelKeys,
                                         keyManager.swapInOnChainWallet,
                                         fundingParams,
-                                        0.msat,
-                                        0.msat,
-                                        emptySet(),
-                                        fundingContributions.value,
-                                        commitTxIndex = 0,
-                                        fundingTxIndex = 0
+                                        localCommitIndex = 0,
+                                        previousLocalBalance = 0.msat,
+                                        previousRemoteBalance = 0.msat,
+                                        localHtlcs = emptySet(),
+                                        fundingContributions = fundingContributions.value,
                                     )
                                     val nextState = WaitForFundingCreated(
                                         replyTo,

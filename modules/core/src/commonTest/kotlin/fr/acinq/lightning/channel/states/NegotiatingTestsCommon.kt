@@ -42,18 +42,6 @@ class NegotiatingTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `basic mutual close -- alice -- simple taproot channels`() = runSuspendTest {
-        val (alice, bob) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
-        mutualCloseAlice(alice, bob, FeeratePerKw(500.sat))
-    }
-
-    @Test
-    fun `basic mutual close -- bob -- simple taproot channels`() = runSuspendTest {
-        val (alice, bob) = reachNormal(ChannelType.SupportedChannelType.SimpleTaprootChannels)
-        mutualCloseBob(alice, bob, FeeratePerKw(500.sat))
-    }
-
-    @Test
     fun `recv ChannelCommand_Htlc_Add`() {
         val (alice, _, _) = init()
         val (_, add) = makeCmdAdd(500_000.msat, alice.staticParams.remoteNodeId, TestConstants.defaultBlockHeight.toLong())
@@ -124,15 +112,15 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertNull(actionsBob2.findOutgoingMessageOpt<ClosingComplete>()) // Bob cannot pay mutual close fees.
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(shutdownBob))
         val closingCompleteAlice = actionsAlice2.findOutgoingMessage<ClosingComplete>()
-        assertNull(closingCompleteAlice.closerAndCloseeOutputsSig)
-        assertNotNull(closingCompleteAlice.closerOutputOnlySig)
+        assertNull(closingCompleteAlice.closerAndCloseeOutputsPartialSig)
+        assertNotNull(closingCompleteAlice.closerOutputOnlyPartialSig)
 
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(closingCompleteAlice))
         assertIs<Negotiating>(bob3.state)
         val closingTxAlice = actionsBob3.findPublishTxs().first()
         assertEquals(1, closingTxAlice.txOut.size)
         val closingSigBob = actionsBob3.findOutgoingMessage<ClosingSig>()
-        assertNotNull(closingSigBob.closerOutputOnlySig)
+        assertNotNull(closingSigBob.closerOutputOnlyPartialSig)
 
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(closingSigBob))
         assertIs<Negotiating>(alice3.state)
@@ -169,24 +157,33 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(closingSigAlice1))
         actionsBob3.hasOutgoingMessage<Warning>()
 
-        // Alice handles Bob's updated closing_complete.
+        // Bob's closing_complete doesn't use Alice's latest closee nonce, so she ignores his closing_complete.
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(closingCompleteBob2))
-        assertIs<Negotiating>(alice2.state)
-        assertEquals(4, actionsAlice2.size)
-        actionsAlice2.has<ChannelAction.Storage.StoreState>()
-        val closingTx2 = actionsAlice2.findPublishTxs().first()
+        actionsAlice2.hasOutgoingMessage<Warning>()
+
+        // Bob retries sending closing_complete.
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), closingScript, TestConstants.feeratePerKw * 1.5))
+        val closingCompleteBob3 = actionsBob4.findOutgoingMessage<ClosingComplete>()
+        assertEquals(closingScript, closingCompleteBob3.closerScriptPubKey)
+
+        // Alice handles Bob's updated closing_complete.
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(closingCompleteBob3))
+        assertIs<Negotiating>(alice3.state)
+        assertEquals(4, actionsAlice3.size)
+        actionsAlice3.has<ChannelAction.Storage.StoreState>()
+        val closingTx2 = actionsAlice3.findPublishTxs().first()
         assertTrue(closingTx2.txOut.any { it.publicKeyScript == closingScript })
-        actionsAlice2.hasWatchConfirmed(closingTx2.txid)
-        val closingSigAlice2 = actionsAlice2.findOutgoingMessage<ClosingSig>()
+        actionsAlice3.hasWatchConfirmed(closingTx2.txid)
+        val closingSigAlice2 = actionsAlice3.findOutgoingMessage<ClosingSig>()
 
         // Bob receives Alice's closing_sig for his updated closing_complete.
-        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(closingSigAlice2))
-        assertIs<Negotiating>(bob4.state)
-        assertEquals(4, actionsBob4.size)
-        actionsBob4.has<ChannelAction.Storage.StoreState>()
-        actionsBob4.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
-        assertEquals(closingTx2, actionsBob4.findPublishTxs().first())
-        actionsBob4.hasWatchConfirmed(closingTx2.txid)
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(closingSigAlice2))
+        assertIs<Negotiating>(bob5.state)
+        assertEquals(4, actionsBob5.size)
+        actionsBob5.has<ChannelAction.Storage.StoreState>()
+        actionsBob5.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
+        assertEquals(closingTx2, actionsBob5.findPublishTxs().first())
+        actionsBob5.hasWatchConfirmed(closingTx2.txid)
     }
 
     @Test
@@ -195,7 +192,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
 
         // Bob expects to receive a signature for a closing transaction containing his output, so he ignores Alice's
         // closing_complete instead of sending back his closing_sig.
-        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(closingComplete.copy(tlvStream = TlvStream(ClosingCompleteTlv.CloserOutputOnly(closingComplete.closerOutputOnlySig!!)))))
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(closingComplete.copy(tlvStream = TlvStream(ClosingCompleteTlv.CloserOutputOnlyPartialSignature(closingComplete.closerOutputOnlyPartialSig!!)))))
         assertIs<Negotiating>(bob1.state)
         assertEquals(1, actionsBob1.size)
         actionsBob1.hasOutgoingMessage<Warning>()
@@ -203,7 +200,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(closingComplete))
         assertIs<Negotiating>(bob2.state)
         val closingTxAlice = actionsBob2.findPublishTxs().first()
-        assertTrue(closingTxAlice.txOut.size == 2)
+        assertEquals(closingTxAlice.txOut.size, 2)
         actionsBob2.findOutgoingMessage<ClosingSig>()
     }
 
@@ -465,7 +462,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         data class Fixture(val alice: LNChannel<Negotiating>, val bob: LNChannel<Negotiating>, val closingCompleteAlice: ClosingComplete, val closingCompleteBob: ClosingComplete)
 
         fun init(
-            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
             aliceFundingAmount: Satoshi = TestConstants.aliceFundingAmount,
             bobFundingAmount: Satoshi = TestConstants.bobFundingAmount,
             aliceClosingFeerate: FeeratePerKw = TestConstants.feeratePerKw,
