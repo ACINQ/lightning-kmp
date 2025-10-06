@@ -366,8 +366,9 @@ class PeerTest : LightningTestSuite() {
             .first { it.size == 1 }
             .values
             .first()
+        assertIs<Normal>(restoredChannel)
         assertEquals(bob1.state, restoredChannel)
-        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel))
+        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel.copy(remoteNextCommitNonces = mapOf())))
     }
 
     @Test
@@ -397,8 +398,9 @@ class PeerTest : LightningTestSuite() {
             .first { it.size == 1 && it.values.first() is Normal }
             .values
             .first()
+        assertIs<Normal>(restoredChannel)
         assertEquals(bob1.state, restoredChannel)
-        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel))
+        assertEquals(peer.db.channels.listLocalChannels(), listOf(restoredChannel.copy(remoteNextCommitNonces = mapOf())))
     }
 
     @Test

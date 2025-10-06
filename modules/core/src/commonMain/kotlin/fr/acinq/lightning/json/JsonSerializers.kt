@@ -88,6 +88,7 @@
     JsonSerializers.FundingCreatedSerializer::class,
     JsonSerializers.ChannelReadySerializer::class,
     JsonSerializers.ChannelReadyTlvShortChannelIdTlvSerializer::class,
+    JsonSerializers.ChannelReadyTlvNextLocalNonceSerializer::class,
     JsonSerializers.GenericTlvSerializer::class,
     JsonSerializers.TlvStreamSerializer::class,
     JsonSerializers.ShutdownTlvSerializer::class,
@@ -95,6 +96,7 @@
     JsonSerializers.ClosingCompleteTlvSerializer::class,
     JsonSerializers.ClosingSigTlvSerializer::class,
     JsonSerializers.ChannelReestablishTlvSerializer::class,
+    JsonSerializers.ChannelReestablishTlvNextLocalNoncesSerializer::class,
     JsonSerializers.ChannelReadyTlvSerializer::class,
     JsonSerializers.CommitSigTlvBatchSerializer::class,
     JsonSerializers.CommitSigTlvPartialSignatureWithNonceSerializer::class,
@@ -209,10 +211,12 @@ object JsonSerializers {
             }
             polymorphic(Tlv::class) {
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
+                subclass(ChannelReadyTlv.NextLocalNonce::class, ChannelReadyTlvNextLocalNonceSerializer)
                 subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
                 subclass(CommitSigTlv.PartialSignatureWithNonce::class, CommitSigTlvPartialSignatureWithNonceSerializer)
                 subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
                 subclass(ShutdownTlv.ShutdownNonce::class, ShutdownTlvShutdownNonceSerializer)
+                subclass(ChannelReestablishTlv.NextLocalNonces::class, ChannelReestablishTlvNextLocalNoncesSerializer)
             }
             contextual(Bolt11InvoiceSerializer)
             contextual(OfferSerializer)
@@ -550,6 +554,9 @@ object JsonSerializers {
     @Serializer(forClass = ChannelReadyTlv.ShortChannelIdTlv::class)
     object ChannelReadyTlvShortChannelIdTlvSerializer
 
+    @Serializer(forClass = ChannelReadyTlv.NextLocalNonce::class)
+    object ChannelReadyTlvNextLocalNonceSerializer
+
     @Serializer(forClass = ShutdownTlv::class)
     object ShutdownTlvSerializer
 
@@ -576,6 +583,9 @@ object JsonSerializers {
 
     @Serializer(forClass = ChannelReestablishTlv::class)
     object ChannelReestablishTlvSerializer
+
+    @Serializer(forClass = ChannelReestablishTlv.NextLocalNonces::class)
+    object ChannelReestablishTlvNextLocalNoncesSerializer
 
     @Serializer(forClass = GenericTlv::class)
     object GenericTlvSerializer

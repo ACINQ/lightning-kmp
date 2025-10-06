@@ -23,7 +23,6 @@ class OfflineTestsCommon : LightningTestSuite() {
     @Test
     fun `handle disconnect - connect events in WaitForChannelReady -- zeroconf`() {
         val (alice, aliceCommitSig, bob, _) = WaitForFundingSignedTestsCommon.init(
-            ChannelType.SupportedChannelType.AnchorOutputsZeroReserve,
             zeroConf = true,
             bobUsePeerStorage = false,
         )
@@ -78,7 +77,7 @@ class OfflineTestsCommon : LightningTestSuite() {
         )
         assertEquals(
             ChannelReestablish(bob.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint),
-            channelReestablishB
+            channelReestablishB.copy(tlvStream = TlvStream.empty())
         )
 
         val (alice3, actions2) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
@@ -125,9 +124,15 @@ class OfflineTestsCommon : LightningTestSuite() {
         val aliceCurrentPerCommitmentPoint = alice0.channelKeys.commitmentPoint(aliceCommitments.localCommitIndex)
 
         // alice didn't receive any update or sig
-        assertEquals(channelReestablishA, ChannelReestablish(alice0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
+        assertEquals(1, channelReestablishA.nextLocalCommitmentNumber)
+        assertEquals(0, channelReestablishA.nextRemoteRevocationNumber)
+        assertEquals(PrivateKey(ByteVector32.Zeroes), channelReestablishA.yourLastCommitmentSecret)
+        assertEquals(aliceCurrentPerCommitmentPoint, channelReestablishA.myCurrentPerCommitmentPoint)
         // bob did not receive alice's sig
-        assertEquals(channelReestablishB, ChannelReestablish(bob0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+        assertEquals(1, channelReestablishB.nextLocalCommitmentNumber)
+        assertEquals(0, channelReestablishB.nextRemoteRevocationNumber)
+        assertEquals(PrivateKey(ByteVector32.Zeroes), channelReestablishB.yourLastCommitmentSecret)
+        assertEquals(bobCurrentPerCommitmentPoint, channelReestablishB.myCurrentPerCommitmentPoint)
 
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
         // alice sends ChannelReady again
@@ -198,9 +203,15 @@ class OfflineTestsCommon : LightningTestSuite() {
         val aliceCurrentPerCommitmentPoint = alice0.channelKeys.commitmentPoint(aliceCommitments.localCommitIndex)
 
         // alice didn't receive any update or sig
-        assertEquals(channelReestablishA, ChannelReestablish(alice0.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
+        assertEquals(1, channelReestablishA.nextLocalCommitmentNumber)
+        assertEquals(0, channelReestablishA.nextRemoteRevocationNumber)
+        assertEquals(PrivateKey(ByteVector32.Zeroes), channelReestablishA.yourLastCommitmentSecret)
+        assertEquals(aliceCurrentPerCommitmentPoint, channelReestablishA.myCurrentPerCommitmentPoint)
         // bob did receive alice's sig
-        assertEquals(channelReestablishB, ChannelReestablish(bob0.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+        assertEquals(2, channelReestablishB.nextLocalCommitmentNumber)
+        assertEquals(0, channelReestablishB.nextRemoteRevocationNumber)
+        assertEquals(PrivateKey(ByteVector32.Zeroes), channelReestablishB.yourLastCommitmentSecret)
+        assertEquals(bobCurrentPerCommitmentPoint, channelReestablishB.myCurrentPerCommitmentPoint)
 
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishB))
         // alice does not re-send messages bob already received
@@ -564,7 +575,7 @@ class OfflineTestsCommon : LightningTestSuite() {
 
     @Test
     fun `republish unconfirmed funding tx after restart`() {
-        val (alice, bob, fundingTx) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, fundingTx) = WaitForFundingConfirmedTestsCommon.init()
         // Alice restarts:
         val (alice1, actionsAlice1) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Init.Restore(alice.state))
         assertEquals(alice1.state, Offline(alice.state))
@@ -581,7 +592,7 @@ class OfflineTestsCommon : LightningTestSuite() {
 
     @Test
     fun `republish unconfirmed funding tx with previous funding txs after restart`() {
-        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init()
         val (alice1, bob1, fundingTx) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, walletAlice)
         assertEquals(alice1.commitments.active.size, 2)
         assertNotEquals(previousFundingTx.txid, fundingTx.txid)
@@ -603,7 +614,7 @@ class OfflineTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK`() {
-        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init()
         val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()
         val (alice1, bob1) = disconnect(alice, bob)
         // outer state is Offline, we check the inner states
@@ -629,7 +640,7 @@ class OfflineTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv BITCOIN_FUNDING_DEPTHOK -- previous funding tx`() {
-        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init()
         val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, walletAlice)
         val (alice2, bob2) = disconnect(alice1, bob1)
         assertIs<WaitForFundingConfirmed>(alice2.state.state)

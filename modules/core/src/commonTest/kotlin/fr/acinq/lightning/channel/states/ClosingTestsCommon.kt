@@ -49,7 +49,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelFundingDepthOk`() {
-        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init()
         val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()
         run {
             val (aliceClosing, _) = localClose(alice)
@@ -74,7 +74,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelFundingDepthOk -- previous funding tx`() {
-        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init()
         val (alice1, bob1, fundingTx) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, walletAlice)
         assertNotEquals(previousFundingTx.txid, fundingTx.txid)
         run {

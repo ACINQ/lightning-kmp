@@ -29,11 +29,11 @@ class StateSerializationTestsCommon : LightningTestSuite() {
         val (alice, bob) = TestsHelper.reachNormal()
         val bytes = Serialization.serialize(alice.state)
         val check = Serialization.deserialize(bytes).value
-        assertEquals(alice.state, check)
+        assertEquals(alice.state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null), check)
 
         val bytes1 = Serialization.serialize(bob.state)
         val check1 = Serialization.deserialize(bytes1).value
-        assertEquals(bob.state, check1)
+        assertEquals(bob.state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null), check1)
     }
 
     @Test

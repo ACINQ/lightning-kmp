@@ -10,6 +10,7 @@ import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.SwapInEvents
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.NonceGenerator
 import fr.acinq.lightning.crypto.ShaChain
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
@@ -163,8 +164,10 @@ data class WaitForFundingSigned(
         }
         return if (staticParams.useZeroConf) {
             logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }
-            val nextPerCommitmentPoint = channelParams.localParams.channelKeys(keyManager).commitmentPoint(1)
-            val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
+            val channelKeys = channelParams.localParams.channelKeys(keyManager)
+            val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
+            val nextCommitNonce = NonceGenerator.verificationNonce(action.commitment.fundingTxId, channelKeys.fundingKey(action.commitment.fundingTxIndex), action.commitment.remoteFundingPubkey, commitIndex = 1)
+            val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, ShortChannelId.peerId(staticParams.nodeParams.nodeId), nextCommitNonce.publicNonce)
             // We use part of the funding txid to create a dummy short channel id.
             // This gives us a probability of collisions of 0.1% for 5 0-conf channels and 1% for 20
             // Collisions mean that users may temporarily see incorrect numbers for their 0-conf channels (until they've been confirmed).

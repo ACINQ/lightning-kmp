@@ -192,7 +192,7 @@ data class LNChannel<out S : ChannelState>(
 object TestsHelper {
 
     fun init(
-        channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+        channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
         bobFeatures: Features = TestConstants.Bob.nodeParams.features,
         bobUsePeerStorage: Boolean = true,
@@ -288,7 +288,7 @@ object TestsHelper {
     }
 
     fun reachNormal(
-        channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+        channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
         aliceFeatures: Features = TestConstants.Alice.nodeParams.features.initFeatures(),
         bobFeatures: Features = TestConstants.Bob.nodeParams.features.initFeatures(),
         bobUsePeerStorage: Boolean = true,
@@ -384,7 +384,7 @@ object TestsHelper {
 
     fun localClose(s: LNChannel<ChannelState>, htlcSuccessCount: Int = 0, htlcTimeoutCount: Int = 0): Triple<LNChannel<Closing>, LocalCommitPublished, LocalCloseTxs> {
         assertIs<LNChannel<ChannelStateWithCommitments>>(s)
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, s.state.commitments.latest.commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, s.state.commitments.latest.commitmentFormat)
         // An error occurs and we publish our commit tx.
         val commitTxId = s.state.commitments.latest.localCommit.txId
         val (s1, actions1) = s.process(ChannelCommand.MessageReceived(Error(ByteVector32.Zeroes, "oops")))
@@ -446,7 +446,7 @@ object TestsHelper {
 
     fun remoteClose(rCommitTx: Transaction, s: LNChannel<ChannelState>, htlcSuccessCount: Int = 0, htlcTimeoutCount: Int = 0): Triple<LNChannel<Closing>, RemoteCommitPublished, RemoteCloseTxs> {
         assertIs<LNChannel<ChannelStateWithCommitments>>(s)
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, s.state.commitments.latest.commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, s.state.commitments.latest.commitmentFormat)
         // Our peer has unilaterally closed the channel.
         val (s1, actions1) = s.process(ChannelCommand.WatchReceived(WatchSpentTriggered(s.state.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), rCommitTx)))
         assertIs<LNChannel<Closing>>(s1)

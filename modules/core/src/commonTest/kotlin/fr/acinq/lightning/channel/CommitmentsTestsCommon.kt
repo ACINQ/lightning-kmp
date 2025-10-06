@@ -420,7 +420,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 ChannelParams(
                     channelId = randomBytes32(),
                     channelConfig = ChannelConfig.standard,
-                    channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features),
+                    channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.SimpleTaprootChannels.features),
                     localParams = localChannelParams,
                     remoteParams = remoteChannelParams,
                     channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),

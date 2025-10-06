@@ -901,6 +901,13 @@ data class ChannelReady(
     val nextPerCommitmentPoint: PublicKey,
     val tlvStream: TlvStream<ChannelReadyTlv> = TlvStream.empty()
 ) : ChannelMessage, HasChannelId {
+
+    constructor(channelId: ByteVector32, nextPerCommitmentPoint: PublicKey, alias: ShortChannelId, nextLocalNonce: IndividualNonce) : this(
+        channelId,
+        nextPerCommitmentPoint,
+        TlvStream(ChannelReadyTlv.ShortChannelIdTlv(alias), ChannelReadyTlv.NextLocalNonce(nextLocalNonce))
+    )
+
     override val type: Long get() = ChannelReady.type
     val alias: ShortChannelId? = tlvStream.get<ChannelReadyTlv.ShortChannelIdTlv>()?.alias
     val nextLocalNonce: IndividualNonce? = tlvStream.get<ChannelReadyTlv.NextLocalNonce>()?.nonce

@@ -30,8 +30,8 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val txAddInput = actions1.findOutgoingMessage<TxAddInput>()
         assertNotEquals(txAddInput.channelId, accept.temporaryChannelId)
         assertEquals(alice1.channelId, txAddInput.channelId)
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice1.state.interactiveTxSession.fundingParams.commitmentFormat)
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding, Feature.ZeroReserveChannels)))
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, alice1.state.interactiveTxSession.fundingParams.commitmentFormat)
     }
 
     @Test
@@ -53,14 +53,14 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertEquals(3, actions1.size)
         actions1.find<ChannelAction.ChannelId.IdAssigned>()
         actions1.findOutgoingMessage<TxAddInput>()
-        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice1.state.interactiveTxSession.fundingParams.commitmentFormat)
+        assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding, Feature.ZeroReserveChannels)))
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, alice1.state.interactiveTxSession.fundingParams.commitmentFormat)
         assertEquals(ChannelEvents.Creating(alice1.state), actions1.find<ChannelAction.EmitEvent>().event)
     }
 
     @Test
     fun `recv AcceptChannel -- zero conf`() {
-        val (alice, _, accept) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
+        val (alice, _, accept) = init(zeroConf = true)
         assertEquals(0, accept.minimumDepth)
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept))
         assertIs<LNChannel<WaitForFundingCreated>>(alice1)
@@ -69,7 +69,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         assertEquals(ChannelEvents.Creating(alice1.state), actions1.find<ChannelAction.EmitEvent>().event)
         actions1.findOutgoingMessage<TxAddInput>()
         assertEquals(alice1.state.channelFeatures, ChannelFeatures(setOf(Feature.ZeroReserveChannels, Feature.DualFunding)))
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice1.state.interactiveTxSession.fundingParams.commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, alice1.state.interactiveTxSession.fundingParams.commitmentFormat)
     }
 
     @Test
@@ -88,7 +88,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
         val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(accept.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.UnsupportedChannelType(Features.empty))))))
         assertIs<LNChannel<Aborted>>(alice1)
         val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(error, Error(accept.temporaryChannelId, InvalidChannelType(accept.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputs, ChannelType.UnsupportedChannelType(Features.empty)).message))
+        assertEquals(error, Error(accept.temporaryChannelId, InvalidChannelType(accept.temporaryChannelId, ChannelType.SupportedChannelType.SimpleTaprootChannels, ChannelType.UnsupportedChannelType(Features.empty)).message))
     }
 
     @Test
@@ -189,7 +189,7 @@ class WaitForAcceptChannelTestsCommon : LightningTestSuite() {
 
     companion object {
         fun init(
-            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,
             currentHeight: Int = TestConstants.defaultBlockHeight,

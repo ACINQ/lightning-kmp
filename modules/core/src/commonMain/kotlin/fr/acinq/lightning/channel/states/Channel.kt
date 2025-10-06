@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.SensitiveTaskEvents
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpent
@@ -21,6 +22,7 @@ import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
+import fr.acinq.lightning.wire.ChannelReady
 import fr.acinq.lightning.wire.ChannelReestablish
 import fr.acinq.lightning.wire.ChannelUpdate
 import fr.acinq.lightning.wire.Error
@@ -350,7 +352,7 @@ sealed class PersistedChannelState : ChannelState() {
                     Transactions.CommitmentFormat.AnchorOutputs -> null
                     Transactions.CommitmentFormat.SimpleTaprootChannels -> {
                         val localFundingKey = channelKeys.fundingKey(c.fundingTxIndex)
-                        val localCommitNonce = NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, c.remoteFundingPubkey, c.localCommit.index)
+                        val localCommitNonce = NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, c.remoteFundingPubkey, c.localCommit.index + 1)
                         c.fundingTxId to localCommitNonce.publicNonce
                     }
                 }
@@ -418,6 +420,14 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 Triple(commitments1, commitment, actions)
             }
         }
+    }
+
+    internal fun ChannelContext.createChannelReady(): ChannelReady {
+        val localFundingKey = channelKeys().fundingKey(fundingTxIndex = 0)
+        val remoteFundingKey = commitments.latest.remoteFundingPubkey
+        val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
+        val nextCommitNonce = NonceGenerator.verificationNonce(commitments.latest.fundingTxId, localFundingKey, remoteFundingKey, commitIndex = 1)
+        return ChannelReady(channelId, nextPerCommitmentPoint, ShortChannelId.peerId(staticParams.nodeParams.nodeId), nextCommitNonce.publicNonce)
     }
 
     /**

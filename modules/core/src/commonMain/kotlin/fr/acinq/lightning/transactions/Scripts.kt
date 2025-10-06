@@ -170,10 +170,12 @@ object Scripts {
     fun extractPreimagesFromHtlcSuccess(tx: Transaction): Set<ByteVector32> {
         return tx.txIn.map { it.witness }.mapNotNull {
             when {
-                it.stack.size < 5 -> null
-                !it.stack[0].isEmpty() -> null
-                it.stack[3].size() != 32 -> null
-                else -> ByteVector32(it.stack[3])
+                it.stack.size != 5 -> null
+                // anchor-outputs
+                it.stack[0].isEmpty() && it.stack[3].size() == 32 -> ByteVector32(it.stack[3])
+                // taproot
+                it.stack[2].size() == 32 -> ByteVector32(it.stack[2])
+                else -> null
             }
         }.toSet()
     }
@@ -189,9 +191,11 @@ object Scripts {
     fun extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set<ByteVector32> {
         return tx.txIn.map { it.witness }.mapNotNull {
             when {
-                it.stack.size < 3 -> null
-                it.stack[1].size() != 32 -> null
-                else -> ByteVector32(it.stack[1])
+                // anchor-outputs
+                it.stack.size == 3 && it.stack[1].size() == 32 -> ByteVector32(it.stack[1])
+                // taproot
+                it.stack.size == 4 && it.stack[1].size() == 32 -> ByteVector32(it.stack[1])
+                else -> null
             }
         }.toSet()
     }

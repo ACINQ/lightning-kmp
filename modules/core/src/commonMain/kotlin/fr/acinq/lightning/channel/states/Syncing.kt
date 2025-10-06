@@ -7,6 +7,7 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.crypto.NonceGenerator
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 
@@ -121,8 +122,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 }
                             }
                             logger.debug { "re-sending channel_ready" }
-                            val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
-                            val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
+                            val channelReady = state.run { createChannelReady() }
                             actions.add(ChannelAction.Message.Send(channelReady))
                             Pair(state.copy(remoteNextCommitNonces = cmd.message.nextCommitNonces), actions)
                         }
@@ -137,8 +137,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     if (state.commitments.latest.fundingTxIndex == 0L && cmd.message.nextLocalCommitmentNumber == 1L && state.commitments.localCommitIndex == 0L) {
                                         // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit channel_ready, otherwise it MUST NOT
                                         logger.debug { "re-sending channel_ready" }
-                                        val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
-                                        val channelReady = ChannelReady(state.commitments.channelId, nextPerCommitmentPoint)
+                                        val channelReady = state.run { createChannelReady() }
                                         actions.add(ChannelAction.Message.Send(channelReady))
                                     }
 
@@ -307,8 +306,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     val nextState = when (state) {
                                         is WaitForFundingConfirmed -> {
                                             logger.info { "was confirmed while syncing at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with funding txid=${watch.tx.txid}" }
-                                            val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
-                                            val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
+                                            val channelReady = state.run { createChannelReady() }
                                             val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.fundingInput.index.toInt())
                                             WaitForChannelReady(commitments1, mapOf(), shortChannelId, channelReady)
                                         }
@@ -505,10 +503,16 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                 // they just sent a new commit_sig, we have received it but they didn't receive our revocation
                 val localPerCommitmentSecret = channelKeys.commitmentSecret(commitments.localCommitIndex - 1)
                 val localNextPerCommitmentPoint = channelKeys.commitmentPoint(commitments.localCommitIndex + 1)
+                val localCommitNonces = commitments.active.map { c ->
+                    val fundingKey = channelKeys.fundingKey(c.fundingTxIndex)
+                    val nonce = NonceGenerator.verificationNonce(c.fundingTxId, fundingKey, c.remoteFundingPubkey, commitments.localCommitIndex + 1)
+                    c.fundingTxId to nonce.publicNonce
+                }
                 val revocation = RevokeAndAck(
                     channelId = commitments.channelId,
                     perCommitmentSecret = localPerCommitmentSecret,
-                    nextPerCommitmentPoint = localNextPerCommitmentPoint
+                    nextPerCommitmentPoint = localNextPerCommitmentPoint,
+                    nextCommitNonces = localCommitNonces
                 )
                 checkRemoteCommit(remoteChannelReestablish, retransmitRevocation = revocation)
             } else if (commitments.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
