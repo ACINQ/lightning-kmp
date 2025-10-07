@@ -18,10 +18,10 @@ class SqliteChannelsDbTestsJvm : LightningTestSuite() {
             val db = SqliteChannelsDb(sqliteInMemory())
             val (alice, _) = TestsHelper.reachNormal(currentHeight = 1, aliceFundingAmount = 1_000_000.sat)
             db.addOrUpdateChannel(alice.state)
-            val aliceWithoutNonces = alice.state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null)
+            val aliceWithoutNonces = alice.state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null)
             val (bob, _) = TestsHelper.reachNormal(currentHeight = 2, aliceFundingAmount = 2_000_000.sat)
             db.addOrUpdateChannel(bob.state)
-            val bobWithoutNonces = bob.state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null)
+            val bobWithoutNonces = bob.state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null)
             assertEquals(db.listLocalChannels(), listOf(aliceWithoutNonces, bobWithoutNonces))
         }
     }

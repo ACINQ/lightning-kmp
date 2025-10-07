@@ -676,22 +676,27 @@ class Peer(
     /**
      * Estimate the actual fee that will be paid when closing the given channel at the target feerate.
      */
-    fun estimateFeeForMutualClose(channelId: ByteVector32, targetFeerate: FeeratePerKw, remoteNonce: IndividualNonce?): ChannelManagementFees? {
+    fun estimateFeeForMutualClose(channelId: ByteVector32, targetFeerate: FeeratePerKw): ChannelManagementFees? {
         return channels.values
             .filterIsInstance<ChannelStateWithCommitments>()
             .filter { it is Normal || it is ShuttingDown || it is Negotiating }
             .find { it.channelId == channelId }
             ?.let { channel ->
                 // We cannot be sure of the scripts that will end up being used, but that shouldn't change the fee too much.
-                Helpers.Closing.makeClosingTxs(
-                    channel.commitments.channelKeys(nodeParams.keyManager),
-                    channel.commitments.latest,
-                    channel.commitments.channelParams.localParams.defaultFinalScriptPubKey,
-                    channel.commitments.channelParams.localParams.defaultFinalScriptPubKey,
-                    targetFeerate,
+                val localScript = channel.commitments.channelParams.localParams.defaultFinalScriptPubKey
+                val channelKeys = channel.commitments.channelKeys(nodeParams.keyManager)
+                Transactions.makeClosingTxs(
+                    channel.commitments.latest.commitInput(channelKeys),
+                    channel.commitments.latest.localCommit.spec,
+                    Transactions.ClosingTxFee.PaidByUs(0.sat),
                     0,
-                    remoteNonce
-                ).map { ChannelManagementFees(miningFee = it.second.fees, serviceFee = 0.sat) }.right
+                    localScript,
+                    localScript,
+                ).preferred?.let {
+                    val dummyWitness = Script.witnessKeyPathPay2tr(Transactions.PlaceHolderSig)
+                    val miningFee = Transactions.weight2fee(targetFeerate, it.tx.updateWitness(0, dummyWitness).weight())
+                    ChannelManagementFees(miningFee = miningFee, serviceFee = 0.sat)
+                }
             }
     }
 

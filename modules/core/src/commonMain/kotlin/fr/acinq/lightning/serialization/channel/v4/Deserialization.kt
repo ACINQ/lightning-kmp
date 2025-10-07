@@ -159,7 +159,6 @@ object Deserialization {
             remoteShutdown = readNullable { readLightningMessage() as Shutdown },
             closeCommand = readNullable { readCloseCommand() },
             localCloseeNonce = null,
-            localCloserNonces = null,
         )
     }
 
@@ -195,7 +194,6 @@ object Deserialization {
             remoteShutdown,
             closeCommand,
             localCloseeNonce = null,
-            localCloserNonces = null
         )
     }
 
@@ -231,7 +229,6 @@ object Deserialization {
             remoteShutdown,
             closeCommand,
             localCloseeNonce = null,
-            localCloserNonces = null
         )
     }
 
@@ -280,7 +277,6 @@ object Deserialization {
         }
         return Negotiating(
             commitments,
-            remoteNextCommitNonces = mapOf(),
             localShutdown.scriptPubKey,
             remoteShutdown.scriptPubKey,
             listOf(),
@@ -295,7 +291,6 @@ object Deserialization {
 
     private fun Input.readNegotiating(): Negotiating = Negotiating(
         commitments = readCommitments(),
-        remoteNextCommitNonces = mapOf(),
         localScript = readDelimitedByteArray().byteVector(),
         remoteScript = readDelimitedByteArray().byteVector(),
         proposedClosingTxs = readCollection {

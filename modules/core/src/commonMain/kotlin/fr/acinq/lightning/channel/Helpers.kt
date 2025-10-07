@@ -311,10 +311,10 @@ object Helpers {
                 when (val dummyTx = dummyClosingTxs.preferred) {
                     null -> return Either.Left(CannotGenerateClosingTx(commitment.channelId))
                     else -> {
-                        val dummyPubkey = commitment.remoteFundingPubkey
-                        val dummySig = ChannelSpendSignature.IndividualSignature(Transactions.PlaceHolderSig)
-                        val dummySignedTx = dummyTx.aggregateSigs(dummyPubkey, dummyPubkey, dummySig, dummySig)
-                        Transactions.ClosingTxFee.PaidByUs(Transactions.weight2fee(feerate, dummySignedTx.weight()))
+                        // We assume that we're using taproot channels for simplicity.
+                        val dummyWitness = Script.witnessKeyPathPay2tr(Transactions.PlaceHolderSig)
+                        val weight = dummyTx.tx.updateWitness(0, dummyWitness).weight()
+                        Transactions.ClosingTxFee.PaidByUs(Transactions.weight2fee(feerate, weight))
                     }
                 }
             }

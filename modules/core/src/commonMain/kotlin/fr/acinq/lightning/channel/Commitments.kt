@@ -926,6 +926,16 @@ data class Commitments(
         val remoteCommit = active.first().remoteCommit
         if (revocation.perCommitmentSecret.publicKey() != remoteCommit.remotePerCommitmentPoint) return Either.Left(InvalidRevocation(channelId))
 
+        // If our peer doesn't include nonces for every active commitment, we won't be able to sign our next update.
+        active.forEach { c ->
+            when (c.commitmentFormat) {
+                Transactions.CommitmentFormat.AnchorOutputs -> Unit
+                Transactions.CommitmentFormat.SimpleTaprootChannels -> {
+                    if (!revocation.nextCommitNonces.contains(c.fundingTxId)) return Either.Left(MissingCommitNonce(channelId, c.fundingTxId, c.localCommit.index))
+                }
+            }
+        }
+
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment
         // since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them

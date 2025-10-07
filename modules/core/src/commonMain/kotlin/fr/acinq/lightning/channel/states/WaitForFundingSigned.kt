@@ -100,7 +100,7 @@ data class WaitForFundingSigned(
             is ChannelCommand.Closing -> unhandled(cmd)
             is ChannelCommand.Connected -> unhandled(cmd)
             // We should be able to complete the channel open when reconnecting.
-            is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForFundingSigned), listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForFundingSigned.copy(signingSession = signingSession.copy(nextRemoteCommitNonce = null))), listOf())
         }
     }
 
@@ -164,7 +164,6 @@ data class WaitForFundingSigned(
         }
         return if (staticParams.useZeroConf) {
             logger.info { "channel is using 0-conf, we won't wait for the funding tx to confirm" }
-            val channelKeys = channelParams.localParams.channelKeys(keyManager)
             val nextPerCommitmentPoint = channelKeys.commitmentPoint(1)
             val nextCommitNonce = NonceGenerator.verificationNonce(action.commitment.fundingTxId, channelKeys.fundingKey(action.commitment.fundingTxIndex), action.commitment.remoteFundingPubkey, commitIndex = 1)
             val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, ShortChannelId.peerId(staticParams.nodeParams.nodeId), nextCommitNonce.publicNonce)

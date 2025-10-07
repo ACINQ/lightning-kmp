@@ -650,6 +650,5 @@
     "localShutdown": null,
     "remoteShutdown": null,
     "closeCommand": null,
-    "localCloseeNonce": null,
-    "localCloserNonces": null
+    "localCloseeNonce": null
 }

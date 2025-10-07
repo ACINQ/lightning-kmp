@@ -303,7 +303,7 @@ sealed class PersistedChannelState : ChannelState() {
             val (currentCommitNonce, nextCommitNonce) = when (state.signingSession.fundingParams.commitmentFormat) {
                 Transactions.CommitmentFormat.AnchorOutputs -> Pair(null, null)
                 Transactions.CommitmentFormat.SimpleTaprootChannels -> {
-                    val localFundingKey = channelKeys().fundingKey(0)
+                    val localFundingKey = channelKeys().fundingKey(fundingTxIndex = 0)
                     val remoteFundingPubKey = state.signingSession.fundingParams.remoteFundingPubkey
                     val currentCommitNonce = when (state.signingSession.localCommit) {
                         is Either.Left -> NonceGenerator.verificationNonce(nextFundingTxId, localFundingKey, remoteFundingPubKey, 0)
@@ -458,7 +458,6 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     internal fun ChannelContext.startClosingNegotiation(
         cmd: ChannelCommand.Close.MutualClose?,
         commitments: Commitments,
-        remoteNextCommitNonces: Map<TxId, IndividualNonce>,
         localShutdown: Shutdown,
         localCloseeNonce: Transactions.LocalNonce?,
         remoteShutdown: Shutdown,
@@ -473,7 +472,6 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 logger.info { "mutual close was initiated by our peer, waiting for remote closing_complete" }
                 val nextState = Negotiating(
                     commitments,
-                    remoteNextCommitNonces,
                     localScript,
                     remoteScript,
                     listOf(),
@@ -494,7 +492,6 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                         cmd.replyTo.complete(ChannelCloseResponse.Failure.Unknown(closingResult.value))
                         val nextState = Negotiating(
                             commitments,
-                            remoteNextCommitNonces,
                             localScript,
                             remoteScript,
                             listOf(),
@@ -513,7 +510,6 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                         val nextState =
                             Negotiating(
                                 commitments,
-                                remoteNextCommitNonces,
                                 localScript,
                                 remoteScript,
                                 listOf(closingTxs),

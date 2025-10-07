@@ -88,21 +88,21 @@ data class LNChannel<out S : ChannelState>(
         }
     }
     val commitments: Commitments by lazy {
-        when {
-            state is ChannelStateWithCommitments -> state.commitments
-            state is Offline && state.state is ChannelStateWithCommitments -> state.state.commitments
-            state is Syncing && state.state is ChannelStateWithCommitments -> state.state.commitments
+        when (state) {
+            is ChannelStateWithCommitments -> state.commitments
+            is Offline if state.state is ChannelStateWithCommitments -> state.state.commitments
+            is Syncing if state.state is ChannelStateWithCommitments -> state.state.commitments
             else -> error("no commitments in state ${state::class}")
         }
     }
     val channelKeys: ChannelKeys by lazy {
-        when {
-            state is WaitForFundingSigned -> state.channelParams.localParams.channelKeys(ctx.keyManager)
-            state is Offline && state.state is WaitForFundingSigned -> state.state.channelParams.localParams.channelKeys(ctx.keyManager)
-            state is Syncing && state.state is WaitForFundingSigned -> state.state.channelParams.localParams.channelKeys(ctx.keyManager)
-            state is ChannelStateWithCommitments -> state.commitments.channelParams.localParams.channelKeys(ctx.keyManager)
-            state is Offline && state.state is ChannelStateWithCommitments -> state.state.commitments.channelParams.localParams.channelKeys(ctx.keyManager)
-            state is Syncing && state.state is ChannelStateWithCommitments -> state.state.commitments.channelParams.localParams.channelKeys(ctx.keyManager)
+        when (state) {
+            is WaitForFundingSigned -> state.channelParams.localParams.channelKeys(ctx.keyManager)
+            is Offline if state.state is WaitForFundingSigned -> state.state.channelParams.localParams.channelKeys(ctx.keyManager)
+            is Syncing if state.state is WaitForFundingSigned -> state.state.channelParams.localParams.channelKeys(ctx.keyManager)
+            is ChannelStateWithCommitments -> state.commitments.channelParams.localParams.channelKeys(ctx.keyManager)
+            is Offline if state.state is ChannelStateWithCommitments -> state.state.commitments.channelParams.localParams.channelKeys(ctx.keyManager)
+            is Syncing if state.state is ChannelStateWithCommitments -> state.state.commitments.channelParams.localParams.channelKeys(ctx.keyManager)
             else -> error("no channel keys in state ${state::class}")
         }
     }
@@ -161,11 +161,11 @@ data class LNChannel<out S : ChannelState>(
             }
             is WaitForChannelReady -> state.copy(remoteNextCommitNonces = mapOf())
             is Normal -> when (state.spliceStatus) {
-                is SpliceStatus.WaitingForSigs -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null, spliceStatus = state.spliceStatus.copy(session = state.spliceStatus.session.copy(nextRemoteCommitNonce = null)))
-                else -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, localCloserNonces = null, spliceStatus = SpliceStatus.None)
+                is SpliceStatus.WaitingForSigs -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, spliceStatus = state.spliceStatus.copy(session = state.spliceStatus.session.copy(nextRemoteCommitNonce = null)))
+                else -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, spliceStatus = SpliceStatus.None)
             }
             is ShuttingDown -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null)
-            is Negotiating -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)
+            is Negotiating -> state.copy(localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)
             else -> state
         }
 
@@ -327,11 +327,13 @@ object TestsHelper {
         val (alice1, actionsAlice1) = alice.process(cmd)
         assertIs<LNChannel<Normal>>(alice1)
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
+        assertNotNull(shutdownAlice.closeeNonce)
         assertNull(actionsAlice1.findOutgoingMessageOpt<ClosingComplete>())
 
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(shutdownAlice))
         assertIs<LNChannel<Negotiating>>(bob1)
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
+        assertNotNull(shutdownBob.closeeNonce)
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingComplete>())
 
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(shutdownBob))
@@ -341,6 +343,8 @@ object TestsHelper {
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(closingComplete))
         assertIs<LNChannel<Negotiating>>(bob2)
         val closingSig = actionsBob2.findOutgoingMessage<ClosingSig>()
+        assertNotNull(closingSig.nextCloseeNonce)
+        assertNotEquals(shutdownBob.closeeNonce, closingSig.nextCloseeNonce)
 
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(closingSig))
         assertIs<LNChannel<Negotiating>>(alice3)
@@ -356,11 +360,13 @@ object TestsHelper {
         val (bob1, actionsBob1) = bob.process(cmd)
         assertIs<LNChannel<Normal>>(bob1)
         val shutdownBob = actionsBob1.findOutgoingMessage<Shutdown>()
+        assertNotNull(shutdownBob.closeeNonce)
         assertNull(actionsBob1.findOutgoingMessageOpt<ClosingComplete>())
 
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(shutdownBob))
         assertIs<LNChannel<Negotiating>>(alice1)
         val shutdownAlice = actionsAlice1.findOutgoingMessage<Shutdown>()
+        assertNotNull(shutdownAlice.closeeNonce)
         assertNull(actionsAlice1.findOutgoingMessageOpt<ClosingComplete>())
 
         val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(shutdownAlice))
@@ -370,6 +376,8 @@ object TestsHelper {
         val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(closingComplete))
         assertIs<LNChannel<Negotiating>>(alice2)
         val closingSig = actionsAlice2.findOutgoingMessage<ClosingSig>()
+        assertNotNull(closingSig.nextCloseeNonce)
+        assertNotEquals(shutdownAlice.closeeNonce, closingSig.nextCloseeNonce)
 
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(closingSig))
         assertIs<LNChannel<Negotiating>>(bob3)

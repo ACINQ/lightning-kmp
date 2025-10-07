@@ -1,11 +1,17 @@
 package fr.acinq.lightning.channel.states
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.Script
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.byteVector
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
-import fr.acinq.lightning.*
+import fr.acinq.lightning.ChannelEvents
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
+import fr.acinq.lightning.ShortChannelId
+import fr.acinq.lightning.SwapInEvents
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.electrum.WalletState
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
@@ -307,20 +313,199 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `recv Disconnected`() {
+    fun `recv Disconnected -- commit_sig not received`() {
         val (alice, _, bob, _) = init()
-        run {
-            val (alice1, actions1) = alice.process(ChannelCommand.Disconnected)
-            assertTrue(actions1.isEmpty())
-            assertIs<Offline>(alice1.state)
-            assertEquals(alice1.state.state, alice.state)
-        }
-        run {
-            val (bob1, actions1) = bob.process(ChannelCommand.Disconnected)
-            assertTrue(actions1.isEmpty())
-            assertIs<Offline>(bob1.state)
-            assertEquals(bob1.state.state, bob.state)
-        }
+        val fundingTxId = alice.state.signingSession.fundingTxId
+        // Alice and Bob disconnect.
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Disconnected)
+        assertTrue(actionsAlice1.isEmpty())
+        assertIs<Offline>(alice1.state)
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.Disconnected)
+        assertTrue(actionsBob1.isEmpty())
+        assertIs<Offline>(bob1.state)
+        // On reconnection, they re-send nonces for the current and next commitments.
+        val aliceInit = Init(alice.state.channelParams.localParams.features.initFeatures())
+        val bobInit = Init(bob.state.channelParams.localParams.features.initFeatures())
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
+        val channelReestablishAlice = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(fundingTxId, channelReestablishAlice.nextFundingTxId)
+        assertNotNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, fundingTxId)
+        assertNotEquals(channelReestablishAlice.currentCommitNonce, channelReestablishAlice.nextCommitNonces[fundingTxId])
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(bobInit, aliceInit))
+        val channelReestablishBob = actionsBob2.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(fundingTxId, channelReestablishBob.nextFundingTxId)
+        assertNotNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, fundingTxId)
+        assertNotEquals(channelReestablishBob.currentCommitNonce, channelReestablishBob.nextCommitNonces[fundingTxId])
+        // They then re-send commit_sig.
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        val commitSigAlice = actionsAlice3.hasOutgoingMessage<CommitSig>()
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        val commitSigBob = actionsBob3.hasOutgoingMessage<CommitSig>()
+        // Bob sends tx_signatures first.
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
+        assertIs<WaitForFundingSigned>(alice4.state)
+        assertNull(actionsAlice4.findOutgoingMessageOpt<TxSignatures>())
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(commitSigAlice))
+        assertIs<WaitForFundingConfirmed>(bob4.state)
+        actionsBob4.hasOutgoingMessage<TxSignatures>()
+    }
+
+    @Test
+    fun `recv Disconnected -- commit_sig not received -- missing nonces`() {
+        val (alice, _, bob, _) = init()
+        // Alice and Bob disconnect.
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.Disconnected)
+        assertTrue(actionsAlice1.isEmpty())
+        assertIs<Offline>(alice1.state)
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.Disconnected)
+        assertTrue(actionsBob1.isEmpty())
+        assertIs<Offline>(bob1.state)
+        // On reconnection, Alice forgets to re-send nonces for the current commitment.
+        val aliceInit = Init(alice.state.channelParams.localParams.features.initFeatures())
+        val bobInit = Init(bob.state.channelParams.localParams.features.initFeatures())
+        val (_, actionsAlice2) = alice1.process(ChannelCommand.Connected(aliceInit, bobInit))
+        val channelReestablishAlice = actionsAlice2.findOutgoingMessage<ChannelReestablish>()
+        val (bob2, _) = bob1.process(ChannelCommand.Connected(bobInit, aliceInit))
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice.copy(tlvStream = TlvStream(channelReestablishAlice.tlvStream.records.filterNot { it is ChannelReestablishTlv.CurrentCommitNonce }
+            .toSet()))))
+        assertIs<WaitForFundingSigned>(bob3.state)
+        assertNull(actionsBob3.findOutgoingMessageOpt<CommitSig>())
+    }
+
+    @Test
+    fun `recv Disconnected -- commit_sig received by Alice`() {
+        val (alice, _, bob, commitSigBob) = init()
+        val fundingTxId = alice.state.signingSession.fundingTxId
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
+        assertIs<WaitForFundingSigned>(alice1.state)
+        assertNull(actionsAlice1.findOutgoingMessageOpt<TxSignatures>())
+        // Alice and Bob disconnect.
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Disconnected)
+        assertTrue(actionsAlice2.isEmpty())
+        assertIs<Offline>(alice2.state)
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.Disconnected)
+        assertTrue(actionsBob1.isEmpty())
+        assertIs<Offline>(bob1.state)
+        // On reconnection, they re-send nonces for the current and next commitments.
+        val aliceInit = Init(alice.state.channelParams.localParams.features.initFeatures())
+        val bobInit = Init(bob.state.channelParams.localParams.features.initFeatures())
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.Connected(aliceInit, bobInit))
+        val channelReestablishAlice = actionsAlice3.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(fundingTxId, channelReestablishAlice.nextFundingTxId)
+        assertNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, fundingTxId)
+        assertNotEquals(channelReestablishAlice.currentCommitNonce, channelReestablishAlice.nextCommitNonces[fundingTxId])
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Connected(bobInit, aliceInit))
+        val channelReestablishBob = actionsBob2.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(fundingTxId, channelReestablishBob.nextFundingTxId)
+        assertNotNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, fundingTxId)
+        assertNotEquals(channelReestablishBob.currentCommitNonce, channelReestablishBob.nextCommitNonces[fundingTxId])
+        // Alice then re-sends commit_sig.
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        assertIs<WaitForFundingSigned>(alice4.state)
+        val commitSigAlice = actionsAlice4.hasOutgoingMessage<CommitSig>()
+        assertNull(actionsAlice4.findOutgoingMessageOpt<TxSignatures>())
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        assertNull(actionsBob3.findOutgoingMessageOpt<CommitSig>())
+        // Bob sends tx_signatures first.
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(commitSigAlice))
+        assertIs<WaitForFundingConfirmed>(bob4.state)
+        actionsBob4.hasOutgoingMessage<TxSignatures>()
+    }
+
+    @Test
+    fun `recv Disconnected -- commit_sig received`() {
+        val (alice, commitSigAlice, bob, commitSigBob) = init(bobUsePeerStorage = false)
+        val fundingTxId = alice.state.signingSession.fundingTxId
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
+        assertIs<WaitForFundingSigned>(alice1.state)
+        assertNull(actionsAlice1.findOutgoingMessageOpt<TxSignatures>())
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
+        assertIs<WaitForFundingConfirmed>(bob1.state)
+        actionsBob1.hasOutgoingMessage<TxSignatures>()
+        // Alice and Bob disconnect.
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Disconnected)
+        assertTrue(actionsAlice2.isEmpty())
+        assertIs<Offline>(alice2.state)
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Disconnected)
+        assertTrue(actionsBob2.isEmpty())
+        assertIs<Offline>(bob2.state)
+        // On reconnection, they re-send nonces for the current and next commitments.
+        val aliceInit = Init(alice.state.channelParams.localParams.features.initFeatures())
+        val bobInit = Init(bob.state.channelParams.localParams.features.initFeatures())
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.Connected(aliceInit, bobInit))
+        val channelReestablishAlice = actionsAlice3.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(fundingTxId, channelReestablishAlice.nextFundingTxId)
+        assertNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, fundingTxId)
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Connected(bobInit, aliceInit))
+        val channelReestablishBob = actionsBob3.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(fundingTxId, channelReestablishBob.nextFundingTxId)
+        assertNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, fundingTxId)
+        // Bob then re-sends tx_signatures.
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        assertIs<WaitForFundingSigned>(alice4.state)
+        assertNull(actionsAlice4.findOutgoingMessageOpt<CommitSig>())
+        assertNull(actionsAlice4.findOutgoingMessageOpt<TxSignatures>())
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        assertIs<WaitForFundingConfirmed>(bob4.state)
+        assertNull(actionsBob4.findOutgoingMessageOpt<CommitSig>())
+        val txSignaturesBob = actionsBob4.hasOutgoingMessage<TxSignatures>()
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(txSignaturesBob))
+        assertIs<WaitForFundingConfirmed>(alice5.state)
+        actionsAlice5.hasOutgoingMessage<TxSignatures>()
+    }
+
+    @Test
+    fun `recv Disconnected -- commit_sig received -- zero-conf`() {
+        val (alice, commitSigAlice, bob, commitSigBob) = init(zeroConf = true, bobUsePeerStorage = false)
+        val fundingTxId = alice.state.signingSession.fundingTxId
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob))
+        assertIs<WaitForFundingSigned>(alice1.state)
+        assertNull(actionsAlice1.findOutgoingMessageOpt<TxSignatures>())
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
+        assertIs<WaitForChannelReady>(bob1.state)
+        actionsBob1.hasOutgoingMessage<TxSignatures>()
+        val channelReadyBob = actionsBob1.hasOutgoingMessage<ChannelReady>()
+        assertNotNull(channelReadyBob.nextLocalNonce)
+        // Alice and Bob disconnect.
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Disconnected)
+        assertTrue(actionsAlice2.isEmpty())
+        assertIs<Offline>(alice2.state)
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Disconnected)
+        assertTrue(actionsBob2.isEmpty())
+        assertIs<Offline>(bob2.state)
+        // On reconnection, they re-send nonces for the current and next commitments.
+        val aliceInit = Init(alice.state.channelParams.localParams.features.initFeatures())
+        val bobInit = Init(bob.state.channelParams.localParams.features.initFeatures())
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.Connected(aliceInit, bobInit))
+        val channelReestablishAlice = actionsAlice3.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(fundingTxId, channelReestablishAlice.nextFundingTxId)
+        assertNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, fundingTxId)
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Connected(bobInit, aliceInit))
+        val channelReestablishBob = actionsBob3.findOutgoingMessage<ChannelReestablish>()
+        assertNull(channelReestablishBob.nextFundingTxId)
+        assertNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, fundingTxId)
+        // Bob then re-sends tx_signatures.
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        assertIs<WaitForFundingSigned>(alice4.state)
+        assertNull(actionsAlice4.findOutgoingMessageOpt<CommitSig>())
+        assertNull(actionsAlice4.findOutgoingMessageOpt<TxSignatures>())
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        assertIs<WaitForChannelReady>(bob4.state)
+        assertNull(actionsBob4.findOutgoingMessageOpt<CommitSig>())
+        val txSignaturesBob = actionsBob4.hasOutgoingMessage<TxSignatures>()
+        actionsBob4.hasOutgoingMessage<ChannelReady>().also { assertEquals(channelReadyBob.nextLocalNonce, it.nextLocalNonce) }
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(txSignaturesBob))
+        assertIs<WaitForChannelReady>(alice5.state)
+        actionsAlice5.hasOutgoingMessage<TxSignatures>()
+        actionsAlice5.hasOutgoingMessage<ChannelReady>().also { assertNotNull(it.nextLocalNonce) }
     }
 
     companion object {

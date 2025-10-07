@@ -227,11 +227,22 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     actions.addAll(htlcsToReprocess)
 
                                     // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
-                                    state.localShutdown?.let {
+                                    val (localCloseeNonce1, localShutdown1) = when (val shutdown = state.localShutdown) {
+                                        null -> Pair(null, null)
+                                        else -> Helpers.Closing.createShutdown(channelKeys, state.commitments.latest, shutdown.scriptPubKey)
+                                    }
+                                    localShutdown1?.let {
                                         logger.debug { "re-sending local shutdown" }
                                         actions.add(ChannelAction.Message.Send(it))
                                     }
-                                    Pair(state.copy(commitments = commitments1, remoteNextCommitNonces = cmd.message.nextCommitNonces, spliceStatus = spliceStatus1), actions)
+                                    val nextState = state.copy(
+                                        commitments = commitments1,
+                                        remoteNextCommitNonces = cmd.message.nextCommitNonces,
+                                        spliceStatus = spliceStatus1,
+                                        localCloseeNonce = localCloseeNonce1,
+                                        localShutdown = localShutdown1
+                                    )
+                                    Pair(nextState, actions)
                                 }
                             }
                         }
@@ -253,7 +264,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                         is Negotiating -> {
                             // BOLT 2: A node if it has sent a previous shutdown MUST retransmit shutdown.
                             val (localCloseeNonce, localShutdown) = Helpers.Closing.createShutdown(channelKeys, state.commitments.latest, state.localScript)
-                            val nextState = state.copy(remoteNextCommitNonces = cmd.message.nextCommitNonces, localCloseeNonce = localCloseeNonce)
+                            val nextState = state.copy(localCloseeNonce = localCloseeNonce)
                             Pair(nextState, listOf(ChannelAction.Message.Send(localShutdown)))
                         }
                         is Closing, is Closed, is WaitForRemotePublishFutureCommitment -> unhandled(cmd)
@@ -503,7 +514,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                 // they just sent a new commit_sig, we have received it but they didn't receive our revocation
                 val localPerCommitmentSecret = channelKeys.commitmentSecret(commitments.localCommitIndex - 1)
                 val localNextPerCommitmentPoint = channelKeys.commitmentPoint(commitments.localCommitIndex + 1)
-                val localCommitNonces = commitments.active.map { c ->
+                val localNextCommitNonces = commitments.active.map { c ->
                     val fundingKey = channelKeys.fundingKey(c.fundingTxIndex)
                     val nonce = NonceGenerator.verificationNonce(c.fundingTxId, fundingKey, c.remoteFundingPubkey, commitments.localCommitIndex + 1)
                     c.fundingTxId to nonce.publicNonce
@@ -512,7 +523,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                     channelId = commitments.channelId,
                     perCommitmentSecret = localPerCommitmentSecret,
                     nextPerCommitmentPoint = localNextPerCommitmentPoint,
-                    nextCommitNonces = localCommitNonces
+                    nextCommitNonces = localNextCommitNonces
                 )
                 checkRemoteCommit(remoteChannelReestablish, retransmitRevocation = revocation)
             } else if (commitments.localCommitIndex > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {

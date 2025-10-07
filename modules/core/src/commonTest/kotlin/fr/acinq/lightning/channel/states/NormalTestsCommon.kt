@@ -1,10 +1,12 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
+import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomBytes64
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -1071,6 +1073,47 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv RevokeAndAck -- missing nonce`() {
+        val (alice0, bob0) = reachNormal()
+        val fundingTxId = alice0.commitments.latest.fundingTxId
+        val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Commitment.Sign)
+        val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<CommitSig>()))
+        val rev = actionsBob2.findOutgoingMessage<RevokeAndAck>()
+        assertEquals(1, rev.nextCommitNonces.size)
+        assertNotNull(rev.nextCommitNonces[fundingTxId])
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(rev.copy(tlvStream = TlvStream(rev.tlvStream.records.filterNot { it is RevokeAndAckTlv.NextLocalNonces }.toSet()))))
+        assertIs<Closing>(alice3.state)
+        actionsAlice3.hasOutgoingMessage<Error>()
+    }
+
+    @Test
+    fun `recv RevokeAndAck -- invalid nonce`() {
+        val (alice0, bob0) = reachNormal()
+        val fundingTxId = alice0.commitments.latest.fundingTxId
+        val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Commitment.Sign)
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice2.findOutgoingMessage<CommitSig>()))
+        val rev = actionsBob2.findOutgoingMessage<RevokeAndAck>()
+        assertEquals(1, rev.nextCommitNonces.size)
+        assertNotNull(rev.nextCommitNonces[fundingTxId])
+        // Bob responds with an invalid nonce for its *next* commitment.
+        // This applies to the *next* commitment, there is no issue when finalizing the *current* commitment.
+        val invalidNonce = listOf(Pair(fundingTxId, IndividualNonce(randomBytes(66))))
+        val revInvalidNonce = rev.copy(tlvStream = TlvStream(rev.tlvStream.records.filterNot { it is RevokeAndAckTlv.NextLocalNonces }.toSet() + setOf(RevokeAndAckTlv.NextLocalNonces(invalidNonce))))
+        val (alice3, _) = alice2.process(ChannelCommand.MessageReceived(revInvalidNonce))
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Commitment.Sign)
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(actionsBob3.findOutgoingMessage<CommitSig>()))
+        val (bob4, _) = bob3.process(ChannelCommand.MessageReceived(actionsAlice4.findOutgoingMessage<RevokeAndAck>()))
+        // Alice will fail to sign the next commitment: Bob will need to reconnect and send valid nonces.
+        val (alice5, _) = addHtlc(50_000_000.msat, alice4, bob4).first
+        val (alice6, actionsAlice6) = alice5.process(ChannelCommand.Commitment.Sign)
+        assertEquals(alice5.state, alice6.state)
+        assertEquals(1, actionsAlice6.size)
+        actionsAlice6.find<ChannelAction.ProcessCmdRes.NotExecuted>().also { assertIs<InvalidCommitNonce>(it.t) }
+    }
+
+    @Test
     fun `recv RevokeAndAck -- unexpectedly`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, _) = addHtlc(50_000_000.msat, alice0, bob0).first
@@ -2085,7 +2128,61 @@ class NormalTestsCommon : LightningTestSuite() {
         assertTrue(addSettledFailList.all { it.result is ChannelAction.HtlcResult.Fail.Disconnected })
         assertEquals(htlc1.paymentHash, addSettledFailList.first().htlc.paymentHash)
         assertEquals(htlc2.paymentHash, addSettledFailList.last().htlc.paymentHash)
-        assertEquals(alice2.state, alice3.state.state)
+        assertEquals(alice2.state.copy(remoteNextCommitNonces = mapOf()), alice3.state.state)
+    }
+
+    @Test
+    fun `recv Disconnected -- with htlcs -- shutdown sent`() {
+        val (alice0, bob0) = reachNormal(bobUsePeerStorage = false)
+        val (nodes1, preimage, htlc) = addHtlc(30_000_000.msat, alice0, bob0)
+        val (alice1, bob1) = crossSign(nodes1.first, nodes1.second)
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, FeeratePerKw(1500.sat)))
+        val shutdown1 = actionsAlice2.hasOutgoingMessage<Shutdown>()
+        assertNotNull(shutdown1.closeeNonce)
+        // Alice and Bob disconnect: on reconnection, Alice will send a new shutdown message with a new random nonce.
+        val (alice3, _) = alice2.process(ChannelCommand.Disconnected)
+        assertIs<LNChannel<Offline>>(alice3)
+        val (bob2, _) = bob1.process(ChannelCommand.Disconnected)
+        assertIs<LNChannel<Offline>>(bob2)
+        val aliceInit = Init(alice0.commitments.channelParams.localParams.features.initFeatures())
+        val bobInit = Init(bob0.commitments.channelParams.localParams.features.initFeatures())
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.Connected(aliceInit, bobInit))
+        val channelReestablishAlice = actionsAlice4.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(1, channelReestablishAlice.nextCommitNonces.size)
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Connected(bobInit, aliceInit))
+        val channelReestablishBob = actionsBob3.findOutgoingMessage<ChannelReestablish>()
+        assertEquals(1, channelReestablishBob.nextCommitNonces.size)
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        val shutdown2 = actionsAlice5.hasOutgoingMessage<Shutdown>()
+        assertNotNull(shutdown2.closeeNonce)
+        assertNotEquals(shutdown1.closeeNonce, shutdown2.closeeNonce)
+        val (bob4, _) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(shutdown2))
+        assertIs<ShuttingDown>(bob5.state)
+        val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(actionsBob5.hasOutgoingMessage<Shutdown>()))
+        assertIs<ShuttingDown>(alice6.state)
+        // After exchanging shutdown, they settle the pending HTLC.
+        val (alice7, bob6) = fulfillHtlc(htlc.id, preimage, alice6, bob5)
+        val (bob7, actionsBob7) = bob6.process(ChannelCommand.Commitment.Sign)
+        val (alice8, actionsAlice8) = alice7.process(ChannelCommand.MessageReceived(actionsBob7.findOutgoingMessage<CommitSig>()))
+        val (alice9, actionsAlice9) = alice8.process(ChannelCommand.Commitment.Sign)
+        val (bob8, _) = bob7.process(ChannelCommand.MessageReceived(actionsAlice8.findOutgoingMessage<RevokeAndAck>()))
+        val (bob9, actionsBob9) = bob8.process(ChannelCommand.MessageReceived(actionsAlice9.findOutgoingMessage<CommitSig>()))
+        assertIs<Negotiating>(bob9.state)
+        val (alice10, actionsAlice10) = alice9.process(ChannelCommand.MessageReceived(actionsBob9.findOutgoingMessage<RevokeAndAck>()))
+        assertIs<Negotiating>(alice10.state)
+        // Once the pending HTLC is settled, they can exchange closing signatures.
+        val closingCompleteAlice = actionsAlice10.findOutgoingMessage<ClosingComplete>()
+        val (bob10, actionsBob10) = bob9.process(ChannelCommand.MessageReceived(closingCompleteAlice))
+        val (alice11, actionsAlice11) = alice10.process(ChannelCommand.MessageReceived(actionsBob10.findOutgoingMessage<ClosingSig>()))
+        actionsAlice11.hasPublishTx(Type.ClosingTx)
+        val (bob11, actionsBob11) = bob10.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, FeeratePerKw(2000.sat)))
+        val closingCompleteBob = actionsBob11.findOutgoingMessage<ClosingComplete>()
+        val (alice12, actionsAlice12) = alice11.process(ChannelCommand.MessageReceived(closingCompleteBob))
+        assertIs<Negotiating>(alice12.state)
+        val (bob12, actionsBob12) = bob11.process(ChannelCommand.MessageReceived(actionsAlice12.findOutgoingMessage<ClosingSig>()))
+        assertIs<Negotiating>(bob12.state)
+        actionsBob12.hasPublishTx(Type.ClosingTx)
     }
 
     @Test

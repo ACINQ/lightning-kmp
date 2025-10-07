@@ -11,7 +11,6 @@ import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.channel.LNChannel
 import fr.acinq.lightning.channel.findOutgoingMessage
 import fr.acinq.lightning.channel.states.Normal
-import fr.acinq.lightning.channel.states.PersistedChannelState
 import fr.acinq.lightning.channel.states.WaitForChannelReady
 import fr.acinq.lightning.channel.states.WaitForFundingConfirmed
 import fr.acinq.lightning.channel.states.WaitForFundingConfirmedTestsCommon
@@ -30,7 +29,7 @@ class CompatibilityTestsCommon {
     //@Test
     fun `generate data`() {
         // generate test data
-        val (alice, bob, fundingTx) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, fundingTx) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.SimpleTaprootChannels)
         println("funding_tx: ${Transaction.write(fundingTx).byteVector().toHex()}")
         val bin = EncryptedPeerStorage.from(TestConstants.Bob.nodeParams.nodePrivateKey, listOf(bob.state))
         println("wait_for_funding_confirmed: ${bin.data}")

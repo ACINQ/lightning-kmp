@@ -455,8 +455,16 @@ data class TxComplete(
     val commitNonces: TxCompleteTlv.CommitNonces? = tlvs.get<TxCompleteTlv.CommitNonces>()
     val fundingNonce: IndividualNonce? = tlvs.get<TxCompleteTlv.FundingInputNonce>()?.nonce
 
-    constructor(channelId: ByteVector32, commitNonce: IndividualNonce, nextCommitNonce: IndividualNonce, fundingNonce: IndividualNonce?, swapInNonces: List<IndividualNonce>)
-            : this(channelId, TlvStream(setOfNotNull(TxCompleteTlv.SwapInNonces(swapInNonces), TxCompleteTlv.CommitNonces(commitNonce, nextCommitNonce), fundingNonce?.let { TxCompleteTlv.FundingInputNonce(it) })))
+    constructor(channelId: ByteVector32, commitNonce: IndividualNonce, nextCommitNonce: IndividualNonce, fundingNonce: IndividualNonce?, swapInNonces: List<IndividualNonce>) : this(
+        channelId,
+        TlvStream(
+            setOfNotNull(
+                if (swapInNonces.isNotEmpty()) TxCompleteTlv.SwapInNonces(swapInNonces) else null,
+                TxCompleteTlv.CommitNonces(commitNonce, nextCommitNonce),
+                fundingNonce?.let { TxCompleteTlv.FundingInputNonce(it) },
+            ),
+        ),
+    )
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId.toByteArray(), out)

@@ -34,12 +34,12 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
     @Test
     fun `reach normal state`() {
-        reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        reachNormal()
     }
 
     @Test
     fun `correct values for availableForSend - availableForReceive -- success case`() {
-        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat, channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
 
         val a = 786_220_000.msat // initial balance alice
         val b = 200_000_000.msat // initial balance bob
@@ -125,7 +125,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
     @Test
     fun `correct values for availableForSend - availableForReceive -- failure case`() {
-        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat, channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
 
         val a = 786_220_000.msat // initial balance alice
         val b = 200_000_000.msat // initial balance bob
@@ -211,7 +211,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
     @Test
     fun `correct values for availableForSend - availableForReceive -- multiple htlcs`() {
-        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat, channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
 
         val a = 786_220_000.msat // initial balance alice
         val b = 200_000_000.msat // initial balance bob

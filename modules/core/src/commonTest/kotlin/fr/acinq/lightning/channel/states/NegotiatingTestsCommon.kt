@@ -1,7 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
-import fr.acinq.lightning.Lightning.randomBytes64
+import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
@@ -9,6 +9,7 @@ import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
+import fr.acinq.lightning.channel.ChannelAction.Blockchain.PublishTx.Type
 import fr.acinq.lightning.channel.TestsHelper.addHtlc
 import fr.acinq.lightning.channel.TestsHelper.crossSign
 import fr.acinq.lightning.channel.TestsHelper.fulfillHtlc
@@ -17,12 +18,14 @@ import fr.acinq.lightning.channel.TestsHelper.mutualCloseAlice
 import fr.acinq.lightning.channel.TestsHelper.mutualCloseBob
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.db.ChannelCloseOutgoingPayment.ChannelClosingType
+import fr.acinq.lightning.serialization.channel.Serialization
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.value
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlin.test.*
@@ -140,6 +143,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val closingTx1 = actionsAlice1.findPublishTxs().first()
         actionsAlice1.hasWatchConfirmed(closingTx1.txid)
         val closingSigAlice1 = actionsAlice1.hasOutgoingMessage<ClosingSig>()
+        assertNotNull(closingSigAlice1.nextCloseeNonce)
 
         // Bob updates his closing script before receiving Alice's closing_complete and closing_sig.
         val closingScript = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()
@@ -175,6 +179,8 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertTrue(closingTx2.txOut.any { it.publicKeyScript == closingScript })
         actionsAlice3.hasWatchConfirmed(closingTx2.txid)
         val closingSigAlice2 = actionsAlice3.findOutgoingMessage<ClosingSig>()
+        assertNotNull(closingSigAlice2.nextCloseeNonce)
+        assertNotEquals(closingSigAlice1.nextCloseeNonce, closingSigAlice2.nextCloseeNonce)
 
         // Bob receives Alice's closing_sig for his updated closing_complete.
         val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(closingSigAlice2))
@@ -224,7 +230,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val (_, actionsBob1) = bob.process(ChannelCommand.MessageReceived(closingComplete))
         val closingSig = actionsBob1.findOutgoingMessage<ClosingSig>()
 
-        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(closingSig.copy(tlvStream = TlvStream(ClosingSigTlv.CloserAndCloseeOutputs(randomBytes64())))))
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(closingSig.copy(tlvStream = TlvStream(ClosingSigTlv.CloserAndCloseeOutputsPartialSignature(randomBytes32())))))
         assertIs<Negotiating>(alice1.state)
         actionsAlice1.hasOutgoingMessage<Warning>()
     }
@@ -389,7 +395,7 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertNotNull(alice2.state.remoteCommitPublished)
         assertTrue(alice2.state.mutualClosePublished.isNotEmpty())
         actions2.has<ChannelAction.Storage.StoreState>()
-        val claimMain = actions2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimRemoteDelayedOutputTx)
+        val claimMain = actions2.hasPublishTx(Type.ClaimRemoteDelayedOutputTx)
         actions2.hasWatchConfirmed(bobCommitTx.txid)
         actions2.hasWatchOutputSpent(claimMain.txIn.first().outPoint)
         actions2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
@@ -422,8 +428,8 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertTrue(alice4.state.revokedCommitPublished.isNotEmpty())
         assertTrue(alice4.state.mutualClosePublished.isNotEmpty())
         actionsAlice4.has<ChannelAction.Storage.StoreState>()
-        val claimMain = actionsAlice4.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimRemoteDelayedOutputTx)
-        actionsAlice4.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.MainPenaltyTx)
+        val claimMain = actionsAlice4.hasPublishTx(Type.ClaimRemoteDelayedOutputTx)
+        actionsAlice4.hasPublishTx(Type.MainPenaltyTx)
         actionsAlice4.hasWatchConfirmed(revokedCommit.txid)
         actionsAlice4.hasWatchOutputSpent(claimMain.txIn.first().outPoint)
     }
@@ -456,6 +462,62 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         val commitTx = alice.signCommitTx()
         actions1.hasPublishTx(commitTx)
         actions1.hasWatchConfirmed(commitTx.txid)
+    }
+
+    @Test
+    fun `recv Restore`() = runSuspendTest {
+        val (alice, bob, fundingTxId) = reachNormal(bobUsePeerStorage = false)
+        val (alice1, bob1, closingTx1) = mutualCloseAlice(alice, bob, FeeratePerKw(750.sat))
+
+        val aliceState1 = Serialization.deserialize(Serialization.serialize(alice1.state)).value
+        val (alice2, actionsAlice2) = LNChannel(alice.ctx, WaitForInit).process(ChannelCommand.Init.Restore(aliceState1))
+        assertIs<Offline>(alice2.state)
+        actionsAlice2.hasWatchFundingSpent(fundingTxId)
+        val bobState1 = Serialization.deserialize(Serialization.serialize(bob1.state)).value
+        val (bob2, actionsBob2) = LNChannel(bob.ctx, WaitForInit).process(ChannelCommand.Init.Restore(bobState1))
+        assertIs<Offline>(bob2.state)
+        actionsBob2.hasWatchFundingSpent(fundingTxId)
+
+        // On reconnection, they re-send shutdown with a random nonce.
+        val aliceInit = Init(alice.commitments.channelParams.localParams.features.initFeatures())
+        val bobInit = Init(bob.commitments.channelParams.localParams.features.initFeatures())
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.Connected(aliceInit, bobInit))
+        val channelReestablishAlice = actionsAlice3.findOutgoingMessage<ChannelReestablish>()
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.Connected(bobInit, aliceInit))
+        val channelReestablishBob = actionsBob3.findOutgoingMessage<ChannelReestablish>()
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        assertIs<Negotiating>(alice4.state)
+        val shutdownAlice = actionsAlice4.hasOutgoingMessage<Shutdown>()
+        assertNotNull(shutdownAlice.closeeNonce)
+        assertNotEquals(alice1.state.localCloseeNonce?.publicNonce, shutdownAlice.closeeNonce)
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
+        assertIs<Negotiating>(bob4.state)
+        val shutdownBob = actionsBob4.hasOutgoingMessage<Shutdown>()
+        assertNotNull(shutdownBob.closeeNonce)
+        assertNotEquals(bob1.state.localCloseeNonce?.publicNonce, shutdownBob.closeeNonce)
+
+        // Alice and Bob can RBF the previous closing transaction.
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(shutdownBob))
+        assertTrue(actionsAlice5.isEmpty())
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(shutdownAlice))
+        assertTrue(actionsBob5.isEmpty())
+        val (alice6, actionsAlice6) = alice5.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, FeeratePerKw(1000.sat)))
+        val closingCompleteAlice = actionsAlice6.findOutgoingMessage<ClosingComplete>()
+        val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(closingCompleteAlice))
+        val closingSigBob = actionsBob6.findOutgoingMessage<ClosingSig>()
+        val (alice7, actionsAlice7) = alice6.process(ChannelCommand.MessageReceived(closingSigBob))
+        val closingTxAlice = actionsAlice7.hasPublishTx(Type.ClosingTx)
+        assertNotEquals(closingTx1.txid, closingTxAlice.txid)
+        val (bob7, actionsBob7) = bob6.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, FeeratePerKw(1200.sat)))
+        val closingCompleteBob = actionsBob7.findOutgoingMessage<ClosingComplete>()
+        val (alice8, actionsAlice8) = alice7.process(ChannelCommand.MessageReceived(closingCompleteBob))
+        assertIs<Negotiating>(alice8.state)
+        val closingSigAlice = actionsAlice8.findOutgoingMessage<ClosingSig>()
+        val (bob8, actionsBob8) = bob7.process(ChannelCommand.MessageReceived(closingSigAlice))
+        assertIs<Negotiating>(bob8.state)
+        val closingTxBob = actionsBob8.hasPublishTx(Type.ClosingTx)
+        assertNotEquals(closingTx1.txid, closingTxBob.txid)
+        assertNotEquals(closingTxAlice.txid, closingTxBob.txid)
     }
 
     companion object {
