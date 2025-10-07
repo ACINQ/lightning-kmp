@@ -29,18 +29,8 @@ import kotlin.test.*
 class ShutdownTestsCommon : LightningTestSuite() {
 
     @Test
-    fun `recv ChannelCommand_Htlc_Add`() {
-        val (_, bob) = init()
-        val add = ChannelCommand.Htlc.Add(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
-        val (bob1, actions1) = bob.process(add)
-        assertIs<LNChannel<ShuttingDown>>(bob1)
-        assertTrue(actions1.any { it is ChannelAction.ProcessCmdRes.AddFailed && it.error == ChannelUnavailable(bob.channelId) })
-        assertEquals(bob1.commitments.channelParams.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
-    }
-
-    @Test
     fun `recv ChannelCommand_Htlc_Add -- zero-reserve`() {
-        val (_, bob) = init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        val (_, bob) = init()
         val add = ChannelCommand.Htlc.Add(500000000.msat, r1, cltvExpiry = CltvExpiry(300000), TestConstants.emptyOnionPacket, UUID.randomUUID())
         val (bob1, actions1) = bob.process(add)
         assertIs<LNChannel<ShuttingDown>>(bob1)
@@ -277,7 +267,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val sig = actionsBob2.hasOutgoingMessage<CommitSig>()
         val (alice1, _) = alice0.process(ChannelCommand.MessageReceived(fulfill))
         assertIs<LNChannel<ShuttingDown>>(alice1)
-        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(sig.copy(signature = ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes))))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(sig.copy(tlvStream = TlvStream.empty())))
         assertIs<LNChannel<Closing>>(alice2)
         actionsAlice2.hasOutgoingMessage<Error>()
         assertNotNull(alice2.state.localCommitPublished)
@@ -357,12 +347,9 @@ class ShutdownTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CheckHtlcTimeout -- no htlc timed out`() {
         val (alice, _) = init()
-
-        run {
-            val (alice1, actions1) = alice.process(ChannelCommand.Commitment.CheckHtlcTimeout)
-            assertEquals(alice, alice1)
-            assertTrue(actions1.isEmpty())
-        }
+        val (alice1, actions1) = alice.process(ChannelCommand.Commitment.CheckHtlcTimeout)
+        assertEquals(alice, alice1)
+        assertTrue(actions1.isEmpty())
     }
 
     @Test
@@ -553,7 +540,7 @@ class ShutdownTestsCommon : LightningTestSuite() {
         val r2 = randomBytes32()
 
         fun init(
-            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
             currentBlockHeight: Int = TestConstants.defaultBlockHeight,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,

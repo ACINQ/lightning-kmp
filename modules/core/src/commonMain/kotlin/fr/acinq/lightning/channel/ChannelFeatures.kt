@@ -32,7 +32,7 @@ data class ChannelFeatures(val features: Set<Feature>) {
          * In addition to channel types features, the following features will be added to the permanent channel features if they
          * are supported by both peers.
          */
-        private val permanentChannelFeatures = setOf(Feature.DualFunding)
+        private val permanentChannelFeatures: Set<Feature> = setOf(Feature.DualFunding)
     }
 
 }
@@ -65,6 +65,12 @@ sealed class ChannelType {
             override val commitmentFormat: Transactions.CommitmentFormat get() = Transactions.CommitmentFormat.AnchorOutputs
         }
 
+        object SimpleTaprootChannels : SupportedChannelType() {
+            override val name: String get() = "simple_taproot_channel"
+            override val features: Set<Feature> get() = setOf(Feature.SimpleTaprootChannels, Feature.ZeroReserveChannels)
+            override val permanentChannelFeatures: Set<Feature> get() = setOf(Feature.ZeroReserveChannels)
+            override val commitmentFormat: Transactions.CommitmentFormat get() = Transactions.CommitmentFormat.SimpleTaprootChannels
+        }
     }
 
     data class UnsupportedChannelType(val featureBits: Features) : ChannelType() {
@@ -79,6 +85,7 @@ sealed class ChannelType {
         // NB: Bolt 2: features must exactly match in order to identify a channel type.
         fun fromFeatures(features: Features): ChannelType = when (features) {
             // @formatter:off
+            Features(Feature.SimpleTaprootChannels to FeatureSupport.Mandatory, Feature.ZeroReserveChannels to FeatureSupport.Mandatory) -> SupportedChannelType.SimpleTaprootChannels
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory, Feature.ZeroReserveChannels to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputsZeroReserve
             Features(Feature.StaticRemoteKey to FeatureSupport.Mandatory, Feature.AnchorOutputs to FeatureSupport.Mandatory) -> SupportedChannelType.AnchorOutputs
             else -> UnsupportedChannelType(features)

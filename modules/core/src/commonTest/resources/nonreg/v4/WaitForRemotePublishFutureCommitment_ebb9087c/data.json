@@ -121,7 +121,8 @@
                     },
                     "txId": "adf80ca3cdb8625fc144f8087766475abbf8331955825e597b2bca77169056c7",
                     "remoteSig": {
-                        "sig": "1d87fbb35b15229da1da1a4d10018e7b9b510b57ea41ee3e32d1b0fa72562bea4521bd19dac13089cacde07debb5950560b75a2a74ac9e45017babe136bdd719"
+                        "sig": "1d87fbb35b15229da1da1a4d10018e7b9b510b57ea41ee3e32d1b0fa72562bea4521bd19dac13089cacde07debb5950560b75a2a74ac9e45017babe136bdd719",
+                        "nonce": null
                     },
                     "htlcRemoteSigs": []
                 },

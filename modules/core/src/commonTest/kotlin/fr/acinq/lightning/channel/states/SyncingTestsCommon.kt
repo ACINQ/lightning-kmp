@@ -55,7 +55,7 @@ class SyncingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `reestablish channel with previous funding txs`() {
-        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init()
         val (alice1, bob1, fundingTx) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, walletAlice)
         assertNotEquals(previousFundingTx.txid, fundingTx.txid)
         val (alice2, bob2, channelReestablishAlice, channelReestablishBob0) = disconnectWithBackup(alice1, bob1)
@@ -63,13 +63,13 @@ class SyncingTestsCommon : LightningTestSuite() {
         assertNull(channelReestablishAlice.nextFundingTxId)
 
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
-        assertEquals(bob1, bob3)
+        assertEquals(bob1.commitments, bob3.commitments)
         assertEquals(1, actionsBob3.size)
         val channelReestablishBob = actionsBob3.hasOutgoingMessage<ChannelReestablish>()
         assertNull(channelReestablishBob.nextFundingTxId)
 
         val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(channelReestablishBob))
-        assertEquals(alice1, alice3)
+        assertEquals(alice1.commitments, alice3.commitments)
         assertTrue(actionsAlice3.isEmpty())
     }
 
@@ -350,7 +350,7 @@ class SyncingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelFundingDepthOk`() {
-        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init()
         val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()
         val (alice1, bob1, _) = disconnectWithBackup(alice, bob)
         assertIs<WaitForFundingConfirmed>(alice1.state.state)
@@ -375,7 +375,7 @@ class SyncingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelFundingDepthOk -- previous funding tx`() {
-        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init()
         val (alice1, bob1) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, walletAlice)
         val (alice2, bob2, _) = disconnectWithBackup(alice1, bob1)
         assertIs<WaitForFundingConfirmed>(alice2.state.state)

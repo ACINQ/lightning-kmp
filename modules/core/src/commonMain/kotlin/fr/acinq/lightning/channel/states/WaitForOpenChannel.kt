@@ -102,7 +102,17 @@ data class WaitForOpenChannel(
                                     Pair(Aborted, listOf(ChannelAction.Message.Send(Error(temporaryChannelId, ChannelFundingError(temporaryChannelId).message))))
                                 }
                                 is Either.Right -> {
-                                    val interactiveTxSession = InteractiveTxSession(staticParams.remoteNodeId, channelKeys, keyManager.swapInOnChainWallet, fundingParams, 0.msat, 0.msat, emptySet(), fundingContributions.value)
+                                    val interactiveTxSession = InteractiveTxSession(
+                                        staticParams.remoteNodeId,
+                                        channelKeys,
+                                        keyManager.swapInOnChainWallet,
+                                        fundingParams,
+                                        localCommitIndex = 0,
+                                        previousLocalBalance = 0.msat,
+                                        previousRemoteBalance = 0.msat,
+                                        localHtlcs = emptySet(),
+                                        fundingContributions = fundingContributions.value,
+                                    )
                                     val nextState = WaitForFundingCreated(
                                         replyTo,
                                         // If our peer asks us to pay the commit tx fees, we accept (only used in tests, as we're otherwise always the channel opener).

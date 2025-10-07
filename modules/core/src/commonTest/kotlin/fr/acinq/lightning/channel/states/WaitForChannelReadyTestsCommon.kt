@@ -21,7 +21,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- zero conf`() {
-        val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
+        val (alice, _, bob, _) = init(zeroConf = true)
         val txSigsAlice = getFundingSigs(alice)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(txSigsAlice))
         assertIs<WaitForChannelReady>(bob1.state)
@@ -32,7 +32,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures and restart -- zero conf`() {
-        val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
+        val (alice, _, bob, _) = init(zeroConf = true)
         val txSigsAlice = getFundingSigs(alice)
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(txSigsAlice))
         val fundingTx = actionsBob1.find<ChannelAction.Blockchain.PublishTx>().tx
@@ -53,7 +53,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- invalid`() {
-        val (alice, _, bob, _) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
+        val (alice, _, bob, _) = init(zeroConf = true)
         val invalidTxSigsAlice = getFundingSigs(alice).copy(tlvs = TlvStream.empty())
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(invalidTxSigsAlice))
         assertEquals(bob, bob1)
@@ -170,7 +170,7 @@ class WaitForChannelReadyTestsCommon : LightningTestSuite() {
         data class Fixture(val alice: LNChannel<WaitForChannelReady>, val channelReadyAlice: ChannelReady, val bob: LNChannel<WaitForChannelReady>, val channelReadyBob: ChannelReady)
 
         fun init(
-            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,
             bobUsePeerStorage: Boolean = true,

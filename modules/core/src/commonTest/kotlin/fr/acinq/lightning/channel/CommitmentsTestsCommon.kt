@@ -34,15 +34,15 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
     @Test
     fun `reach normal state`() {
-        reachNormal()
+        reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
     }
 
     @Test
     fun `correct values for availableForSend - availableForReceive -- success case`() {
-        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
+        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat, channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
 
-        val a = 774_660_000.msat // initial balance alice
-        val b = 190_000_000.msat // initial balance bob
+        val a = 786_220_000.msat // initial balance alice
+        val b = 200_000_000.msat // initial balance bob
         val p = 42_000_000.msat // a->b payment
         val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
 
@@ -65,7 +65,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc1.availableBalanceForSend(), b)
         assertEquals(bc1.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac2, commit1) = ac1.sendCommit(alice.channelKeys, logger).right!!
+        val (ac2, commit1) = ac1.sendCommit(alice.channelKeys, alice.state.remoteNextCommitNonces, logger).right!!
         assertEquals(ac2.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac2.availableBalanceForReceive(), b)
 
@@ -77,7 +77,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac3.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
-        val (bc3, commit2) = bc2.sendCommit(bob.channelKeys, logger).right!!
+        val (bc3, commit2) = bc2.sendCommit(bob.channelKeys, bob.state.remoteNextCommitNonces, logger).right!!
         assertEquals(bc3.availableBalanceForSend(), b)
         assertEquals(bc3.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -98,7 +98,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac5.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac5.availableBalanceForReceive(), b + p)
 
-        val (bc6, commit3) = bc5.sendCommit(bob.channelKeys, logger).right!!
+        val (bc6, commit3) = bc5.sendCommit(bob.channelKeys, revocation2.nextCommitNonces, logger).right!!
         assertEquals(bc6.availableBalanceForSend(), b + p)
         assertEquals(bc6.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -110,7 +110,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc7.availableBalanceForSend(), b + p)
         assertEquals(bc7.availableBalanceForReceive(), a - p)
 
-        val (ac7, commit4) = ac6.sendCommit(alice.channelKeys, logger).right!!
+        val (ac7, commit4) = ac6.sendCommit(alice.channelKeys, revocation1.nextCommitNonces, logger).right!!
         assertEquals(ac7.availableBalanceForSend(), a - p)
         assertEquals(ac7.availableBalanceForReceive(), b + p)
 
@@ -125,10 +125,10 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
     @Test
     fun `correct values for availableForSend - availableForReceive -- failure case`() {
-        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
+        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat, channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
 
-        val a = 774_660_000.msat // initial balance alice
-        val b = 190_000_000.msat // initial balance bob
+        val a = 786_220_000.msat // initial balance alice
+        val b = 200_000_000.msat // initial balance bob
         val p = 42_000_000.msat // a->b payment
         val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
 
@@ -151,7 +151,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc1.availableBalanceForSend(), b)
         assertEquals(bc1.availableBalanceForReceive(), a - p - htlcOutputFee)
 
-        val (ac2, commit1) = ac1.sendCommit(alice.channelKeys, logger).right!!
+        val (ac2, commit1) = ac1.sendCommit(alice.channelKeys, alice.state.remoteNextCommitNonces, logger).right!!
         assertEquals(ac2.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac2.availableBalanceForReceive(), b)
 
@@ -163,7 +163,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac3.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b)
 
-        val (bc3, commit2) = bc2.sendCommit(bob.channelKeys, logger).right!!
+        val (bc3, commit2) = bc2.sendCommit(bob.channelKeys, bob.state.remoteNextCommitNonces, logger).right!!
         assertEquals(bc3.availableBalanceForSend(), b)
         assertEquals(bc3.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -184,7 +184,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac5.availableBalanceForSend(), a - p - htlcOutputFee)
         assertEquals(ac5.availableBalanceForReceive(), b)
 
-        val (bc6, commit3) = bc5.sendCommit(bob.channelKeys, logger).right!!
+        val (bc6, commit3) = bc5.sendCommit(bob.channelKeys, revocation2.nextCommitNonces, logger).right!!
         assertEquals(bc6.availableBalanceForSend(), b)
         assertEquals(bc6.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -196,7 +196,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc7.availableBalanceForSend(), b)
         assertEquals(bc7.availableBalanceForReceive(), a)
 
-        val (ac7, commit4) = ac6.sendCommit(alice.channelKeys, logger).right!!
+        val (ac7, commit4) = ac6.sendCommit(alice.channelKeys, revocation1.nextCommitNonces, logger).right!!
         assertEquals(ac7.availableBalanceForSend(), a)
         assertEquals(ac7.availableBalanceForReceive(), b)
 
@@ -211,10 +211,10 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
 
     @Test
     fun `correct values for availableForSend - availableForReceive -- multiple htlcs`() {
-        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
+        val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat, channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
 
-        val a = 774_660_000.msat // initial balance alice
-        val b = 190_000_000.msat // initial balance bob
+        val a = 786_220_000.msat // initial balance alice
+        val b = 200_000_000.msat // initial balance bob
         val p1 = 18_000_000.msat // a->b payment
         val p2 = 20_000_000.msat // a->b payment
         val p3 = 40_000_000.msat // b->a payment
@@ -258,7 +258,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac3.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b - p3)
 
-        val (ac4, commit1) = ac3.sendCommit(alice.channelKeys, logger).right!!
+        val (ac4, commit1) = ac3.sendCommit(alice.channelKeys, alice.state.remoteNextCommitNonces, logger).right!!
         assertEquals(ac4.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac4.availableBalanceForReceive(), b - p3)
 
@@ -270,7 +270,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac5.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac5.availableBalanceForReceive(), b - p3)
 
-        val (bc5, commit2) = bc4.sendCommit(bob.channelKeys, logger).right!!
+        val (bc5, commit2) = bc4.sendCommit(bob.channelKeys, bob.state.remoteNextCommitNonces, logger).right!!
         assertEquals(bc5.availableBalanceForSend(), b - p3)
         assertEquals(bc5.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
@@ -282,7 +282,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc6.availableBalanceForSend(), b - p3)
         assertEquals(bc6.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-        val (ac7, commit3) = ac6.sendCommit(alice.channelKeys, logger).right!!
+        val (ac7, commit3) = ac6.sendCommit(alice.channelKeys, revocation1.nextCommitNonces, logger).right!!
         assertEquals(ac7.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
         assertEquals(ac7.availableBalanceForReceive(), b - p3)
 
@@ -321,7 +321,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc10.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc10.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // the fee for p3 disappears
 
-        val (ac12, commit4) = ac11.sendCommit(alice.channelKeys, logger).right!!
+        val (ac12, commit4) = ac11.sendCommit(alice.channelKeys, revocation3.nextCommitNonces, logger).right!!
         assertEquals(ac12.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
         assertEquals(ac12.availableBalanceForReceive(), b + p1 - p3)
 
@@ -333,7 +333,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac13.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
         assertEquals(ac13.availableBalanceForReceive(), b + p1 - p3)
 
-        val (bc12, commit5) = bc11.sendCommit(bob.channelKeys, logger).right!!
+        val (bc12, commit5) = bc11.sendCommit(bob.channelKeys, revocation2.nextCommitNonces, logger).right!!
         assertEquals(bc12.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc12.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
@@ -345,7 +345,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc13.availableBalanceForSend(), b + p1 - p3)
         assertEquals(bc13.availableBalanceForReceive(), a - p1 + p3)
 
-        val (ac15, commit6) = ac14.sendCommit(alice.channelKeys, logger).right!!
+        val (ac15, commit6) = ac14.sendCommit(alice.channelKeys, revocation4.nextCommitNonces, logger).right!!
         assertEquals(ac15.availableBalanceForSend(), a - p1 + p3)
         assertEquals(ac15.availableBalanceForReceive(), b + p1 - p3)
 
@@ -420,7 +420,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 ChannelParams(
                     channelId = randomBytes32(),
                     channelConfig = ChannelConfig.standard,
-                    channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.AnchorOutputs.features),
+                    channelFeatures = ChannelFeatures(ChannelType.SupportedChannelType.SimpleTaprootChannels.features),
                     localParams = localChannelParams,
                     remoteParams = remoteChannelParams,
                     channelFlags = ChannelFlags(announceChannel = false, nonInitiatorPaysCommitFees = false),
@@ -450,7 +450,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
                 inactive = emptyList(),
                 payments = mapOf(),
                 remoteNextCommitInfo = Either.Right(randomKey().publicKey()),
-                remotePerCommitmentSecrets = ShaChain.init,
+                remotePerCommitmentSecrets = ShaChain.init
             )
         }
     }

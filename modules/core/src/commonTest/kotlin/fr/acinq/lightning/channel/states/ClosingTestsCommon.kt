@@ -49,7 +49,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelFundingDepthOk`() {
-        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, _) = WaitForFundingConfirmedTestsCommon.init()
         val fundingTx = alice.state.latestFundingTx.sharedTx.tx.buildUnsignedTx()
         run {
             val (aliceClosing, _) = localClose(alice)
@@ -74,7 +74,7 @@ class ClosingTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelFundingDepthOk -- previous funding tx`() {
-        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init(ChannelType.SupportedChannelType.AnchorOutputs)
+        val (alice, bob, previousFundingTx, walletAlice) = WaitForFundingConfirmedTestsCommon.init()
         val (alice1, bob1, fundingTx) = WaitForFundingConfirmedTestsCommon.rbf(alice, bob, walletAlice)
         assertNotEquals(previousFundingTx.txid, fundingTx.txid)
         run {
@@ -644,7 +644,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigAlice))
             val revBob = actionsBob6.hasOutgoingMessage<RevokeAndAck>()
             val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(revBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), Commitments.alternativeFeerates.first())
             remoteClose(alternativeCommitTx, bob6)
         }
 
@@ -857,7 +857,7 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
             val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
             val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), commitSigBob.alternativeFeerateSigs.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), Commitments.alternativeFeerates.first())
             remoteClose(alternativeCommitTx, bob4)
         }
 

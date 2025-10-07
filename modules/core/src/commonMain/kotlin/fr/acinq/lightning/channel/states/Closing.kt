@@ -1,6 +1,8 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.Transaction
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.updated
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -42,6 +44,8 @@ data class Closing(
     val futureRemoteCommitPublished: RemoteCommitPublished? = null,
     val revokedCommitPublished: List<RevokedCommitPublished> = emptyList()
 ) : ChannelStateWithCommitments() {
+
+    override val remoteNextCommitNonces: Map<TxId, IndividualNonce> = mapOf()
 
     private val spendingTxs: List<Transaction> by lazy {
         mutualClosePublished.map { it.tx } + revokedCommitPublished.map { it.commitTx } + listOfNotNull(

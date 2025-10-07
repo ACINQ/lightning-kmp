@@ -125,7 +125,8 @@
                     },
                     "txId": "a3cac82072d07b57f3b2b4246fa4d3e2f903e627b7dd1ee6b4b2a571cc4e34d8",
                     "remoteSig": {
-                        "sig": "1d69ef3d27a4ee4ea170b827e40255df0d335573bd4a856e702f6beefefd0b273dd8c5438bf26f5888efbd8917f4b9d94bc1fd769cd7d5dc844f9bad4c0174f7"
+                        "sig": "1d69ef3d27a4ee4ea170b827e40255df0d335573bd4a856e702f6beefefd0b273dd8c5438bf26f5888efbd8917f4b9d94bc1fd769cd7d5dc844f9bad4c0174f7",
+                        "nonce": null
                     },
                     "htlcRemoteSigs": []
                 },
@@ -159,6 +160,7 @@
         },
         "remotePerCommitmentSecrets": "<redacted>"
     },
+    "remoteNextCommitNonces": {},
     "localScript": "001405e0104aa726e34ff5cd3a6320d05c0862b5b01c",
     "remoteScript": "001434947cfb2e8f6054ddf12daed4308cbe342580d1",
     "proposedClosingTxs": [
@@ -216,5 +218,8 @@
     "closeCommand": {
         "scriptPubKey": null,
         "feerate": 5000
-    }
+    },
+    "localCloseeNonce": null,
+    "remoteCloseeNonce": null,
+    "localCloserNonces": null
 }

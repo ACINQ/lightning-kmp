@@ -116,7 +116,7 @@ object Deserialization {
             0x01 -> RbfStatus.WaitingForSigs(readInteractiveTxSigningSession(emptySet(), localCommitParams, remoteCommitParams))
             else -> error("unknown discriminator $discriminator for class ${RbfStatus::class}")
         }
-        return WaitForFundingConfirmed(commitments, waitingSinceBlock, deferred, rbfStatus)
+        return WaitForFundingConfirmed(commitments, remoteNextCommitNonces = mapOf(), waitingSinceBlock, deferred, rbfStatus)
     }
 
     private fun Input.readWaitForFundingConfirmed(): WaitForFundingConfirmed {
@@ -130,11 +130,12 @@ object Deserialization {
             0x01 -> RbfStatus.WaitingForSigs(readInteractiveTxSigningSession(emptySet(), localCommitParams, remoteCommitParams))
             else -> error("unknown discriminator $discriminator for class ${RbfStatus::class}")
         }
-        return WaitForFundingConfirmed(commitments, waitingSinceBlock, deferred, rbfStatus)
+        return WaitForFundingConfirmed(commitments, remoteNextCommitNonces = mapOf(), waitingSinceBlock, deferred, rbfStatus)
     }
 
     private fun Input.readWaitForChannelReady() = WaitForChannelReady(
         commitments = readCommitments(),
+        remoteNextCommitNonces = mapOf(),
         shortChannelId = ShortChannelId(readNumber()),
         lastSent = readLightningMessage() as ChannelReady
     )
@@ -145,6 +146,7 @@ object Deserialization {
         val remoteCommitParams = commitments.latest.remoteCommitParams
         return Normal(
             commitments = commitments,
+            remoteNextCommitNonces = mapOf(),
             shortChannelId = ShortChannelId(readNumber()),
             channelUpdate = readLightningMessage() as ChannelUpdate,
             remoteChannelUpdate = readNullable { readLightningMessage() as ChannelUpdate },
@@ -156,6 +158,8 @@ object Deserialization {
             localShutdown = readNullable { readLightningMessage() as Shutdown },
             remoteShutdown = readNullable { readLightningMessage() as Shutdown },
             closeCommand = readNullable { readCloseCommand() },
+            localCloseeNonce = null,
+            localCloserNonces = null,
         )
     }
 
@@ -180,7 +184,19 @@ object Deserialization {
             0x01 -> SpliceStatus.WaitingForSigs(readInteractiveTxSigningSession(commitments.allHtlcs, localCommitParams, remoteCommitParams), readNullable { readLiquidityPurchase() }, readCollection { readChannelOrigin() }.toList())
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
         }
-        return Normal(commitments, shortChannelId, channelUpdate, remoteChannelUpdate, spliceStatus, localShutdown, remoteShutdown, closeCommand)
+        return Normal(
+            commitments,
+            remoteNextCommitNonces = mapOf(),
+            shortChannelId,
+            channelUpdate,
+            remoteChannelUpdate,
+            spliceStatus,
+            localShutdown,
+            remoteShutdown,
+            closeCommand,
+            localCloseeNonce = null,
+            localCloserNonces = null
+        )
     }
 
     private fun Input.readNormalLegacy(): Normal {
@@ -204,7 +220,19 @@ object Deserialization {
             0x01 -> SpliceStatus.WaitingForSigs(readInteractiveTxSigningSession(commitments.allHtlcs, localCommitParams, remoteCommitParams), null, readCollection { readChannelOrigin() }.toList())
             else -> error("unknown discriminator $discriminator for class ${SpliceStatus::class}")
         }
-        return Normal(commitments, shortChannelId, channelUpdate, remoteChannelUpdate, spliceStatus, localShutdown, remoteShutdown, closeCommand)
+        return Normal(
+            commitments,
+            remoteNextCommitNonces = mapOf(),
+            shortChannelId,
+            channelUpdate,
+            remoteChannelUpdate,
+            spliceStatus,
+            localShutdown,
+            remoteShutdown,
+            closeCommand,
+            localCloseeNonce = null,
+            localCloserNonces = null
+        )
     }
 
     private fun Input.readShuttingDownBeforeSimpleClose(): ShuttingDown {
@@ -218,14 +246,16 @@ object Deserialization {
             readNumber()
             ChannelCommand.Close.MutualClose(CompletableDeferred(), localShutdown.scriptPubKey, preferred)
         }
-        return ShuttingDown(commitments, localShutdown, remoteShutdown, closeCommand)
+        return ShuttingDown(commitments, remoteNextCommitNonces = mapOf(), localShutdown, remoteShutdown, closeCommand, localCloseeNonce = null)
     }
 
     private fun Input.readShuttingDown(): ShuttingDown = ShuttingDown(
         commitments = readCommitments(),
+        remoteNextCommitNonces = mapOf(),
         localShutdown = readLightningMessage() as Shutdown,
         remoteShutdown = readLightningMessage() as Shutdown,
         closeCommand = readNullable { readCloseCommand() },
+        localCloseeNonce = null
     )
 
     private fun Input.readNegotiatingBeforeSimpleClose(): Negotiating {
@@ -248,11 +278,24 @@ object Deserialization {
             readNumber()
             ChannelCommand.Close.MutualClose(CompletableDeferred(), localShutdown.scriptPubKey, preferred)
         }
-        return Negotiating(commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, listOf(), listOfNotNull(bestUnpublishedClosingTx), waitingSinceBlock = 0, closeCommand)
+        return Negotiating(
+            commitments,
+            remoteNextCommitNonces = mapOf(),
+            localShutdown.scriptPubKey,
+            remoteShutdown.scriptPubKey,
+            listOf(),
+            listOfNotNull(bestUnpublishedClosingTx),
+            waitingSinceBlock = 0,
+            closeCommand,
+            localCloseeNonce = null,
+            remoteCloseeNonce = null,
+            localCloserNonces = null
+        )
     }
 
     private fun Input.readNegotiating(): Negotiating = Negotiating(
         commitments = readCommitments(),
+        remoteNextCommitNonces = mapOf(),
         localScript = readDelimitedByteArray().byteVector(),
         remoteScript = readDelimitedByteArray().byteVector(),
         proposedClosingTxs = readCollection {
@@ -265,6 +308,9 @@ object Deserialization {
         publishedClosingTxs = readCollection { readClosingTx() }.toList(),
         waitingSinceBlock = readNumber(),
         closeCommand = readNullable { readCloseCommand() },
+        localCloseeNonce = null,
+        remoteCloseeNonce = null,
+        localCloserNonces = null
     )
 
     private fun Input.readClosing(): Closing = Closing(
@@ -338,7 +384,7 @@ object Deserialization {
 
     private fun Input.readWaitForRemotePublishFutureCommitment(): WaitForRemotePublishFutureCommitment = WaitForRemotePublishFutureCommitment(
         commitments = readCommitments(),
-        remoteChannelReestablish = readLightningMessage() as ChannelReestablish
+        remoteChannelReestablish = readLightningMessage() as ChannelReestablish,
     )
 
     private fun Input.readClosed(): Closed = Closed(
@@ -633,7 +679,7 @@ object Deserialization {
 
     private fun Input.readInteractiveTxSigningSession(htlcs: Set<DirectedHtlc>, localCommitParams: CommitParams, remoteCommitParams: CommitParams): InteractiveTxSigningSession {
         val fundingParams = readInteractiveTxParams()
-        val fundingTxIndex = readNumber()
+        readNumber() // the fundingTxIndex was explicitly encoded, even though it is already in the fundingParams
         val fundingTx = readSignedSharedTransaction() as PartiallySignedSharedTransaction
         val (localCommit, remoteCommit) = when (val discriminator = read()) {
             0 -> Pair(Either.Left(readUnsignedLocalCommitWithHtlcs()), readRemoteCommitWithHtlcs())
@@ -650,7 +696,7 @@ object Deserialization {
             5 -> Pair(Either.Right(readLocalCommitWithoutHtlcs(htlcs, fundingParams.remoteFundingPubkey).second), readRemoteCommitWithoutHtlcs(htlcs))
             else -> error("unknown discriminator $discriminator for class ${InteractiveTxSigningSession::class}")
         }
-        return InteractiveTxSigningSession(fundingParams, fundingTxIndex, fundingTx, localCommitParams, localCommit, remoteCommitParams, remoteCommit)
+        return InteractiveTxSigningSession(fundingParams, fundingTx, localCommitParams, localCommit, remoteCommitParams, remoteCommit, null)
     }
 
     private fun Input.readChannelOrigin(): Origin = when (val discriminator = read()) {

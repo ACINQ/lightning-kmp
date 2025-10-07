@@ -1,5 +1,7 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
 import fr.acinq.lightning.ShortChannelId
@@ -13,8 +15,9 @@ import fr.acinq.lightning.wire.*
 /** The channel funding transaction was confirmed, we exchange funding_locked messages. */
 data class WaitForChannelReady(
     override val commitments: Commitments,
+    override val remoteNextCommitNonces: Map<TxId, IndividualNonce>,
     val shortChannelId: ShortChannelId,
-    val lastSent: ChannelReady
+    val lastSent: ChannelReady,
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -72,8 +75,13 @@ data class WaitForChannelReady(
                         commitments.latest.fundingAmount.toMilliSatoshi(),
                         enable = Helpers.aboveReserve(commitments)
                     )
+                    val remoteNextCommitNonces1 = when (val nextCommitNonce = cmd.message.nextLocalNonce) {
+                        null -> remoteNextCommitNonces
+                        else -> remoteNextCommitNonces + mapOf(commitments.latest.fundingTxId to nextCommitNonce)
+                    }
                     val nextState = Normal(
                         commitments,
+                        remoteNextCommitNonces1,
                         shortChannelId,
                         initialChannelUpdate,
                         null,
@@ -81,6 +89,8 @@ data class WaitForChannelReady(
                         null,
                         null,
                         null,
+                        localCloseeNonce = null,
+                        localCloserNonces = null
                     )
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),

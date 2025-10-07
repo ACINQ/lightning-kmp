@@ -1,10 +1,12 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.SensitiveTaskEvents
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpent
@@ -13,13 +15,18 @@ import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.crypto.ChannelKeys
 import fr.acinq.lightning.crypto.KeyManager
+import fr.acinq.lightning.crypto.NonceGenerator
 import fr.acinq.lightning.db.ChannelCloseOutgoingPayment.ChannelClosingType
 import fr.acinq.lightning.logging.LoggingContext
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
-import fr.acinq.lightning.wire.*
+import fr.acinq.lightning.wire.ChannelReady
+import fr.acinq.lightning.wire.ChannelReestablish
+import fr.acinq.lightning.wire.ChannelUpdate
+import fr.acinq.lightning.wire.Error
+import fr.acinq.lightning.wire.Shutdown
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -292,26 +299,43 @@ sealed class PersistedChannelState : ChannelState() {
     internal fun ChannelContext.createChannelReestablish(): ChannelReestablish = when (val state = this@PersistedChannelState) {
         is WaitForFundingSigned -> {
             val myFirstPerCommitmentPoint = channelKeys().commitmentPoint(0)
+            val nextFundingTxId = state.signingSession.fundingTxId
+            val (currentCommitNonce, nextCommitNonce) = when (state.signingSession.fundingParams.commitmentFormat) {
+                Transactions.CommitmentFormat.AnchorOutputs -> Pair(null, null)
+                Transactions.CommitmentFormat.SimpleTaprootChannels -> {
+                    val localFundingKey = channelKeys().fundingKey(0)
+                    val remoteFundingPubKey = state.signingSession.fundingParams.remoteFundingPubkey
+                    val currentCommitNonce = when (state.signingSession.localCommit) {
+                        is Either.Left -> NonceGenerator.verificationNonce(nextFundingTxId, localFundingKey, remoteFundingPubKey, 0)
+                        is Either.Right -> null
+                    }
+                    val nextCommitNonce = NonceGenerator.verificationNonce(nextFundingTxId, localFundingKey, remoteFundingPubKey, 1)
+                    Pair(currentCommitNonce?.publicNonce, nextCommitNonce.publicNonce)
+                }
+            }
             ChannelReestablish(
                 channelId = channelId,
-                nextLocalCommitmentNumber = state.signingSession.reconnectNextLocalCommitmentNumber,
+                nextLocalCommitmentNumber = state.signingSession.nextLocalCommitmentNumber,
                 nextRemoteRevocationNumber = 0,
                 yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
                 myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
-                TlvStream(ChannelReestablishTlv.NextFunding(state.signingSession.fundingTx.txId))
+                nextCommitNonces = nextCommitNonce?.let { listOf(nextFundingTxId to it) } ?: listOf(),
+                nextFundingTxId = nextFundingTxId,
+                currentCommitNonce = currentCommitNonce
             )
         }
         is ChannelStateWithCommitments -> {
+            val channelKeys = channelKeys()
             val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
-            val myCurrentPerCommitmentPoint = channelKeys().commitmentPoint(state.commitments.localCommitIndex)
+            val myCurrentPerCommitmentPoint = channelKeys.commitmentPoint(state.commitments.localCommitIndex)
             // If we disconnected while signing a funding transaction, we may need our peer to retransmit their commit_sig.
             val nextLocalCommitmentNumber = when (state) {
                 is WaitForFundingConfirmed -> when (state.rbfStatus) {
-                    is RbfStatus.WaitingForSigs -> state.rbfStatus.session.reconnectNextLocalCommitmentNumber
+                    is RbfStatus.WaitingForSigs -> state.rbfStatus.session.nextLocalCommitmentNumber
                     else -> state.commitments.localCommitIndex + 1
                 }
                 is Normal -> when (state.spliceStatus) {
-                    is SpliceStatus.WaitingForSigs -> state.spliceStatus.session.reconnectNextLocalCommitmentNumber
+                    is SpliceStatus.WaitingForSigs -> state.spliceStatus.session.nextLocalCommitmentNumber
                     else -> state.commitments.localCommitIndex + 1
                 }
                 else -> state.commitments.localCommitIndex + 1
@@ -322,14 +346,43 @@ sealed class PersistedChannelState : ChannelState() {
                 is Normal -> state.getUnsignedFundingTxId()
                 else -> null
             }
-            val tlvs: TlvStream<ChannelReestablishTlv> = unsignedFundingTxId?.let { TlvStream(ChannelReestablishTlv.NextFunding(it)) } ?: TlvStream.empty()
+            // We send our verification nonces for all active commitments.
+            val nextCommitNonces = state.commitments.active.mapNotNull { c ->
+                when (c.commitmentFormat) {
+                    Transactions.CommitmentFormat.AnchorOutputs -> null
+                    Transactions.CommitmentFormat.SimpleTaprootChannels -> {
+                        val localFundingKey = channelKeys.fundingKey(c.fundingTxIndex)
+                        val localCommitNonce = NonceGenerator.verificationNonce(c.fundingTxId, localFundingKey, c.remoteFundingPubkey, c.localCommit.index + 1)
+                        c.fundingTxId to localCommitNonce.publicNonce
+                    }
+                }
+            }
+            // If an interactive-tx session hasn't been fully signed, we also need to include the corresponding nonces.
+            val (interactiveTxCurrentCommitNonce, interactiveTxNextCommitNonce) = run {
+                val signingSession = when {
+                    state is WaitForFundingConfirmed && state.rbfStatus is RbfStatus.WaitingForSigs -> state.rbfStatus.session
+                    state is Normal && state.spliceStatus is SpliceStatus.WaitingForSigs -> state.spliceStatus.session
+                    else -> null
+                }
+                when (signingSession?.fundingParams?.commitmentFormat) {
+                    null -> Pair(null, null)
+                    Transactions.CommitmentFormat.AnchorOutputs -> Pair(null, null)
+                    Transactions.CommitmentFormat.SimpleTaprootChannels -> {
+                        val currentCommitNonce = signingSession.currentCommitNonce(channelKeys)?.publicNonce
+                        val nextCommitNonce = signingSession.nextCommitNonce(channelKeys).publicNonce
+                        Pair(currentCommitNonce, signingSession.fundingTxId to nextCommitNonce)
+                    }
+                }
+            }
             ChannelReestablish(
                 channelId = channelId,
                 nextLocalCommitmentNumber = nextLocalCommitmentNumber,
                 nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
                 yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                 myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
-                tlvStream = tlvs
+                nextCommitNonces = nextCommitNonces + listOfNotNull(interactiveTxNextCommitNonce),
+                nextFundingTxId = unsignedFundingTxId,
+                currentCommitNonce = interactiveTxCurrentCommitNonce,
             )
         }
     }
@@ -341,6 +394,8 @@ sealed class PersistedChannelState : ChannelState() {
 
 sealed class ChannelStateWithCommitments : PersistedChannelState() {
     abstract val commitments: Commitments
+    // Remote nonces that must be used when signing the next remote commitment transaction (one per active commitment).
+    abstract val remoteNextCommitNonces: Map<TxId, IndividualNonce>
     override val channelId: ByteVector32 get() = commitments.channelId
     val isChannelOpener: Boolean get() = commitments.channelParams.localParams.isChannelOpener
     val paysCommitTxFees: Boolean get() = commitments.channelParams.localParams.paysCommitTxFees
@@ -365,6 +420,14 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                 Triple(commitments1, commitment, actions)
             }
         }
+    }
+
+    internal fun ChannelContext.createChannelReady(): ChannelReady {
+        val localFundingKey = channelKeys().fundingKey(fundingTxIndex = 0)
+        val remoteFundingKey = commitments.latest.remoteFundingPubkey
+        val nextPerCommitmentPoint = channelKeys().commitmentPoint(1)
+        val nextCommitNonce = NonceGenerator.verificationNonce(commitments.latest.fundingTxId, localFundingKey, remoteFundingKey, commitIndex = 1)
+        return ChannelReady(channelId, nextPerCommitmentPoint, ShortChannelId.peerId(staticParams.nodeParams.nodeId), nextCommitNonce.publicNonce)
     }
 
     /**
@@ -395,32 +458,72 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     internal fun ChannelContext.startClosingNegotiation(
         cmd: ChannelCommand.Close.MutualClose?,
         commitments: Commitments,
+        remoteNextCommitNonces: Map<TxId, IndividualNonce>,
         localShutdown: Shutdown,
+        localCloseeNonce: Transactions.LocalNonce?,
         remoteShutdown: Shutdown,
-        actions: List<ChannelAction>
+        actions: List<ChannelAction>,
     ): Pair<Negotiating, List<ChannelAction>> {
         val localScript = localShutdown.scriptPubKey
         val remoteScript = remoteShutdown.scriptPubKey
+        val remoteCloseeNonce = remoteShutdown.closeeNonce
         val currentHeight = currentBlockHeight.toLong()
         return when (cmd) {
             null -> {
                 logger.info { "mutual close was initiated by our peer, waiting for remote closing_complete" }
-                val nextState = Negotiating(commitments, localScript, remoteScript, listOf(), listOf(), currentHeight, cmd)
+                val nextState = Negotiating(
+                    commitments,
+                    remoteNextCommitNonces,
+                    localScript,
+                    remoteScript,
+                    listOf(),
+                    listOf(),
+                    currentHeight,
+                    cmd,
+                    localCloseeNonce,
+                    remoteCloseeNonce,
+                    localCloserNonces = null
+                )
                 val actions1 = listOf(ChannelAction.Storage.StoreState(nextState))
                 Pair(nextState, actions + actions1)
             }
             else -> {
-                when (val closingResult = Helpers.Closing.makeClosingTxs(channelKeys(), commitments.latest, localScript, remoteScript, cmd.feerate, currentHeight)) {
+                when (val closingResult = Helpers.Closing.makeClosingTxs(channelKeys(), commitments.latest, localScript, remoteScript, cmd.feerate, currentHeight, remoteCloseeNonce)) {
                     is Either.Left -> {
                         logger.warning { "cannot create local closing txs, waiting for remote closing_complete: ${closingResult.value.message}" }
                         cmd.replyTo.complete(ChannelCloseResponse.Failure.Unknown(closingResult.value))
-                        val nextState = Negotiating(commitments, localScript, remoteScript, listOf(), listOf(), currentHeight, cmd)
+                        val nextState = Negotiating(
+                            commitments,
+                            remoteNextCommitNonces,
+                            localScript,
+                            remoteScript,
+                            listOf(),
+                            listOf(),
+                            currentHeight,
+                            cmd,
+                            localCloseeNonce,
+                            remoteCloseeNonce,
+                            localCloserNonces = null
+                        )
                         val actions1 = listOf(ChannelAction.Storage.StoreState(nextState))
                         Pair(nextState, actions + actions1)
                     }
                     is Either.Right -> {
-                        val (closingTxs, closingComplete) = closingResult.value
-                        val nextState = Negotiating(commitments, localScript, remoteScript, listOf(closingTxs), listOf(), currentHeight, cmd)
+                        val (closingTxs, closingComplete, localCloserNonces) = closingResult.value
+                        val nextState =
+                            Negotiating(
+                                commitments,
+                                remoteNextCommitNonces,
+                                localScript,
+                                remoteScript,
+                                listOf(closingTxs),
+                                listOf(),
+                                currentHeight,
+                                cmd,
+                                localCloseeNonce,
+                                remoteCloseeNonce,
+                                localCloserNonces
+                            )
                         val actions1 = listOf(
                             ChannelAction.Storage.StoreState(nextState),
                             ChannelAction.Message.Send(closingComplete),

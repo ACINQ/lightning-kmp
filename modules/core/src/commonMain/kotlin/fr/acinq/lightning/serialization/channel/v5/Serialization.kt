@@ -415,7 +415,6 @@ object Serialization {
 
     private fun Output.writeInteractiveTxSigningSession(s: InteractiveTxSigningSession) = s.run {
         writeInteractiveTxParams(fundingParams)
-        writeNumber(s.fundingTxIndex)
         writeSignedSharedTransaction(fundingTx)
         writeCommitParams(localCommitParams)
         when (localCommit) {
@@ -588,12 +587,18 @@ object Serialization {
 
     private fun Output.writeCommitmentFormat(o: Transactions.CommitmentFormat) = when (o) {
         Transactions.CommitmentFormat.AnchorOutputs -> write(0x00)
+        Transactions.CommitmentFormat.SimpleTaprootChannels -> write(0x01)
     }
 
     private fun Output.writeChannelSpendSignature(sig: ChannelSpendSignature) = when (sig) {
         is ChannelSpendSignature.IndividualSignature -> {
             write(0x00)
             writeByteVector64(sig.sig)
+        }
+        is ChannelSpendSignature.PartialSignatureWithNonce -> {
+            write(0x01)
+            writeByteVector32(sig.partialSig)
+            write(sig.nonce.toByteArray())
         }
     }
 

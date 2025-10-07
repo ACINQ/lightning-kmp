@@ -6,10 +6,7 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.channel.*
-import fr.acinq.lightning.wire.ChannelReady
-import fr.acinq.lightning.wire.ChannelReadyTlv
 import fr.acinq.lightning.wire.Error
-import fr.acinq.lightning.wire.TlvStream
 
 data class Offline(val state: PersistedChannelState) : ChannelState() {
 
@@ -66,10 +63,9 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                                     val nextState = when (state) {
                                         is WaitForFundingConfirmed -> {
                                             logger.info { "was confirmed while offline at blockHeight=${watch.blockHeight} txIndex=${watch.txIndex} with funding txid=${watch.tx.txid}" }
-                                            val nextPerCommitmentPoint = commitments1.channelParams.localParams.channelKeys(keyManager).commitmentPoint(1)
-                                            val channelReady = ChannelReady(channelId, nextPerCommitmentPoint, TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId.peerId(staticParams.nodeParams.nodeId))))
+                                            val channelReady = state.run { createChannelReady() }
                                             val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.fundingInput.index.toInt())
-                                            WaitForChannelReady(commitments1, shortChannelId, channelReady)
+                                            WaitForChannelReady(commitments1, mapOf(), shortChannelId, channelReady)
                                         }
                                         else -> state
                                     }

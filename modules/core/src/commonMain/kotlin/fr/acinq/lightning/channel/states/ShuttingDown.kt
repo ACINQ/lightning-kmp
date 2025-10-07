@@ -1,5 +1,7 @@
 package fr.acinq.lightning.channel.states
 
+import fr.acinq.bitcoin.TxId
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
@@ -9,9 +11,11 @@ import fr.acinq.lightning.wire.*
 
 data class ShuttingDown(
     override val commitments: Commitments,
+    override val remoteNextCommitNonces: Map<TxId, IndividualNonce>,
     val localShutdown: Shutdown,
     val remoteShutdown: Shutdown,
     val closeCommand: ChannelCommand.Close.MutualClose?,
+    val localCloseeNonce: Transactions.LocalNonce?
 ) : ChannelStateWithCommitments() {
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
@@ -44,7 +48,15 @@ data class ShuttingDown(
                         is Either.Right -> {
                             val (commitments1, revocation) = result.value
                             when {
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments1, localShutdown, remoteShutdown, listOf(ChannelAction.Message.Send(revocation)))
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
+                                    closeCommand,
+                                    commitments1,
+                                    remoteNextCommitNonces,
+                                    localShutdown,
+                                    localCloseeNonce,
+                                    remoteShutdown,
+                                    listOf(ChannelAction.Message.Send(revocation)),
+                                )
                                 else -> {
                                     val nextState = this@ShuttingDown.copy(commitments = commitments1)
                                     val actions = buildList {
@@ -65,9 +77,17 @@ data class ShuttingDown(
                         is Either.Right -> {
                             val (commitments1, actions) = result.value
                             when {
-                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(closeCommand, commitments1, localShutdown, remoteShutdown, actions)
+                                commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
+                                    closeCommand,
+                                    commitments1,
+                                    remoteNextCommitNonces,
+                                    localShutdown,
+                                    localCloseeNonce,
+                                    remoteShutdown,
+                                    actions,
+                                )
                                 else -> {
-                                    val nextState = this@ShuttingDown.copy(commitments = commitments1)
+                                    val nextState = this@ShuttingDown.copy(commitments = commitments1, remoteNextCommitNonces = cmd.message.nextCommitNonces)
                                     val actions1 = buildList {
                                         addAll(actions)
                                         add(ChannelAction.Storage.StoreState(nextState))
@@ -87,7 +107,7 @@ data class ShuttingDown(
                             Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))
                         } else {
                             // This is a retransmission of their previous shutdown, we can ignore it.
-                            Pair(this@ShuttingDown, listOf())
+                            Pair(this@ShuttingDown.copy(remoteShutdown = cmd.message), listOf())
                         }
                     }
                     is Error -> {
@@ -109,7 +129,7 @@ data class ShuttingDown(
                     logger.debug { "already in the process of signing, will sign again as soon as possible" }
                     Pair(this@ShuttingDown, listOf())
                 } else {
-                    when (val result = commitments.sendCommit(channelKeys(), logger)) {
+                    when (val result = commitments.sendCommit(channelKeys(), remoteNextCommitNonces, logger)) {
                         is Either.Left -> handleCommandError(cmd, result.value)
                         is Either.Right -> {
                             val commitments1 = result.value.first

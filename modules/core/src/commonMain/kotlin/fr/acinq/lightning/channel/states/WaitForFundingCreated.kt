@@ -63,7 +63,6 @@ data class WaitForFundingCreated(
                                 localCommitParams,
                                 remoteCommitParams,
                                 interactiveTxSession.fundingParams,
-                                fundingTxIndex = 0,
                                 interactiveTxAction.sharedTx,
                                 liquidityPurchase,
                                 localCommitmentIndex = 0,
@@ -98,7 +97,7 @@ data class WaitForFundingCreated(
                                         session,
                                         remoteSecondPerCommitmentPoint,
                                         liquidityPurchase,
-                                        channelOrigin
+                                        channelOrigin,
                                     )
                                     val actions = buildList {
                                         interactiveTxAction.txComplete?.let { add(ChannelAction.Message.Send(it)) }

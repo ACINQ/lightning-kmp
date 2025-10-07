@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.utils.Either
+import fr.acinq.bitcoin.utils.flatMap
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -106,6 +107,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 assertTrue(actual <= expected + 2, "actual=$actual, expected=$expected")
                 assertTrue(actual >= expected - 2, "actual=$actual, expected=$expected")
             }
+            Transactions.CommitmentFormat.SimpleTaprootChannels -> assertEquals(expected, actual)
         }
     }
 
@@ -147,6 +149,9 @@ class TransactionsTestsCommon : LightningTestSuite() {
             toLocal = 400.mbtc.toMilliSatoshi(),
             toRemote = 300.mbtc.toMilliSatoshi()
         )
+        val (secretLocalNonce, publicLocalNonce) = Musig2.generateNonce(randomBytes32(), Either.Left(localFundingPriv), listOf(localFundingPriv.publicKey()), null, null)
+        val (secretRemoteNonce, publicRemoteNonce) = Musig2.generateNonce(randomBytes32(), Either.Left(remoteFundingPriv), listOf(remoteFundingPriv.publicKey()), null, null)
+        val publicNonces = listOf(publicLocalNonce, publicRemoteNonce)
 
         val commitTxNumber = 0x404142434445L
         val commitTxOutputs = Transactions.makeCommitTxOutputs(localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, commitmentFormat, spec)
@@ -161,6 +166,11 @@ class TransactionsTestsCommon : LightningTestSuite() {
                     assertFalse(txInfo.checkRemoteSig(localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), invalidRemoteSig))
                     txInfo.aggregateSigs(localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
                 }
+                Transactions.CommitmentFormat.SimpleTaprootChannels -> {
+                    val localPartialSig = txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey(), mapOf(), Transactions.LocalNonce(secretLocalNonce, publicLocalNonce), publicNonces).right!!
+                    val remotePartialSig = txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey(), mapOf(), Transactions.LocalNonce(secretRemoteNonce, publicRemoteNonce), publicNonces).right!!
+                    txInfo.aggregateSigs(localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localPartialSig, remotePartialSig, mapOf()).right!!
+                }
             }
             Transaction.correctlySpends(commitTx, listOf(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             // We check the expected weight of the commit input:
@@ -171,7 +181,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val htlcSuccessTxs = htlcTxs.filterIsInstance<Transactions.HtlcSuccessTx>()
             val htlcTimeoutTxs = htlcTxs.filterIsInstance<Transactions.HtlcTimeoutTx>()
             when (commitmentFormat) {
-                Transactions.CommitmentFormat.AnchorOutputs -> {
+                Transactions.CommitmentFormat.AnchorOutputs, Transactions.CommitmentFormat.SimpleTaprootChannels -> {
                     assertEquals(5, htlcTxs.size)
                     assertEquals(mapOf(0L to 300L, 1L to 310L, 2L to 310L, 3L to 295L, 4L to 300L), expiries)
                     assertEquals(2, htlcTimeoutTxs.size)
@@ -213,7 +223,12 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 Transaction.correctlySpends(signedTx, listOf(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
                 // local detects when remote doesn't use the right sighash flags
                 val invalidSighash = when (commitmentFormat) {
-                    Transactions.CommitmentFormat.AnchorOutputs -> listOf(SigHash.SIGHASH_ALL, SigHash.SIGHASH_ALL or SigHash.SIGHASH_ANYONECANPAY, SigHash.SIGHASH_SINGLE, SigHash.SIGHASH_NONE)
+                    Transactions.CommitmentFormat.AnchorOutputs, Transactions.CommitmentFormat.SimpleTaprootChannels -> listOf(
+                        SigHash.SIGHASH_ALL,
+                        SigHash.SIGHASH_ALL or SigHash.SIGHASH_ANYONECANPAY,
+                        SigHash.SIGHASH_SINGLE,
+                        SigHash.SIGHASH_NONE
+                    )
                 }
                 invalidSighash.forEach { sighash ->
                     val invalidRemoteSig = htlcTimeoutTx.sign(remoteKeys.ourHtlcKey, sighash, htlcTimeoutTx.redeemInfo(remoteKeys.publicKeys), mapOf())
@@ -241,7 +256,12 @@ class TransactionsTestsCommon : LightningTestSuite() {
                 assertTrue(htlcSuccessTx.checkRemoteSig(localKeys, remoteSig))
                 // local detects when remote doesn't use the right sighash flags
                 val invalidSighash = when (commitmentFormat) {
-                    Transactions.CommitmentFormat.AnchorOutputs -> listOf(SigHash.SIGHASH_ALL, SigHash.SIGHASH_ALL or SigHash.SIGHASH_ANYONECANPAY, SigHash.SIGHASH_SINGLE, SigHash.SIGHASH_NONE)
+                    Transactions.CommitmentFormat.AnchorOutputs, Transactions.CommitmentFormat.SimpleTaprootChannels -> listOf(
+                        SigHash.SIGHASH_ALL,
+                        SigHash.SIGHASH_ALL or SigHash.SIGHASH_ANYONECANPAY,
+                        SigHash.SIGHASH_SINGLE,
+                        SigHash.SIGHASH_NONE
+                    )
                 }
                 invalidSighash.forEach { sighash ->
                     val invalidRemoteSig = htlcSuccessTx.sign(remoteKeys.ourHtlcKey, sighash, htlcSuccessTx.redeemInfo(remoteKeys.publicKeys), mapOf())
@@ -315,7 +335,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             val skipped = penaltyTxs.mapNotNull { it.left }
             val claimed = penaltyTxs.mapNotNull { it.right?.sign()?.tx }
             when (commitmentFormat) {
-                Transactions.CommitmentFormat.AnchorOutputs -> {
+                Transactions.CommitmentFormat.AnchorOutputs, Transactions.CommitmentFormat.SimpleTaprootChannels -> {
                     assertEquals(5, penaltyTxs.size)
                     assertEquals(2, skipped.size)
                     assertEquals(setOf(Transactions.TxGenerationSkipped.AmountBelowDustLimit), skipped.toSet())
@@ -348,6 +368,11 @@ class TransactionsTestsCommon : LightningTestSuite() {
     @Test
     fun `generate valid commitment and htlc transactions -- anchor outputs`() {
         testCommitAndHtlcTxs(Transactions.CommitmentFormat.AnchorOutputs)
+    }
+
+    @Test
+    fun `generate valid commitment and htlc transactions -- simple taproot channels`() {
+        testCommitAndHtlcTxs(Transactions.CommitmentFormat.SimpleTaprootChannels)
     }
 
     @Test

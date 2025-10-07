@@ -23,13 +23,13 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
     @Test
     fun `recv OpenChannel -- without wumbo`() {
         val (_, bob, open) = TestsHelper.init(aliceFeatures = TestConstants.Alice.nodeParams.features.remove(Feature.Wumbo))
-        assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.AnchorOutputs))
+        assertEquals(open.tlvStream.get(), ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.SimpleTaprootChannels))
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
         assertTrue(bob1.state.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
-        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob1.state.interactiveTxSession.fundingParams.commitmentFormat)
+        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding, Feature.ZeroReserveChannels)))
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, bob1.state.interactiveTxSession.fundingParams.commitmentFormat)
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         actions.has<ChannelAction.ChannelId.IdAssigned>()
         assertEquals(ChannelEvents.Creating(bob1.state), actions.find<ChannelAction.EmitEvent>().event)
@@ -41,8 +41,8 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
-        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding)))
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob1.state.interactiveTxSession.fundingParams.commitmentFormat)
+        assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.DualFunding, Feature.ZeroReserveChannels)))
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, bob1.state.interactiveTxSession.fundingParams.commitmentFormat)
         actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         actions.has<ChannelAction.ChannelId.IdAssigned>()
         assertEquals(ChannelEvents.Creating(bob1.state), actions.find<ChannelAction.EmitEvent>().event)
@@ -50,13 +50,13 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv OpenChannel -- zero conf -- zero reserve`() {
-        val (_, bob, open) = TestsHelper.init(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
+        val (_, bob, open) = TestsHelper.init(zeroConf = true)
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open))
         assertIs<LNChannel<WaitForFundingCreated>>(bob1)
         assertEquals(3, actions.size)
         assertTrue(bob1.state.channelConfig.hasOption(ChannelConfigOption.FundingPubKeyBasedChannelKeyPath))
         assertEquals(bob1.state.channelFeatures, ChannelFeatures(setOf(Feature.ZeroReserveChannels, Feature.DualFunding)))
-        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob1.state.interactiveTxSession.fundingParams.commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, bob1.state.interactiveTxSession.fundingParams.commitmentFormat)
         val accept = actions.hasOutgoingMessage<AcceptDualFundedChannel>()
         assertEquals(0, accept.minimumDepth)
         actions.has<ChannelAction.ChannelId.IdAssigned>()
@@ -81,7 +81,7 @@ class WaitForOpenChannelTestsCommon : LightningTestSuite() {
         val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.ChannelTypeTlv(unsupportedChannelType)))
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(open1))
         val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error, Error(open.temporaryChannelId, InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, unsupportedChannelType).message))
+        assertEquals(error, Error(open.temporaryChannelId, InvalidChannelType(open.temporaryChannelId, ChannelType.SupportedChannelType.SimpleTaprootChannels, unsupportedChannelType).message))
         assertIs<LNChannel<Aborted>>(bob1)
     }
 

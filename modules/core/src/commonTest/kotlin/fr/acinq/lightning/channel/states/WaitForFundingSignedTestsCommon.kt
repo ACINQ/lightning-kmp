@@ -1,6 +1,7 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -44,7 +45,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv CommitSig -- zero conf`() {
-        val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
+        val (alice, commitSigAlice, bob, commitSigBob) = init(zeroConf = true)
         run {
             alice.process(ChannelCommand.MessageReceived(commitSigBob)).also { (state, actions) ->
                 assertIs<WaitForFundingSigned>(state.state)
@@ -115,15 +116,16 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CommitSig -- with invalid signature`() {
         val (alice, commitSigAlice, bob, commitSigBob) = init()
+        val dummySig = ChannelSpendSignature.PartialSignatureWithNonce(randomBytes32(), IndividualNonce(randomBytes(66)))
         run {
-            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob.copy(signature = ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes))))
+            val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(commitSigBob.copy(tlvStream = TlvStream(CommitSigTlv.PartialSignatureWithNonce(dummySig)))))
             assertEquals(actionsAlice1.size, 2)
             actionsAlice1.hasOutgoingMessage<Error>()
             actionsAlice1.find<ChannelAction.Storage.RemoveChannel>().also { assertEquals(alice.channelId, it.data.channelId) }
             assertIs<Aborted>(alice1.state)
         }
         run {
-            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice.copy(signature = ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes))))
+            val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice.copy(tlvStream = TlvStream(CommitSigTlv.PartialSignatureWithNonce(dummySig)))))
             assertEquals(actionsBob1.size, 2)
             actionsBob1.hasOutgoingMessage<Error>()
             actionsBob1.find<ChannelAction.Storage.RemoveChannel>().also { assertEquals(bob.channelId, it.data.channelId) }
@@ -193,7 +195,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv TxSignatures -- zero-conf`() {
-        val (alice, commitSigAlice, bob, commitSigBob) = init(ChannelType.SupportedChannelType.AnchorOutputsZeroReserve, zeroConf = true)
+        val (alice, commitSigAlice, bob, commitSigBob) = init(zeroConf = true)
         val txSigsBob = run {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(commitSigAlice))
             assertIs<WaitForChannelReady>(bob1.state)
@@ -325,7 +327,7 @@ class WaitForFundingSignedTestsCommon : LightningTestSuite() {
         data class Fixture(val alice: LNChannel<WaitForFundingSigned>, val commitSigAlice: CommitSig, val bob: LNChannel<WaitForFundingSigned>, val commitSigBob: CommitSig, val walletAlice: List<WalletState.Utxo>)
 
         fun init(
-            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.AnchorOutputs,
+            channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
             aliceFeatures: Features = TestConstants.Alice.nodeParams.features,
             bobFeatures: Features = TestConstants.Bob.nodeParams.features,
             bobUsePeerStorage: Boolean = true,
