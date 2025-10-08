@@ -91,8 +91,8 @@ class StateSerializationTestsCommon : LightningTestSuite() {
                 .maxOf { it.size }
         }
 
-        // with 12 incoming payments and 12 outgoing payments, our encrypted backup stays below the 65k limit for peer storage
-        assertTrue(peerStorageSize(12, 12) <= 65_000)
+        // with 19 incoming payments and 18 outgoing payments, our encrypted backup stays below the 65k limit for peer storage
+        assertTrue(peerStorageSize(19, 19) <= 65_000)
     }
 
     @Test
