@@ -51,7 +51,6 @@ data class ShuttingDown(
                                 commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
                                     closeCommand,
                                     commitments1,
-                                    remoteNextCommitNonces,
                                     localShutdown,
                                     localCloseeNonce,
                                     remoteShutdown,
@@ -80,7 +79,6 @@ data class ShuttingDown(
                                 commitments1.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
                                     closeCommand,
                                     commitments1,
-                                    remoteNextCommitNonces,
                                     localShutdown,
                                     localCloseeNonce,
                                     remoteShutdown,
@@ -188,7 +186,7 @@ data class ShuttingDown(
                 is WatchSpentTriggered -> handlePotentialForceClose(watch)
             }
             is ChannelCommand.Commitment.CheckHtlcTimeout -> checkHtlcTimeout()
-            is ChannelCommand.Disconnected -> Pair(Offline(this@ShuttingDown), listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this@ShuttingDown.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null)), listOf())
             else -> unhandled(cmd)
         }
     }

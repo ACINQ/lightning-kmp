@@ -1,6 +1,8 @@
 package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
+import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -135,6 +137,61 @@ class SpliceTestsCommon : LightningTestSuite() {
         }
 
         resolveHtlcs(alice6, bob6, htlcs, commitmentsCount = 2)
+    }
+
+    @Test
+    fun `splice funds in and out with pending htlcs -- missing nonce`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, bob1, htlcs) = setupHtlcs(alice, bob)
+        val (alice2, bob2) = spliceInAndOut(alice1, bob1, inAmounts = listOf(50_000.sat), outAmount = 100_000.sat)
+        // Bob starts fulfilling an HTLC after the splice.
+        val (preimage1a, htlc1a) = htlcs.aliceToBob.first()
+        val (alice3, bob3) = fulfillHtlc(htlc1a.id, preimage1a, alice2, bob2)
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(actionsBob4.findOutgoingMessage<CommitSigs>()))
+        val rev = actionsAlice4.findOutgoingMessage<RevokeAndAck>()
+        assertEquals(2, rev.nextCommitNonces.size)
+        assertNotNull(rev.nextCommitNonces[alice.commitments.latest.fundingTxId])
+        assertNotNull(rev.nextCommitNonces[alice4.commitments.latest.fundingTxId])
+        // Alice doesn't include a nonce for the previous commitment.
+        val missingNextCommitNonces = RevokeAndAckTlv.NextLocalNonces(listOf(Pair(alice4.commitments.latest.fundingTxId, rev.nextCommitNonces[alice4.commitments.latest.fundingTxId]!!)))
+        val invalidRev = rev.copy(tlvStream = TlvStream(rev.tlvStream.records.filterNot { it is RevokeAndAckTlv.NextLocalNonces }.toSet() + missingNextCommitNonces))
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(invalidRev))
+        assertIs<Closing>(bob5.state)
+        actionsBob5.hasOutgoingMessage<Error>()
+    }
+
+    @Test
+    fun `splice funds in and out with pending htlcs -- invalid nonce`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, bob1, htlcs) = setupHtlcs(alice, bob)
+        val (alice2, bob2) = spliceInAndOut(alice1, bob1, inAmounts = listOf(50_000.sat), outAmount = 100_000.sat)
+        // Bob starts fulfilling an HTLC after the splice.
+        val (preimage1a, htlc1a) = htlcs.aliceToBob.first()
+        val (alice3, bob3) = fulfillHtlc(htlc1a.id, preimage1a, alice2, bob2)
+        val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(actionsBob4.findOutgoingMessage<CommitSigs>()))
+        val rev = actionsAlice4.findOutgoingMessage<RevokeAndAck>()
+        assertEquals(2, rev.nextCommitNonces.size)
+        assertNotNull(rev.nextCommitNonces[alice.commitments.latest.fundingTxId])
+        assertNotNull(rev.nextCommitNonces[alice4.commitments.latest.fundingTxId])
+        // Alice includes an invalid nonce for the previous commitment.
+        // This will apply for the next update, not the current one: the channel isn't immediately closed.
+        val invalidNextCommitNonces = RevokeAndAckTlv.NextLocalNonces((rev.nextCommitNonces + mapOf(alice.commitments.latest.fundingTxId to IndividualNonce(randomBytes(66)))).toList())
+        val invalidRev = rev.copy(tlvStream = TlvStream(rev.tlvStream.records.filterNot { it is RevokeAndAckTlv.NextLocalNonces }.toSet() + invalidNextCommitNonces))
+        val (bob5, actionsBob5) = bob4.process(ChannelCommand.MessageReceived(invalidRev))
+        assertEquals(1, actionsBob5.size)
+        actionsBob5.has<ChannelAction.Storage.StoreState>()
+        val (alice5, actionsAlice5) = alice4.process(ChannelCommand.Commitment.Sign)
+        val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(actionsAlice5.findOutgoingMessage<CommitSigs>()))
+        val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(actionsBob6.findOutgoingMessage<RevokeAndAck>()))
+        // Bob will fail to sign the next commitment: Alice will need to reconnect and send valid nonces.
+        val (preimage2a, htlc2a) = htlcs.aliceToBob.last()
+        val (_, bob7) = fulfillHtlc(htlc2a.id, preimage2a, alice6, bob6)
+        val (bob8, actionsBob8) = bob7.process(ChannelCommand.Commitment.Sign)
+        assertIs<Normal>(bob8.state)
+        assertEquals(1, actionsBob8.size)
+        actionsBob8.find<ChannelAction.ProcessCmdRes.NotExecuted>().also { assertIs<InvalidCommitNonce>(it.t) }
     }
 
     @Test
@@ -610,6 +667,26 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv invalid htlc signatures during splice`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val (alice1, bob1, htlcs) = setupHtlcs(alice, bob)
+        val (alice2, commitSigAlice, bob2, commitSigBob) = spliceInAndOutWithoutSigs(alice1, bob1, inAmounts = listOf(50_000.sat), outAmount = 100_000.sat)
+        assertEquals(commitSigAlice.htlcSignatures.size, 4)
+        assertEquals(commitSigBob.htlcSignatures.size, 4)
+
+        val (alice3, _) = alice2.process(ChannelCommand.MessageReceived(commitSigBob))
+        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(commitSigAlice.copy(htlcSignatures = commitSigAlice.htlcSignatures.reversed())))
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(actionsBob3.findOutgoingMessage<TxAbort>()))
+        assertIs<LNChannel<Normal>>(alice4)
+        assertEquals(SpliceStatus.None, alice4.state.spliceStatus)
+        val (bob4, _) = bob3.process(ChannelCommand.MessageReceived(actionsAlice4.findOutgoingMessage<TxAbort>()))
+        assertIs<LNChannel<Normal>>(bob4)
+        assertEquals(SpliceStatus.None, bob4.state.spliceStatus)
+        // resolve pre-splice HTLCs after aborting the splice attempt
+        resolveHtlcs(alice4, bob4, htlcs, commitmentsCount = 1)
+    }
+
+    @Test
     fun `exchange splice_locked`() {
         val (alice, bob) = reachNormal()
         val (alice1, bob1) = spliceOut(alice, bob, 60_000.sat)
@@ -802,11 +879,17 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         val (alice2, bob2, channelReestablishAlice) = disconnect(alice1, bob1)
         assertEquals(channelReestablishAlice.nextFundingTxId, spliceStatus.session.fundingTx.txId)
+        assertNotNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, alice.commitments.latest.fundingTxId)
+        assertContains(channelReestablishAlice.nextCommitNonces, spliceStatus.session.fundingTx.txId)
         assertEquals(channelReestablishAlice.nextLocalCommitmentNumber, aliceCommitIndex)
         val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(channelReestablishAlice))
         assertIs<LNChannel<Normal>>(bob3)
         assertEquals(actionsBob3.size, 4)
         val channelReestablishBob = actionsBob3.findOutgoingMessage<ChannelReestablish>()
+        assertNotNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, bob.commitments.latest.fundingTxId)
+        assertContains(channelReestablishBob.nextCommitNonces, spliceStatus.session.fundingTx.txId)
         val commitSigBob = actionsBob3.findOutgoingMessage<CommitSig>()
         assertEquals(htlcs.aliceToBob.map { it.second }.toSet(), actionsBob3.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         assertEquals(channelReestablishBob.nextFundingTxId, spliceStatus.session.fundingTx.txId)
@@ -836,10 +919,16 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         val (alice4, bob3, channelReestablishAlice) = disconnect(alice3, bob2)
         assertEquals(channelReestablishAlice.nextFundingTxId, spliceTxId)
+        assertNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, alice.commitments.latest.fundingTxId)
+        assertContains(channelReestablishAlice.nextCommitNonces, spliceTxId)
         assertEquals(channelReestablishAlice.nextLocalCommitmentNumber, aliceCommitIndex + 1)
         val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
         assertEquals(actionsBob4.size, 3)
         val channelReestablishBob = actionsBob4.findOutgoingMessage<ChannelReestablish>()
+        assertNotNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, bob.commitments.latest.fundingTxId)
+        assertContains(channelReestablishBob.nextCommitNonces, spliceTxId)
         assertNull(actionsBob4.findOutgoingMessageOpt<CommitSig>())
         assertEquals(htlcs.aliceToBob.map { it.second }.toSet(), actionsBob4.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         assertEquals(channelReestablishBob.nextFundingTxId, spliceTxId)
@@ -889,10 +978,16 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         val (alice2, bob3, channelReestablishAlice) = disconnect(alice1, bob2)
         assertEquals(channelReestablishAlice.nextFundingTxId, spliceTxId)
+        assertNotNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, alice.commitments.latest.fundingTxId)
+        assertContains(channelReestablishAlice.nextCommitNonces, spliceTxId)
         assertEquals(channelReestablishAlice.nextLocalCommitmentNumber, aliceCommitIndex)
         val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
         assertEquals(actionsBob4.size, 5)
         val channelReestablishBob = actionsBob4.findOutgoingMessage<ChannelReestablish>()
+        assertNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, bob.commitments.latest.fundingTxId)
+        assertContains(channelReestablishBob.nextCommitNonces, spliceTxId)
         val commitSigBob = actionsBob4.findOutgoingMessage<CommitSig>()
         assertEquals(htlcs.aliceToBob.map { it.second }.toSet(), actionsBob4.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         val txSigsBob = actionsBob4.findOutgoingMessage<TxSignatures>()
@@ -940,9 +1035,15 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         val (alice2, bob3, channelReestablishAlice) = disconnect(alice1, bob2)
         assertEquals(channelReestablishAlice.nextFundingTxId, spliceTxId)
+        assertNotNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, alice.commitments.latest.fundingTxId)
+        assertContains(channelReestablishAlice.nextCommitNonces, spliceTxId)
         val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
         assertEquals(actionsBob4.size, 6)
         val channelReestablishBob = actionsBob4.findOutgoingMessage<ChannelReestablish>()
+        assertNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, bob.commitments.latest.fundingTxId)
+        assertContains(channelReestablishBob.nextCommitNonces, spliceTxId)
         val commitSigBob = actionsBob4.findOutgoingMessage<CommitSig>()
         val txSigsBob = actionsBob4.findOutgoingMessage<TxSignatures>()
         // splice_locked must always be sent *after* tx_signatures
@@ -1022,9 +1123,15 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         val (alice5, bob3, channelReestablishAlice) = disconnect(alice4, bob2)
         assertNull(channelReestablishAlice.nextFundingTxId)
+        assertNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, alice.commitments.latest.fundingTxId)
+        assertContains(channelReestablishAlice.nextCommitNonces, spliceTx.txid)
         val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
         assertEquals(3, actionsBob4.size)
         val channelReestablishBob = actionsBob4.findOutgoingMessage<ChannelReestablish>()
+        assertNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, bob.commitments.latest.fundingTxId)
+        assertContains(channelReestablishBob.nextCommitNonces, spliceTx.txid)
         assertEquals(htlcs.aliceToBob.map { it.second }.toSet(), actionsBob4.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         assertEquals(channelReestablishBob.nextFundingTxId, spliceTx.txid)
         val (alice6, actionsAlice6) = alice5.process(ChannelCommand.MessageReceived(channelReestablishBob))
@@ -1063,9 +1170,15 @@ class SpliceTestsCommon : LightningTestSuite() {
 
         val (alice4, bob3, channelReestablishAlice) = disconnect(alice3, bob2)
         assertNull(channelReestablishAlice.nextFundingTxId)
+        assertNull(channelReestablishAlice.currentCommitNonce)
+        assertContains(channelReestablishAlice.nextCommitNonces, alice.commitments.latest.fundingTxId)
+        assertContains(channelReestablishAlice.nextCommitNonces, spliceTx.txid)
         val (bob4, actionsBob4) = bob3.process(ChannelCommand.MessageReceived(channelReestablishAlice))
         assertEquals(actionsBob4.size, 3)
         val channelReestablishBob = actionsBob4.findOutgoingMessage<ChannelReestablish>()
+        assertNull(channelReestablishBob.currentCommitNonce)
+        assertContains(channelReestablishBob.nextCommitNonces, bob.commitments.latest.fundingTxId)
+        assertContains(channelReestablishBob.nextCommitNonces, spliceTx.txid)
         assertEquals(htlcs.aliceToBob.map { it.second }.toSet(), actionsBob4.filterIsInstance<ChannelAction.ProcessIncomingHtlc>().map { it.add }.toSet())
         assertEquals(channelReestablishBob.nextFundingTxId, spliceTx.txid)
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.MessageReceived(channelReestablishBob))
@@ -1365,6 +1478,37 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `force-close -- latest active commitment -- after taproot upgrade`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        val (alice0, bob0, _) = setupHtlcs(alice, bob)
+        val (alice1, bob1) = spliceOut(alice0, bob0, 75_000.sat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, alice1.commitments.active.first().commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice1.commitments.active.last().commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, bob1.commitments.active.first().commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob1.commitments.active.last().commitmentFormat)
+
+        // Bob force-closes using the latest active commitment.
+        val bobCommitTx = bob1.signCommitTx()
+        val (bob2, actionsBob2) = bob1.process(ChannelCommand.Close.ForceClose)
+        assertIs<Closing>(bob2.state)
+        assertEquals(actionsBob2.size, 13)
+        actionsBob2.hasPublishTx(bobCommitTx)
+        val claimMain = actionsBob2.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimLocalDelayedOutputTx)
+        actionsBob2.hasWatchConfirmed(bobCommitTx.txid)
+        actionsBob2.hasWatchOutputSpent(claimMain.txIn.first().outPoint)
+        actionsBob2.has<ChannelAction.Storage.StoreState>()
+        actionsBob2.hasOutgoingMessage<Error>()
+        actionsBob2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
+
+        // Alice detects the force-close.
+        val commitment = alice1.commitments.active.first()
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTx)))
+        assertIs<LNChannel<Closing>>(alice2)
+        actionsAlice2.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
+        handleRemoteClose(alice2, actionsAlice2, commitment, bobCommitTx)
+    }
+
+    @Test
     fun `force-close -- previous active commitment`() {
         val (alice, bob) = reachNormalWithConfirmedFundingTx()
         val (alice0, bob0, _) = setupHtlcs(alice, bob)
@@ -1388,6 +1532,22 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertEquals(bob4.commitments.active.map { it.localCommit.txId }.toSet().size, 3)
         val bobCommitTx = useAlternativeCommitSig(bob4, bob4.commitments.active[1], Commitments.alternativeFeerates.first())
         handlePreviousRemoteClose(alice4, bobCommitTx)
+    }
+
+    @Test
+    fun `force-close -- previous active commitment -- after taproot upgrade`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx(channelType = ChannelType.SupportedChannelType.AnchorOutputsZeroReserve)
+        val (alice0, bob0, _) = setupHtlcs(alice, bob)
+        val (alice1, bob1) = spliceOut(alice0, bob0, 75_000.sat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, alice1.commitments.active.first().commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, alice1.commitments.active.last().commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, bob1.commitments.active.first().commitmentFormat)
+        assertEquals(Transactions.CommitmentFormat.AnchorOutputs, bob1.commitments.active.last().commitmentFormat)
+
+        // Bob force-closes using an older active commitment.
+        assertEquals(bob1.commitments.active.map { it.localCommit.txId }.toSet().size, 2)
+        val bobCommitTx = bob1.commitments.active.last().fullySignedCommitTx(bob.commitments.channelParams, bob.channelKeys)
+        handlePreviousRemoteClose(alice1, bobCommitTx)
     }
 
     @Test
@@ -1713,26 +1873,6 @@ class SpliceTestsCommon : LightningTestSuite() {
         assertIs<Closed>(alice21.state)
     }
 
-    @Test
-    fun `recv invalid htlc signatures during splice`() {
-        val (alice, bob) = reachNormalWithConfirmedFundingTx()
-        val (alice1, bob1, htlcs) = setupHtlcs(alice, bob)
-        val (alice2, commitSigAlice, bob2, commitSigBob) = spliceInAndOutWithoutSigs(alice1, bob1, inAmounts = listOf(50_000.sat), outAmount = 100_000.sat)
-        assertEquals(commitSigAlice.htlcSignatures.size, 4)
-        assertEquals(commitSigBob.htlcSignatures.size, 4)
-
-        val (alice3, _) = alice2.process(ChannelCommand.MessageReceived(commitSigBob))
-        val (bob3, actionsBob3) = bob2.process(ChannelCommand.MessageReceived(commitSigAlice.copy(htlcSignatures = commitSigAlice.htlcSignatures.reversed())))
-        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(actionsBob3.findOutgoingMessage<TxAbort>()))
-        assertIs<LNChannel<Normal>>(alice4)
-        assertEquals(SpliceStatus.None, alice4.state.spliceStatus)
-        val (bob4, _) = bob3.process(ChannelCommand.MessageReceived(actionsAlice4.findOutgoingMessage<TxAbort>()))
-        assertIs<LNChannel<Normal>>(bob4)
-        assertEquals(SpliceStatus.None, bob4.state.spliceStatus)
-        // resolve pre-splice HTLCs after aborting the splice attempt
-        resolveHtlcs(alice4, bob4, htlcs, commitmentsCount = 1)
-    }
-
     companion object {
         private val spliceFeerate = FeeratePerKw(253.sat)
 
@@ -1773,6 +1913,11 @@ class SpliceTestsCommon : LightningTestSuite() {
             val cmd = createSpliceOutRequest(amount)
             // Negotiate a splice transaction where Alice is the only contributor.
             val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
+            // If we weren't using taproot yet, we update our channel type when splicing.
+            when (parentCommitment.commitmentFormat) {
+                Transactions.CommitmentFormat.AnchorOutputs -> assertEquals(ChannelType.SupportedChannelType.SimpleTaprootChannels, spliceInit.channelType)
+                Transactions.CommitmentFormat.SimpleTaprootChannels -> assertNull(spliceInit.channelType)
+            }
             // Alice takes more than the spliced out amount from her local balance because she must pay on-chain fees.
             assertTrue(-amount - 500.sat < spliceInit.fundingContribution && spliceInit.fundingContribution < -amount)
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(spliceInit))
@@ -1809,6 +1954,11 @@ class SpliceTestsCommon : LightningTestSuite() {
             )
             // Negotiate a splice transaction where Alice is the only contributor.
             val (alice1, bob1, spliceInit) = reachQuiescent(cmd, alice, bob)
+            // If we weren't using taproot yet, we update our channel type when splicing.
+            when (parentCommitment.commitmentFormat) {
+                Transactions.CommitmentFormat.AnchorOutputs -> assertEquals(ChannelType.SupportedChannelType.SimpleTaprootChannels, spliceInit.channelType)
+                Transactions.CommitmentFormat.SimpleTaprootChannels -> assertNull(spliceInit.channelType)
+            }
             // Alice adds slightly less than her wallet amount because she must pay on-chain fees.
             assertTrue(amounts.sum() - 500.sat < spliceInit.fundingContribution && spliceInit.fundingContribution < amounts.sum())
             val (bob2, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(spliceInit))

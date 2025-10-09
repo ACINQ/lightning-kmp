@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.write
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.bitcoin.utils.flatMap
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Lightning.randomBytes32
@@ -15,6 +14,7 @@ import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.ChannelSpendSignature
 import fr.acinq.lightning.crypto.LocalCommitmentKeys
+import fr.acinq.lightning.crypto.NonceGenerator
 import fr.acinq.lightning.crypto.RemoteCommitmentKeys
 import fr.acinq.lightning.io.AddLiquidityForIncomingPayment
 import fr.acinq.lightning.tests.TestConstants
@@ -149,9 +149,9 @@ class TransactionsTestsCommon : LightningTestSuite() {
             toLocal = 400.mbtc.toMilliSatoshi(),
             toRemote = 300.mbtc.toMilliSatoshi()
         )
-        val (secretLocalNonce, publicLocalNonce) = Musig2.generateNonce(randomBytes32(), Either.Left(localFundingPriv), listOf(localFundingPriv.publicKey()), null, null)
-        val (secretRemoteNonce, publicRemoteNonce) = Musig2.generateNonce(randomBytes32(), Either.Left(remoteFundingPriv), listOf(remoteFundingPriv.publicKey()), null, null)
-        val publicNonces = listOf(publicLocalNonce, publicRemoteNonce)
+        val localCommitNonce = NonceGenerator.verificationNonce(fundingTx.txid, localFundingPriv, remoteFundingPriv.publicKey(), commitIndex = 0)
+        val remoteCommitNonce = NonceGenerator.signingNonce(remoteFundingPriv.publicKey(), localFundingPriv.publicKey(), fundingTx.txid)
+        val publicNonces = listOf(localCommitNonce.publicNonce, remoteCommitNonce.publicNonce)
 
         val commitTxNumber = 0x404142434445L
         val commitTxOutputs = Transactions.makeCommitTxOutputs(localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localKeys.publicKeys, payCommitTxFees = true, localDustLimit, toLocalDelay, commitmentFormat, spec)
@@ -167,8 +167,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
                     txInfo.aggregateSigs(localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localSig, remoteSig)
                 }
                 Transactions.CommitmentFormat.SimpleTaprootChannels -> {
-                    val localPartialSig = txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey(), mapOf(), Transactions.LocalNonce(secretLocalNonce, publicLocalNonce), publicNonces).right!!
-                    val remotePartialSig = txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey(), mapOf(), Transactions.LocalNonce(secretRemoteNonce, publicRemoteNonce), publicNonces).right!!
+                    val localPartialSig = txInfo.partialSign(localFundingPriv, remoteFundingPriv.publicKey(), mapOf(), localCommitNonce, publicNonces).right!!
+                    val remotePartialSig = txInfo.partialSign(remoteFundingPriv, localFundingPriv.publicKey(), mapOf(), remoteCommitNonce, publicNonces).right!!
                     txInfo.aggregateSigs(localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), localPartialSig, remotePartialSig, mapOf()).right!!
                 }
             }
@@ -597,8 +597,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             theirHtlcPublicKey = remoteHtlcPriv.publicKey(),
             revocationPublicKey = localRevocationPriv.publicKey(),
         )
-        val commitInput =
-            Transactions.makeFundingInputInfo(TxId("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), Transactions.CommitmentFormat.AnchorOutputs)
+        val commitInput = Transactions.makeFundingInputInfo(TxId("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, 1.btc, localFundingPriv.publicKey(), remoteFundingPriv.publicKey(), Transactions.CommitmentFormat.AnchorOutputs)
         // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
         // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
         // htlc4 is identical to htlc3 and htlc5 has same payment_hash/amount but different CLTV

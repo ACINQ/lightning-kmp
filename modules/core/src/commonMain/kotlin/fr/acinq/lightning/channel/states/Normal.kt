@@ -24,7 +24,6 @@ data class Normal(
     val remoteShutdown: Shutdown?,
     val closeCommand: ChannelCommand.Close.MutualClose?,
     val localCloseeNonce: Transactions.LocalNonce?,
-    val localCloserNonces: Transactions.CloserNonces?,
 ) : ChannelStateWithCommitments() {
 
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
@@ -245,12 +244,11 @@ data class Normal(
                                 actions.add(ChannelAction.Message.Send(localShutdown))
                                 if (commitments1.latest.remoteCommit.spec.htlcs.isNotEmpty()) {
                                     // we just signed htlcs that need to be resolved now
-                                    ShuttingDown(commitments, cmd.message.nextCommitNonces, localShutdown, remoteShutdown, closeCommand, localCloseeNonce)
+                                    ShuttingDown(commitments1, cmd.message.nextCommitNonces, localShutdown, remoteShutdown, closeCommand, localCloseeNonce)
                                 } else {
                                     logger.warning { "we have no htlcs but have not replied with our shutdown yet, this should never happen" }
                                     Negotiating(
-                                        commitments,
-                                        cmd.message.nextCommitNonces,
+                                        commitments1,
                                         localShutdown.scriptPubKey,
                                         remoteShutdown.scriptPubKey,
                                         listOf(),
@@ -259,7 +257,7 @@ data class Normal(
                                         closeCommand,
                                         localCloseeNonce,
                                         remoteShutdown.closeeNonce,
-                                        localCloserNonces
+                                        localCloserNonces = null
                                     )
                                 }
                             } else {
@@ -325,7 +323,6 @@ data class Normal(
                                     commitments.hasNoPendingHtlcsOrFeeUpdate() -> startClosingNegotiation(
                                         closeCommand,
                                         commitments,
-                                        remoteNextCommitNonces,
                                         localShutdown1,
                                         localCloseeNonce1,
                                         cmd.message,
@@ -413,6 +410,11 @@ data class Normal(
                                             val action = listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceRequest(channelId).message)))
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), action)
                                         } else {
+                                            // If we aren't using taproot yet, we use this splice to upgrade our channel type.
+                                            val channelTypeUpgrade = when (commitments.latest.commitmentFormat) {
+                                                Transactions.CommitmentFormat.AnchorOutputs -> ChannelType.SupportedChannelType.SimpleTaprootChannels
+                                                Transactions.CommitmentFormat.SimpleTaprootChannels -> null
+                                            }
                                             val spliceInit = SpliceInit(
                                                 channelId,
                                                 fundingContribution = fundingContribution,
@@ -420,7 +422,7 @@ data class Normal(
                                                 feerate = spliceStatus.command.feerate,
                                                 fundingPubkey = channelKeys.fundingKey(parentCommitment.fundingTxIndex + 1).publicKey(),
                                                 requestFunding = spliceStatus.command.requestRemoteFunding,
-                                                channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels,
+                                                channelType = channelTypeUpgrade,
                                             )
                                             logger.info { "initiating splice with local.amount=${spliceInit.fundingContribution}" }
                                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Requested(spliceStatus.command, spliceInit)), listOf(ChannelAction.Message.Send(spliceInit)))
@@ -852,7 +854,7 @@ data class Normal(
                         spliceStatus.replyTo?.complete(ChannelFundingResponse.Failure.Disconnected)
                         SpliceStatus.None
                     }
-                    is SpliceStatus.WaitingForSigs -> spliceStatus
+                    is SpliceStatus.WaitingForSigs -> spliceStatus.copy(session = spliceStatus.session.copy(nextRemoteCommitNonce = null))
                     is SpliceStatus.NonInitiatorQuiescent -> SpliceStatus.None
                     is QuiescenceNegotiation.NonInitiator -> SpliceStatus.None
                     is QuiescenceNegotiation.Initiator -> {
@@ -860,7 +862,7 @@ data class Normal(
                         SpliceStatus.None
                     }
                 }
-                Pair(Offline(this@Normal.copy(spliceStatus = spliceStatus1)), failedHtlcs)
+                Pair(Offline(this@Normal.copy(spliceStatus = spliceStatus1, remoteNextCommitNonces = mapOf(), localCloseeNonce = null)), failedHtlcs)
             }
             is ChannelCommand.Connected -> unhandled(cmd)
             is ChannelCommand.Closing -> unhandled(cmd)

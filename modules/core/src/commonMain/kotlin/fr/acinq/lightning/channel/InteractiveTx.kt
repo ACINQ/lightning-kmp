@@ -40,16 +40,19 @@ data class SharedFundingInput(
 
     val weight: Int = commitmentFormat.fundingInputWeight
 
-    fun sign(channelId: ByteVector32, channelKeys: ChannelKeys, tx: Transaction, localNonce: Transactions.LocalNonce?, remoteNonce: IndividualNonce?, spentUtxos: Map<OutPoint, TxOut>): Either<ChannelException, ChannelSpendSignature> {
-        val fundingKey = channelKeys.fundingKey(fundingTxIndex)
+    /** Our funding key for the *previous* channel output that we're spending with this splice. */
+    fun previousFundingKey(channelKeys: ChannelKeys): PrivateKey = channelKeys.fundingKey(fundingTxIndex)
+
+    fun sign(session: InteractiveTxSession, tx: Transaction, spentUtxos: Map<OutPoint, TxOut>): Either<ChannelException, ChannelSpendSignature> {
+        val fundingKey = previousFundingKey(session.channelKeys)
         val spliceTx = Transactions.SpliceTx(info, tx)
         return when (commitmentFormat) {
             Transactions.CommitmentFormat.AnchorOutputs -> Either.Right(spliceTx.sign(fundingKey, remoteFundingPubkey, spentUtxos))
             Transactions.CommitmentFormat.SimpleTaprootChannels -> {
-                val localNonce = localNonce ?: return Either.Left(MissingFundingNonce(channelId, tx.txid))
-                val remoteNonce = remoteNonce ?: return Either.Left(MissingFundingNonce(channelId, tx.txid))
+                val localNonce = session.localFundingNonce ?: return Either.Left(MissingFundingNonce(session.fundingParams.channelId, tx.txid))
+                val remoteNonce = session.remoteFundingNonce ?: return Either.Left(MissingFundingNonce(session.fundingParams.channelId, tx.txid))
                 when (val psig = spliceTx.partialSign(fundingKey, remoteFundingPubkey, spentUtxos, localNonce, listOf(localNonce.publicNonce, remoteNonce))) {
-                    is Either.Left -> Either.Left(InvalidFundingNonce(channelId, tx.txid))
+                    is Either.Left -> Either.Left(InvalidFundingNonce(session.fundingParams.channelId, tx.txid))
                     is Either.Right -> Either.Right(psig.value)
                 }
             }
@@ -108,9 +111,11 @@ data class InteractiveTxParams(
     // If we don't have a shared input, this isn't a splice: it is the initial channel funding transaction.
     val fundingTxIndex = sharedInput?.let { it.fundingTxIndex + 1 } ?: 0
 
+    /** Our funding key for the *next* channel output created by this splice. */
+    fun fundingKey(channelKeys: ChannelKeys): PrivateKey = channelKeys.fundingKey(fundingTxIndex)
+
     fun fundingPubkeyScript(channelKeys: ChannelKeys): ByteVector {
-        val fundingTxIndex = sharedInput?.let { it.fundingTxIndex + 1 } ?: 0
-        return Transactions.makeFundingScript(channelKeys.fundingKey(fundingTxIndex).publicKey(), remoteFundingPubkey, commitmentFormat).pubkeyScript
+        return Transactions.makeFundingScript(fundingKey(channelKeys).publicKey(), remoteFundingPubkey, commitmentFormat).pubkeyScript
     }
 
     fun liquidityFees(purchase: LiquidityAds.Purchase?): MilliSatoshi = purchase?.let { l ->
@@ -482,7 +487,7 @@ data class SharedTransaction(
 
     fun sign(session: InteractiveTxSession, keyManager: KeyManager, fundingParams: InteractiveTxParams, remoteNodeId: PublicKey): Either<ChannelException, PartiallySignedSharedTransaction> {
         val unsignedTx = buildUnsignedTx()
-        val sharedSig = when (val sig = fundingParams.sharedInput?.sign(session.fundingParams.channelId, session.channelKeys, unsignedTx, session.localFundingNonce, session.remoteFundingNonce, spentOutputs)) {
+        val sharedSig = when (val sig = fundingParams.sharedInput?.sign(session, unsignedTx, spentOutputs)) {
             is Either.Left -> return Either.Left(sig.value)
             is Either.Right -> sig.value
             null -> null
@@ -571,7 +576,7 @@ data class PartiallySignedSharedTransaction(override val tx: SharedTransaction, 
         if (remoteSigs.witnesses.size != tx.remoteOnlyInputs().size) return null
         if (remoteSigs.txId != localSigs.txId) return null
         val sharedSigs = fundingParams.sharedInput?.let { input ->
-            val localFundingPubkey = channelKeys.fundingKey(input.fundingTxIndex).publicKey()
+            val localFundingPubkey = input.previousFundingKey(channelKeys).publicKey()
             val spliceTx = Transactions.SpliceTx(input.info, tx.buildUnsignedTx())
             val signedTx = when (input.commitmentFormat) {
                 Transactions.CommitmentFormat.AnchorOutputs -> spliceTx.aggregateSigs(
@@ -731,13 +736,13 @@ data class InteractiveTxSession(
         localHtlcs,
         localFundingNonce = fundingParams.sharedInput?.let {
             // If we're splicing an existing channel, we create a random local nonce for this interactive-tx session.
-            val previousFundingKey = channelKeys.fundingKey(it.fundingTxIndex).publicKey()
-            NonceGenerator.signingNonce(previousFundingKey, it.remoteFundingPubkey, it.info.outPoint.txid)
+            val fundingKey = it.previousFundingKey(channelKeys).publicKey()
+            NonceGenerator.signingNonce(fundingKey, it.remoteFundingPubkey, it.info.outPoint.txid)
         }
     )
 
     val isComplete: Boolean = txCompleteSent != null && txCompleteReceived != null
-    val localFundingKey: PrivateKey = channelKeys.fundingKey(fundingParams.fundingTxIndex)
+    val localFundingKey: PrivateKey = fundingParams.fundingKey(channelKeys)
     val remoteFundingNonce: IndividualNonce? = txCompleteReceived?.fundingNonce
     val currentRemoteCommitNonce: IndividualNonce? = txCompleteReceived?.commitNonces?.commitNonce
     val nextRemoteCommitNonce: IndividualNonce? = txCompleteReceived?.commitNonces?.nextCommitNonce
@@ -1107,7 +1112,7 @@ data class InteractiveTxSigningSession(
         is Either.Right -> localCommit.value.index + 1
     }
 
-    fun localFundingKey(channelKeys: ChannelKeys): PrivateKey = channelKeys.fundingKey(fundingParams.fundingTxIndex)
+    fun localFundingKey(channelKeys: ChannelKeys): PrivateKey = fundingParams.fundingKey(channelKeys)
 
     fun commitInput(fundingKey: PrivateKey): Transactions.InputInfo {
         val fundingScript = Transactions.makeFundingScript(fundingKey.publicKey(), fundingParams.remoteFundingPubkey, fundingParams.commitmentFormat).pubkeyScript

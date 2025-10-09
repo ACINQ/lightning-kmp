@@ -436,7 +436,7 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val testCases = listOf(
             // @formatter:off
             ChannelReady(ByteVector32("02094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e118"), PublicKey.fromHex("02df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca")) to "002402094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e11802df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca",
-            ChannelReady(ByteVector32("02094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e118"), PublicKey.fromHex("02df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca"), TlvStream(ChannelReadyTlv.ShortChannelIdTlv(ShortChannelId(1729)))) to "002402094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e11802df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca010800000000000006c1",
+            ChannelReady(ByteVector32("02094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e118"), PublicKey.fromHex("02df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca"), ShortChannelId(1729), IndividualNonce("771c93b7ced9c4f8e42bb61f3d044bf3fda5881c6b4d78acd131b5f87a8c1f6342d306a51d4cc402654be07a4fcb3d5cf271e41f15e29ac83a2284fc66982eb0df7b")) to "002402094a1009491c4aa4320ce4400bbb556399b720a35b0922b73316bfeb49e11802df89f6e2a2c3e7dfd536c4b65add892026c032e6ec818347e0e44b4ab2fcadca010800000000000006c10442771c93b7ced9c4f8e42bb61f3d044bf3fda5881c6b4d78acd131b5f87a8c1f6342d306a51d4cc402654be07a4fcb3d5cf271e41f15e29ac83a2284fc66982eb0df7b",
             // @formatter:on
         )
         testCases.forEach { (channelReady, bin) ->
@@ -512,6 +512,8 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             TxRemoveInput(channelId2, 561) to ByteVector("0044 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 0000000000000231"),
             TxRemoveOutput(channelId1, 1) to ByteVector("0045 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 0000000000000001"),
             TxComplete(channelId1) to ByteVector("0046 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            TxComplete(channelId1, nonces[0], nonces[1], null, listOf()) to ByteVector("0046 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 048403097c9a5c786c4638d9f9f3460e8bebdfd4b5df4028942f89356a530316491d3003c522e17501cdbe722ac83b2187495c6c35d9cedae48bbb59433727e4f5c610d7031eef07e08298e3fb0332f97cd7139c18a364d88b2b4fa46c78fed0a5b86e4bcb03602f97bbde47fe4618e58d3b8ffaabd5f959477df870aed6d0075d1b5d464e04"),
+            TxComplete(channelId1, nonces[0], nonces[1], nonces[2], listOf()) to ByteVector("0046 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 048403097c9a5c786c4638d9f9f3460e8bebdfd4b5df4028942f89356a530316491d3003c522e17501cdbe722ac83b2187495c6c35d9cedae48bbb59433727e4f5c610d7031eef07e08298e3fb0332f97cd7139c18a364d88b2b4fa46c78fed0a5b86e4bcb03602f97bbde47fe4618e58d3b8ffaabd5f959477df870aed6d0075d1b5d464e04 064202d73ec0b15bae2f8a6331bdc5620f8eb2d50e5511470a5a9912172cc3651048f7024a4148b89e0500f55197f38823aec5d0ddf600437a3ab257469aca957e94137a"),
             TxSignatures(channelId1, tx2, listOf(ScriptWitness(listOf(ByteVector("68656c6c6f2074686572652c2074686973206973206120626974636f6e212121"), ByteVector("82012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87"))), ScriptWitness(listOf(ByteVector("304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d01"), ByteVector("034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484")))), null, listOf(), listOf(), listOf(), listOf()) to ByteVector("0047 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa fc7aa8845f192959202c1b7ff704e7cbddded463c05e844676a94ccb4bed69f1 0002 004a 022068656c6c6f2074686572652c2074686973206973206120626974636f6e2121212782012088a820add57dfe5277079d069ca4ad4893c96de91f88ffb981fdc6a2a34d5336c66aff87 006b 0247304402207de9ba56bb9f641372e805782575ee840a899e61021c8b1572b3ec1d5b5950e9022069e9ba998915dae193d3c25cb89b5e64370e6a3a7755e7f31cf6d7cbc2a49f6d0121034695f5b7864c580bf11f9f8cb1a94eb336f2ce9ef872d2ae1a90ee276c772484"),
             TxSignatures(channelId2, tx1, listOf(), null, listOf(), listOf(), listOf(), listOf()) to ByteVector("0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1f2ec025a33e39ef8e177afcdc1adc855bf128dc906182255aeb64efa825f106 0000"),
             TxSignatures(channelId2, tx1, listOf(), null, legacySwapInSignatures, listOf(), listOf(), listOf()) to ByteVector("0047 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1f2ec025a33e39ef8e177afcdc1adc855bf128dc906182255aeb64efa825f106 0000 fd025b 80 c49269a9baa73a5ec44b63bdcaabf9c7c6477f72866b822f8502e5c989aa3562fe69d72bec62025d3474b9c2d947ec6d68f9f577be5fab8ee80503cefd8846c3 2dadacd65b585e4061421b5265ff543e2a7bdc4d4a7fea932727426bdc53db252a2f914ea1fcbd580b80cdea60226f63288cd44bd84a8850c9189a24f08c7cc5"),
@@ -585,11 +587,16 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
         val channelId = ByteVector32("c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c")
         val commitmentSecret = PrivateKey.fromHex("34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55")
         val commitmentPoint = PublicKey.fromHex("02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867")
-        val fundingTxId = TxId(TxHash("24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"))
+        val fundingTxId = TxId(TxHash("422c292416d1151e5bfd210990b2306e5c4d3e2e3f9d53247bbd5557c96fbfa0"))
+        val nextFundingTxId = TxId(TxHash("24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"))
+        val commitNonce = IndividualNonce("798cd38fe6ea51c1e8f021007c809f613034f1cb702cc64f4b9370c3bb73a67844ed280d26ae541a9c855a035fe0d87daf6b5de90a2f8785947aa4c10f294a5131f5")
+        val nextCommitNonce = IndividualNonce("d8bc06ffaf24f29fb6310290262651a3154928bc8ad0d1546257e1bfe19ae6ac4ec02c15ee3f397f601d2c521ff65c604d04170b42ffee95db597d82df2bfde5b14a")
         val testCases = listOf(
             // @formatter:off
             ChannelReestablish(channelId, 242842, 42, commitmentSecret, commitmentPoint) to ByteVector("0088 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 000000000003b49a 000000000000002a 34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55 02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867"),
-            ChannelReestablish(channelId, 242842, 42, commitmentSecret, commitmentPoint, TlvStream(ChannelReestablishTlv.NextFunding(fundingTxId))) to ByteVector("0088 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 000000000003b49a 000000000000002a 34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55 02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867 00 20 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566")
+            ChannelReestablish(channelId, 242842, 42, commitmentSecret, commitmentPoint, nextCommitNonces = listOf(), nextFundingTxId = nextFundingTxId) to ByteVector("0088 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 000000000003b49a 000000000000002a 34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55 02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867 00 20 24e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566"),
+            ChannelReestablish(channelId, 242842, 42, commitmentSecret, commitmentPoint, listOf(Pair(fundingTxId, commitNonce), Pair(nextFundingTxId, nextCommitNonce))) to ByteVector("0088 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 000000000003b49a 000000000000002a 34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55 02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867 16c4422c292416d1151e5bfd210990b2306e5c4d3e2e3f9d53247bbd5557c96fbfa0798cd38fe6ea51c1e8f021007c809f613034f1cb702cc64f4b9370c3bb73a67844ed280d26ae541a9c855a035fe0d87daf6b5de90a2f8785947aa4c10f294a5131f524e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566d8bc06ffaf24f29fb6310290262651a3154928bc8ad0d1546257e1bfe19ae6ac4ec02c15ee3f397f601d2c521ff65c604d04170b42ffee95db597d82df2bfde5b14a"),
+            ChannelReestablish(channelId, 242842, 42, commitmentSecret, commitmentPoint, listOf(Pair(nextFundingTxId, nextCommitNonce)), nextFundingTxId, commitNonce) to ByteVector("0088 c11b8fbd682b3c6ee11f9d7268e22bb5887cd4d3bf3338bfcc340583f685733c 000000000003b49a 000000000000002a 34f159d37cf7b5de52ec0adc3968886232f90d272e8c82e8b6f7fcb7e57c4b55 02bf050efff417efc09eb211ca9e4e845920e2503740800e88505b25e6f0e1e867 002024e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566 166224e1b2c94c4e734dd5b9c5f3c910fbb6b3b436ced6382c7186056a5a23f14566d8bc06ffaf24f29fb6310290262651a3154928bc8ad0d1546257e1bfe19ae6ac4ec02c15ee3f397f601d2c521ff65c604d04170b42ffee95db597d82df2bfde5b14a 1842798cd38fe6ea51c1e8f021007c809f613034f1cb702cc64f4b9370c3bb73a67844ed280d26ae541a9c855a035fe0d87daf6b5de90a2f8785947aa4c10f294a5131f5"),
             // @formatter:on
         )
         testCases.forEach { (message, bin) ->
@@ -753,6 +760,9 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
     fun `nonreg backup channel data`() {
         val channelId = randomBytes32()
         val txHash = TxHash(randomBytes32())
+        val commitNonce = IndividualNonce(randomBytes(66))
+        val nextTxHash = TxHash(randomBytes32())
+        val nextCommitNonce = IndividualNonce(randomBytes(66))
         val signature = ChannelSpendSignature.IndividualSignature(randomBytes64())
         val key = randomKey()
         val point = randomKey().publicKey()
@@ -776,9 +786,12 @@ class LightningCodecsTestsCommon : LightningTestSuite() {
             // revoke_and_ack
             Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() to RevokeAndAck(channelId, key, point),
             Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("01 02 0102") to RevokeAndAck(channelId, key, point, TlvStream(setOf(), setOf(GenericTlv(1, ByteVector("0102"))))),
+            Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("16 62") + txHash.value.toByteArray() + commitNonce.toByteArray() to RevokeAndAck(channelId, key, point, listOf(Pair(TxId(txHash), commitNonce))),
+            Hex.decode("0085") + channelId.toByteArray() + key.value.toByteArray() + point.value.toByteArray() + Hex.decode("16 c4") + txHash.value.toByteArray() + commitNonce.toByteArray() + nextTxHash.value.toByteArray() + nextCommitNonce.toByteArray() to RevokeAndAck(channelId, key, point, listOf(Pair(TxId(txHash), commitNonce), Pair(TxId(nextTxHash), nextCommitNonce))),
             // shutdown
             Hex.decode("0026") + channelId.toByteArray() + Hex.decode("002a") + randomData to Shutdown(channelId, randomData.toByteVector()),
             Hex.decode("0026") + channelId.toByteArray() + Hex.decode("002a") + randomData + Hex.decode("01 02 0102") to Shutdown(channelId, randomData.toByteVector(), TlvStream(setOf(), setOf(GenericTlv(1, ByteVector("0102"))))),
+            Hex.decode("0026") + channelId.toByteArray() + Hex.decode("002a") + randomData + Hex.decode("08 42") + nextCommitNonce.toByteArray() to Shutdown(channelId, randomData.toByteVector(), nextCommitNonce),
             // closing_complete
             Hex.decode("0028") + channelId.toByteArray() + Hex.decode("0004deadbeef 0004deadbeef 0000000000000451 00000000") to ClosingComplete(channelId, Hex.decode("deadbeef").byteVector(), Hex.decode("deadbeef").byteVector(), 1105.sat, 0),
             // closing_sig

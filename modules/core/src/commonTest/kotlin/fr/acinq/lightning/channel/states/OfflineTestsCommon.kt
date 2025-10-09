@@ -781,7 +781,6 @@ class OfflineTestsCommon : LightningTestSuite() {
         val bobInit = Init((bob.state as WaitForFundingCreated).localChannelParams.features.initFeatures())
         val (alice3, actions3) = alice2.process(ChannelCommand.Connected(aliceInit, bobInit))
         assertIs<Syncing>(alice3.state)
-        assertEquals(alice.state, alice3.state.state)
         assertEquals(actions3.size, 1)
         assertEquals(actions3.hasOutgoingMessage<ChannelReestablish>().nextFundingTxId, fundingTxId)
         // When receiving Bob's error, Alice forgets the channel.

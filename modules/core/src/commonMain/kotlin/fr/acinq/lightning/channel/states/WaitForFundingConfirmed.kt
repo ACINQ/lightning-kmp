@@ -324,7 +324,7 @@ data class WaitForFundingConfirmed(
                     is RbfStatus.WaitingForSigs -> rbfStatus
                     else -> RbfStatus.None
                 }
-                Pair(Offline(this@WaitForFundingConfirmed.copy(rbfStatus = rbfStatus1)), listOf())
+                Pair(Offline(this@WaitForFundingConfirmed.copy(rbfStatus = rbfStatus1, remoteNextCommitNonces = mapOf())), listOf())
             }
         }
     }

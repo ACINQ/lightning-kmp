@@ -167,6 +167,25 @@ class WaitForFundingCreatedTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv TxComplete -- without nonces`() {
+        val (alice, bob, inputAlice) = init(bobFundingAmount = 0.sat)
+        // Alice ---- tx_add_input ----> Bob
+        val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(inputAlice))
+        // Alice <--- tx_complete ----- Bob
+        val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(actionsBob1.findOutgoingMessage<TxComplete>()))
+        // Alice ---- tx_add_output ----> Bob
+        val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(actionsAlice1.findOutgoingMessage<TxAddOutput>()))
+        // Alice <--- tx_complete ----- Bob
+        val txComplete = actionsBob2.findOutgoingMessage<TxComplete>()
+        assertNull(txComplete.fundingNonce)
+        assertNotNull(txComplete.commitNonces)
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(txComplete.copy(tlvs = TlvStream(txComplete.tlvs.records.filterNot { it is TxCompleteTlv.CommitNonces }.toSet()))))
+        assertIs<Aborted>(alice2.state)
+        assertEquals(1, actionsAlice2.size)
+        actionsAlice2.hasOutgoingMessage<Error>()
+    }
+
+    @Test
     fun `recv CommitSig`() {
         val (alice, bob, _) = init(bobFundingAmount = 0.sat)
         run {

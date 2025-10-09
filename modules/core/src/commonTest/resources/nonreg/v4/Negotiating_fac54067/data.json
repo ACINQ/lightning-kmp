@@ -160,7 +160,6 @@
         },
         "remotePerCommitmentSecrets": "<redacted>"
     },
-    "remoteNextCommitNonces": {},
     "localScript": "001405e0104aa726e34ff5cd3a6320d05c0862b5b01c",
     "remoteScript": "001434947cfb2e8f6054ddf12daed4308cbe342580d1",
     "proposedClosingTxs": [

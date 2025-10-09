@@ -15,7 +15,6 @@ import fr.acinq.lightning.wire.*
 
 data class Negotiating(
     override val commitments: Commitments,
-    override val remoteNextCommitNonces: Map<TxId, IndividualNonce>,
     val localScript: ByteVector,
     val remoteScript: ByteVector,
     // Closing transactions we created, where we pay the fees (unsigned).
@@ -29,6 +28,8 @@ data class Negotiating(
     val remoteCloseeNonce: IndividualNonce?,
     val localCloserNonces: Transactions.CloserNonces?,
 ) : ChannelStateWithCommitments() {
+    override val remoteNextCommitNonces: Map<TxId, IndividualNonce> = mapOf()
+
     override fun updateCommitments(input: Commitments): ChannelStateWithCommitments = this.copy(commitments = input)
 
     override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
@@ -179,7 +180,7 @@ data class Negotiating(
             is ChannelCommand.Funding -> unhandled(cmd)
             is ChannelCommand.Closing -> unhandled(cmd)
             is ChannelCommand.Connected -> unhandled(cmd)
-            is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating), listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating.copy(localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)), listOf())
         }
     }
 

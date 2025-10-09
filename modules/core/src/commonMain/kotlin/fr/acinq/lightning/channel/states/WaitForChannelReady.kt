@@ -90,7 +90,6 @@ data class WaitForChannelReady(
                         null,
                         null,
                         localCloseeNonce = null,
-                        localCloserNonces = null
                     )
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),
@@ -118,7 +117,7 @@ data class WaitForChannelReady(
             is ChannelCommand.Funding -> unhandled(cmd)
             is ChannelCommand.Closing -> unhandled(cmd)
             is ChannelCommand.Connected -> unhandled(cmd)
-            is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForChannelReady), listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this@WaitForChannelReady.copy(remoteNextCommitNonces = mapOf())), listOf())
         }
     }
 }

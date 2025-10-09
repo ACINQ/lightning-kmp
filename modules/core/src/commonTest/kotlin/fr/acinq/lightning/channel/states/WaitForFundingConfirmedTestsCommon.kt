@@ -38,7 +38,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (alice1, actionsAlice1) = alice.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice.state.channelId, WatchConfirmed.ChannelFundingDepthOk, 42, 0, fundingTx)))
             assertIs<WaitForChannelReady>(alice1.state)
             assertEquals(3, actionsAlice1.size)
-            actionsAlice1.hasOutgoingMessage<ChannelReady>()
+            actionsAlice1.hasOutgoingMessage<ChannelReady>().also { assertNotNull(it.nextLocalNonce) }
             actionsAlice1.has<ChannelAction.Storage.StoreState>()
             val watch = actionsAlice1.hasWatch<WatchSpent>()
             assertIs<WatchSpent.ChannelSpent>(watch.event)
@@ -49,7 +49,7 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
             val (bob1, actionsBob1) = bob.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob.state.channelId, WatchConfirmed.ChannelFundingDepthOk, 42, 0, fundingTx)))
             assertIs<WaitForChannelReady>(bob1.state)
             assertEquals(3, actionsBob1.size)
-            actionsBob1.hasOutgoingMessage<ChannelReady>()
+            actionsBob1.hasOutgoingMessage<ChannelReady>().also { assertNotNull(it.nextLocalNonce) }
             actionsBob1.has<ChannelAction.Storage.StoreState>()
             val watch = actionsBob1.hasWatch<WatchSpent>()
             assertIs<WatchSpent.ChannelSpent>(watch.event)
@@ -230,15 +230,17 @@ class WaitForFundingConfirmedTestsCommon : LightningTestSuite() {
 
     @Test
     fun `recv ChannelReady`() {
-        val (alice, bob, _) = init()
+        val (alice, bob, fundingTx) = init()
         val channelReadyAlice = ChannelReady(alice.state.channelId, randomKey().publicKey())
         val channelReadyBob = ChannelReady(bob.state.channelId, randomKey().publicKey())
         val (alice1, actionsAlice1) = alice.process(ChannelCommand.MessageReceived(channelReadyBob))
         assertIs<WaitForFundingConfirmed>(alice1.state)
+        assertNotNull(alice1.state.remoteNextCommitNonces[fundingTx.txid])
         assertEquals(alice1.state.deferred, channelReadyBob)
         assertTrue(actionsAlice1.isEmpty())
         val (bob1, actionsBob1) = bob.process(ChannelCommand.MessageReceived(channelReadyAlice))
         assertIs<WaitForFundingConfirmed>(bob1.state)
+        assertNotNull(bob1.state.remoteNextCommitNonces[fundingTx.txid])
         assertEquals(bob1.state.deferred, channelReadyAlice)
         assertTrue(actionsBob1.isEmpty())
     }
