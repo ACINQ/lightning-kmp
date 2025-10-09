@@ -693,7 +693,11 @@ class Peer(
                     localScript,
                     localScript,
                 ).preferred?.let {
-                    val dummyWitness = Script.witnessKeyPathPay2tr(Transactions.PlaceHolderSig)
+                    val dummyPubKey = channel.commitments.latest.remoteFundingPubkey
+                    val dummyWitness = when (channel.commitments.latest.commitmentFormat) {
+                        Transactions.CommitmentFormat.AnchorOutputs -> Scripts.witness2of2(Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, dummyPubKey, dummyPubKey)
+                        Transactions.CommitmentFormat.SimpleTaprootChannels -> Script.witnessKeyPathPay2tr(Transactions.PlaceHolderSig)
+                    }
                     val miningFee = Transactions.weight2fee(targetFeerate, it.tx.updateWitness(0, dummyWitness).weight())
                     ChannelManagementFees(miningFee = miningFee, serviceFee = 0.sat)
                 }
