@@ -298,33 +298,37 @@ class OfferManagerTestsCommon : LightningTestSuite() {
     }
 
     @Test
-    fun `pay offer with long payer note`() = runSuspendTest {
-        // Alice and Bob use the same trampoline node.
-        val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
-        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, "tea").first
-
-        // Bob sends an invoice request to Alice.
-        val payerNote = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
-        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), payerNote, 5500.msat, offer, 20.seconds)
-        val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
-        assertTrue(invoiceRequests.size == 1)
-        val (messageForAlice, nextNodeAlice) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
-        assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Alice.nodeParams.nodeId)), nextNodeAlice)
-        // Alice sends an invoice back to Bob.
-        val invoiceResponse = aliceOfferManager.receiveMessage(messageForAlice, listOf(), 0)
-        assertIs<OnionMessageAction.SendMessage>(invoiceResponse)
-        val (messageForBob, nextNodeBob) = trampolineRelay(invoiceResponse.message, aliceTrampolineKey)
-        assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Bob.nodeParams.nodeId)), nextNodeBob)
-        val payInvoice = bobOfferManager.receiveMessage(messageForBob, listOf(), 0)
-        assertIs<OnionMessageAction.PayInvoice>(payInvoice)
-        assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
-        assertEquals(payOffer, payInvoice.payOffer)
-
-        // The payer note is truncated in the payment metadata.
-        val metadata = decryptPathId(payInvoice.invoice, aliceTrampolineKey)
-        assertEquals(64, metadata.payerNote!!.length)
-        assertEquals(payerNote.take(63), metadata.payerNote.take(63))
+    fun `OfferPaymentMetadata with long description or payerNote`() = runSuspendTest {
+        val longString = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+        // Long description + Null payerNote
+        val (desc1, _) = OfferManager.truncateStrings(longString, null)
+        assertEquals(64, desc1!!.length)
+        assertEquals(longString.take(63), desc1.take(63))
+        // Null description + Long payerNote
+        val (_, payerNote2) = OfferManager.truncateStrings(null, longString)
+        assertEquals(64, payerNote2!!.length)
+        assertEquals(longString.take(63), payerNote2.take(63))
+        // Long description + Long payerNote
+        val (desc3, payerNote3) = OfferManager.truncateStrings(longString, longString)
+        assertEquals(32, desc3!!.length)
+        assertEquals(32, payerNote3!!.length)
+        assertEquals(longString.take(31), desc3.take(31))
+        assertEquals(longString.take(31), payerNote3.take(31))
+        // Long description + Short payerNote
+        val (desc4, payerNote4) = OfferManager.truncateStrings(longString, "tea")
+        assertEquals(61, desc4!!.length)
+        assertEquals(3, payerNote4!!.length)
+        assertEquals(longString.take(60), desc4.take(60))
+        assertEquals("tea", payerNote4)
+        // Short description + Long payerNote
+        val (desc5, payerNote5) = OfferManager.truncateStrings("tea", longString)
+        assertEquals(3, desc5!!.length)
+        assertEquals(61, payerNote5!!.length)
+        assertEquals("tea", desc5)
+        assertEquals(longString.take(60), payerNote5.take(60))
+        // Short description + Short payerNote
+        val (desc6, payerNote6) = OfferManager.truncateStrings("tea", "coffee")
+        assertEquals("tea", desc6)
+        assertEquals("coffee", payerNote6)
     }
-
 }

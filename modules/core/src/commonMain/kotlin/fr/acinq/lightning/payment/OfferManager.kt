@@ -22,6 +22,7 @@ import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlin.math.min
 
 sealed class OnionMessageAction {
     /** Send an outgoing onion message (invoice or invoice_request). */
@@ -154,20 +155,10 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             else -> {
                 val amount = request.requestedAmount
                 val preimage = randomBytes32()
-                val truncatedPayerNote = request.payerNote?.let {
-                    if (it.length <= 64) {
-                        it
-                    } else {
-                        it.take(63) + "…"
-                    }
-                }
-                val truncatedDescription = request.offer.description?.let {
-                    if (it.length <= 64) {
-                        it
-                    } else {
-                        it.take(63) + "…"
-                    }
-                }
+                val (truncatedPayerNote, truncatedDescription) = truncateStrings(
+                    request.payerNote,
+                    request.offer.description
+                )
                 val expirySeconds = request.offer.expirySeconds ?: nodeParams.bolt12InvoiceExpiry.inWholeSeconds
                 val metadata = OfferPaymentMetadata.V2(
                     offerId = request.offer.offerId,
@@ -285,6 +276,35 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             }
             val sessionKey = PrivateKey(Crypto.sha256(tweak + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
             return OfferTypes.Offer.createBlindedOffer(chainHash, nodePrivateKey, trampolineNodeId, amount, description, Features.empty, sessionKey, pathId)
+        }
+
+        /**
+         * Returns a pair of strings, where the combined length is guaranteed to be <= 64.
+         */
+        fun truncateStrings(strA: String?, strB: String?): Pair<String?, String?> {
+            var lenA = min(64, (strA?.length ?: 0))
+            var lenB = min(64, (strB?.length ?: 0))
+            if (lenA + lenB > 64) {
+                when {
+                    lenA > 32 && lenB > 32 -> {
+                        lenA = 32
+                        lenB = 32
+                    }
+                    lenA > 32 -> {
+                        lenA = 64 - lenB
+                   }
+                    lenB > 32 -> {
+                        lenB = 64 - lenA
+                    }
+                }
+            }
+            val truncatedA = strA?.let {
+                if (it.length <= lenA) { it } else { it.take(lenA-1) + "…" }
+            }
+            val truncatedB = strB?.let {
+                if (it.length <= lenB) { it } else { it.take(lenB-1) + "…" }
+            }
+            return Pair(truncatedA, truncatedB)
         }
     }
 }
