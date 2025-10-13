@@ -21,6 +21,7 @@ import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
+import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlin.math.min
 
@@ -279,11 +280,27 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         }
 
         /**
-         * Returns a pair of strings, where the combined length is guaranteed to be <= 64.
+         * Returns a pair of strings, where the combined size (in UTF-8) is guaranteed to be <= 64 bytes.
          */
         fun truncateStrings(strA: String?, strB: String?): Pair<String?, String?> {
-            var lenA = min(64, (strA?.length ?: 0))
-            var lenB = min(64, (strB?.length ?: 0))
+            // NB: a string's length != it's UTF-8 encoding size,
+            // since a single character could be encoded with multiple bytes.
+            // Also, the ellipsis character (…) is encoded as 3 bytes in UTF-8.
+            val truncateLength = { str: String, len: Int ->
+                if (str.length <= len) { str } else { str.take(len-1) + "…" }
+            }
+            val truncateBytes = { str: String, len: Int ->
+                var targetLen = len
+                var truncated = truncateLength(str, targetLen)
+                while (truncated.toByteArray().size > len) {
+                    truncated = truncateLength(str, --targetLen)
+                }
+                truncated
+            }
+            var truncatedA = strA?.let { truncateLength(it, 64) }
+            var truncatedB = strB?.let { truncateLength(it, 64) }
+            var lenA = truncatedA?.toByteArray()?.size ?: 0
+            var lenB = truncatedB?.toByteArray()?.size ?: 0
             if (lenA + lenB > 64) {
                 when {
                     lenA > 32 && lenB > 32 -> {
@@ -292,17 +309,13 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     }
                     lenA > 32 -> {
                         lenA = 64 - lenB
-                   }
+                    }
                     lenB > 32 -> {
                         lenB = 64 - lenA
                     }
                 }
-            }
-            val truncatedA = strA?.let {
-                if (it.length <= lenA) { it } else { it.take(lenA-1) + "…" }
-            }
-            val truncatedB = strB?.let {
-                if (it.length <= lenB) { it } else { it.take(lenB-1) + "…" }
+                truncatedA = strA?.let { truncateBytes(it, lenA) }
+                truncatedB = strB?.let { truncateBytes(it, lenB) }
             }
             return Pair(truncatedA, truncatedB)
         }

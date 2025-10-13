@@ -24,6 +24,7 @@ import fr.acinq.lightning.wire.MessageOnion
 import fr.acinq.lightning.wire.OfferTypes
 import fr.acinq.lightning.wire.OnionMessage
 import fr.acinq.lightning.wire.RouteBlindingEncryptedData
+import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlin.test.*
@@ -297,38 +298,38 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertEquals(payerNote, metadata.payerNote)
     }
 
+    fun String.byteLength(): Int = this.toByteArray().size
+
     @Test
     fun `OfferPaymentMetadata with long description or payerNote`() = runSuspendTest {
         val longString = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
         // Long description + Null payerNote
         val (desc1, _) = OfferManager.truncateStrings(longString, null)
-        assertEquals(64, desc1!!.length)
-        assertEquals(longString.take(63), desc1.take(63))
+        assertEquals(64, desc1!!.byteLength())
         // Null description + Long payerNote
         val (_, payerNote2) = OfferManager.truncateStrings(null, longString)
-        assertEquals(64, payerNote2!!.length)
-        assertEquals(longString.take(63), payerNote2.take(63))
+        assertEquals(64, payerNote2!!.byteLength())
         // Long description + Long payerNote
         val (desc3, payerNote3) = OfferManager.truncateStrings(longString, longString)
-        assertEquals(32, desc3!!.length)
-        assertEquals(32, payerNote3!!.length)
-        assertEquals(longString.take(31), desc3.take(31))
-        assertEquals(longString.take(31), payerNote3.take(31))
+        assertEquals(32, desc3!!.byteLength())
+        assertEquals(32, payerNote3!!.byteLength())
         // Long description + Short payerNote
         val (desc4, payerNote4) = OfferManager.truncateStrings(longString, "tea")
-        assertEquals(61, desc4!!.length)
-        assertEquals(3, payerNote4!!.length)
-        assertEquals(longString.take(60), desc4.take(60))
+        assertEquals(61, desc4!!.byteLength())
+        assertEquals(3, payerNote4!!.byteLength())
         assertEquals("tea", payerNote4)
         // Short description + Long payerNote
         val (desc5, payerNote5) = OfferManager.truncateStrings("tea", longString)
-        assertEquals(3, desc5!!.length)
-        assertEquals(61, payerNote5!!.length)
+        assertEquals(3, desc5!!.byteLength())
+        assertEquals(61, payerNote5!!.byteLength())
         assertEquals("tea", desc5)
-        assertEquals(longString.take(60), payerNote5.take(60))
         // Short description + Short payerNote
         val (desc6, payerNote6) = OfferManager.truncateStrings("tea", "coffee")
         assertEquals("tea", desc6)
         assertEquals("coffee", payerNote6)
+        // String where UTF-8 representation is different than string length.
+        val trickyLongString = "Â🏀cdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz中" // str.length = 63
+        val (desc7, _) = OfferManager.truncateStrings(trickyLongString, null)
+        assertTrue(desc7!!.byteLength() <= 64)
     }
 }
