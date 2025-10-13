@@ -232,7 +232,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     private fun isOurOffer(offer: OfferTypes.Offer, pathId: ByteVector?, blindedPrivateKey: PrivateKey): Boolean = when {
         pathId != null && pathId.size() != 32 -> false
         else -> {
-            val expected = deterministicOffer(nodeParams.chainHash, nodeParams.nodePrivateKey, walletParams.trampolineNode.id, offer.amount, offer.description, pathId?.let { ByteVector32(it) })
+            val expected = deterministicOffer(nodeParams.chainHash, nodeParams.nodePrivateKey, walletParams.trampolineNode.id, offer.amountMsat, offer.description, pathId?.let { ByteVector32(it) })
             expected == Pair(offer, blindedPrivateKey)
         }
     }

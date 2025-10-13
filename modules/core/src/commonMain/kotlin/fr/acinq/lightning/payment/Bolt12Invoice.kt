@@ -108,8 +108,8 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
             additionalTlvs: Set<InvoiceTlv> = setOf(),
             customTlvs: Set<GenericTlv> = setOf()
         ): Bolt12Invoice {
-            require(request.amount != null || request.offer.amount != null)
-            val amount = request.amount ?: (request.offer.amount!! * request.quantity)
+            require(request.amount != null || request.offer.amountMsat != null)
+            val amount = request.amount ?: (request.offer.amountMsat!! * request.quantity)
             val tlvs: Set<InvoiceTlv> = removeSignature(request.records).records + setOfNotNull(
                 InvoicePaths(paths.map { it.route }),
                 InvoiceBlindedPay(paths.map { it.paymentInfo }),
