@@ -510,8 +510,8 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
     @Test
     fun `insufficient funds when retrying with higher fees`() = runSuspendTest {
         val (alice, _) = TestsHelper.reachNormal(aliceFundingAmount = 100_000.sat, bobFundingAmount = 0.sat)
-        assertTrue(86_000_000.msat < alice.commitments.availableBalanceForSend())
-        assertTrue(alice.commitments.availableBalanceForSend() < 86_500_000.msat)
+        assertTrue(98_500_000.msat < alice.commitments.availableBalanceForSend())
+        assertTrue(alice.commitments.availableBalanceForSend() < 99_000_000.msat)
         val walletParams = defaultWalletParams.copy(
             trampolineFees = listOf(
                 TrampolineFees(100.sat, 0, CltvExpiryDelta(144)),
@@ -520,12 +520,12 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         )
         val outgoingPaymentHandler = OutgoingPaymentHandler(TestConstants.Alice.nodeParams, walletParams, InMemoryPaymentsDb())
         val invoice = makeInvoice(amount = null, supportsTrampoline = true)
-        val payment = PayInvoice(UUID.randomUUID(), 86_000_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
+        val payment = PayInvoice(UUID.randomUUID(), 98_500_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
 
         val progress = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)
         assertIs<OutgoingPaymentHandler.Progress>(progress)
         val (_, add1) = findAddHtlcCommand(progress)
-        assertEquals(86_100_000.msat, add1.amount)
+        assertEquals(98_600_000.msat, add1.amount)
 
         val attempt = outgoingPaymentHandler.getPendingPayment(payment.paymentId)!!
         val fail = outgoingPaymentHandler.processAddSettledFailed(alice.channelId, createRemoteFailure(add1, attempt, TrampolineFeeInsufficient), mapOf(alice.channelId to alice.state), TestConstants.defaultBlockHeight)

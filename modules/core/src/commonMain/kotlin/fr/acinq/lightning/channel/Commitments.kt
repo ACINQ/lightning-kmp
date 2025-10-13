@@ -10,7 +10,6 @@ import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.channel.states.Channel
 import fr.acinq.lightning.channel.states.ChannelContext
 import fr.acinq.lightning.crypto.*
@@ -847,10 +846,9 @@ data class Commitments(
         return failure?.let { Either.Left(it) } ?: Either.Right(Pair(copy(changes = changes1), fee))
     }
 
-    fun receiveFee(fee: UpdateFee, feerateTolerance: FeerateTolerance): Either<ChannelException, Commitments> {
+    fun receiveFee(fee: UpdateFee): Either<ChannelException, Commitments> {
         if (channelParams.localParams.paysCommitTxFees) return Either.Left(NonInitiatorCannotSendUpdateFee(channelId))
         if (fee.feeratePerKw < FeeratePerKw.MinimumFeeratePerKw) return Either.Left(FeerateTooSmall(channelId, remoteFeeratePerKw = fee.feeratePerKw))
-        if (Helpers.isFeeDiffTooHigh(FeeratePerKw.CommitmentFeerate, fee.feeratePerKw, feerateTolerance)) return Either.Left(FeerateTooDifferent(channelId, FeeratePerKw.CommitmentFeerate, fee.feeratePerKw))
         val changes1 = changes.copy(remoteChanges = changes.remoteChanges.copy(proposed = changes.remoteChanges.proposed.filterNot { it is UpdateFee } + fee))
         val failure = active.map { it.canReceiveFee(channelParams, changes1).left }.firstOrNull()
         return failure?.let { Either.Left(it) } ?: Either.Right(copy(changes = changes1))

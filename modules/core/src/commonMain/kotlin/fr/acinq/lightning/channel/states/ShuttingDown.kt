@@ -39,7 +39,7 @@ data class ShuttingDown(
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@ShuttingDown.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFee -> when (val result = commitments.receiveFee(cmd.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
+                    is UpdateFee -> when (val result = commitments.receiveFee(cmd.message)) {
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@ShuttingDown.copy(commitments = result.value), listOf())
                     }

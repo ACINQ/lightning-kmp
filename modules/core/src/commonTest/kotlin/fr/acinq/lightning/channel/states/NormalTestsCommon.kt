@@ -13,6 +13,7 @@ import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.ChannelAction.Blockchain.PublishTx.Type
@@ -188,7 +189,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val add = defaultAdd.copy(amount = Int.MAX_VALUE.msat)
         val (alice1, actions) = alice0.process(add)
         val actualError = actions.findCommandError<InsufficientFunds>()
-        val expectError = InsufficientFunds(alice0.channelId, amount = Int.MAX_VALUE.msat, missing = 1_311_263.sat, reserve = 0.sat, fees = 6_360.sat)
+        val expectError = InsufficientFunds(alice0.channelId, amount = Int.MAX_VALUE.msat, missing = 1_298_807.sat, reserve = 0.sat, fees = 948.sat)
         assertEquals(expectError, actualError)
         assertEquals(alice0, alice1)
     }
@@ -207,7 +208,7 @@ class NormalTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelCommand_Htlc_Add -- commit tx fee greater than remote initiator balance`() {
         val (alice0, bob0) = reachNormal(bobFundingAmount = 200_000.sat)
-        val (alice1, bob1) = addHtlc(836_220_000.msat, alice0, bob0).first
+        val (alice1, bob1) = addHtlc(848_676_128.msat, alice0, bob0).first
         val (alice2, bob2) = crossSign(alice1, bob1)
         assertEquals(0.msat, alice2.state.commitments.availableBalanceForSend())
 
@@ -250,7 +251,7 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsAlice2.hasOutgoingMessage<UpdateAddHtlc>()
         val (_, actionsAlice3) = alice2.process(defaultAdd.copy(amount = 500_000_000.msat))
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
-        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 267_220.sat, reserve = 0.sat, fees = 8_080.sat)
+        val expectError = InsufficientFunds(alice0.channelId, amount = 500_000_000.msat, missing = 251_497.sat, reserve = 0.sat, fees = 1035.sat)
         assertEquals(expectError, actualError)
     }
 
@@ -261,12 +262,12 @@ class NormalTestsCommon : LightningTestSuite() {
         actionsAlice1.hasOutgoingMessage<UpdateAddHtlc>()
         val (alice2, actionsAlice2) = alice1.process(defaultAdd.copy(amount = 200_000_000.msat))
         actionsAlice2.hasOutgoingMessage<UpdateAddHtlc>()
-        val (alice3, actionsAlice3) = alice2.process(defaultAdd.copy(amount = 132_780_000.msat))
+        val (alice3, actionsAlice3) = alice2.process(defaultAdd.copy(amount = 148_502_064.msat))
         actionsAlice3.hasOutgoingMessage<UpdateAddHtlc>()
         assertEquals(0.msat, alice3.commitments.availableBalanceForSend())
         val (_, actionsAlice4) = alice3.process(defaultAdd.copy(amount = 1_000_000.msat))
         val actualError = actionsAlice4.findCommandError<InsufficientFunds>()
-        val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 1_000.sat, reserve = 0.sat, fees = 8_080.sat)
+        val expectedError = InsufficientFunds(alice0.channelId, amount = 1_000_000.msat, missing = 1_000.sat, reserve = 0.sat, fees = 1035.sat)
         assertEquals(expectedError, actualError)
     }
 
@@ -368,7 +369,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val failAdd = defaultAdd.copy(amount = alice0.commitments.latest.fundingAmount.toMilliSatoshi() * 2 / 3)
         val (_, actionsAlice3) = alice2.process(failAdd)
         val actualError = actionsAlice3.findCommandError<InsufficientFunds>()
-        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 498_833.sat, 0.sat, 7_220.sat)
+        val expectedError = InsufficientFunds(alice0.channelId, failAdd.amount, 484_744.sat, 0.sat, 991.sat)
         assertEquals(expectedError, actualError)
     }
 
@@ -471,7 +472,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (bob1, actions1) = bob0.process(ChannelCommand.MessageReceived(add))
         assertIs<LNChannel<Closing>>(bob1)
         val error = actions1.hasOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), InsufficientFunds(bob0.channelId, 800_000_000.msat, 6_360.sat, 0.sat, 6_360.sat).message)
+        assertEquals(error.toAscii(), InsufficientFunds(bob0.channelId, 800_000_000.msat, 948.sat, 0.sat, 948.sat).message)
     }
 
     @Test
@@ -484,10 +485,10 @@ class NormalTestsCommon : LightningTestSuite() {
         assertTrue(actions2.isEmpty())
         val (bob3, actions3) = bob2.process(ChannelCommand.MessageReceived(add.copy(id = 2)))
         assertTrue(actions3.isEmpty())
-        val (bob4, actions4) = bob3.process(ChannelCommand.MessageReceived(add.copy(id = 3, amountMsat = 800_000_000.msat)))
+        val (bob4, actions4) = bob3.process(ChannelCommand.MessageReceived(add.copy(id = 3, amountMsat = 805_000_000.msat)))
         assertIs<LNChannel<Closing>>(bob4)
         val error = actions4.hasOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), InsufficientFunds(bob0.channelId, 800_000_000.msat, 3_940.sat, 0.sat, 8_940.sat).message)
+        assertEquals(error.toAscii(), InsufficientFunds(bob0.channelId, 800_000_000.msat, 1078.sat, 0.sat, 1078.sat).message)
     }
 
     @Test
@@ -575,14 +576,14 @@ class NormalTestsCommon : LightningTestSuite() {
         assertTrue(alice0.staticParams.nodeParams.dustLimit > bob0.staticParams.nodeParams.dustLimit)
         // we're gonna exchange two htlcs in each direction, the goal is to have bob's commitment have 4 htlcs, and alice's
         // commitment only have 3. We will then check that alice indeed persisted 4 htlcs, and bob only 3.
-        val aliceMinReceive = TestConstants.Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Transactions.CommitmentFormat.AnchorOutputs.htlcSuccessWeight)
-        val aliceMinOffer = TestConstants.Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Transactions.CommitmentFormat.AnchorOutputs.htlcTimeoutWeight)
-        val bobMinReceive = TestConstants.Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Transactions.CommitmentFormat.AnchorOutputs.htlcSuccessWeight)
-        val bobMinOffer = TestConstants.Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.CommitmentFeerate, Transactions.CommitmentFormat.AnchorOutputs.htlcTimeoutWeight)
-        val addAlice1 = bobMinReceive + 10.sat // will be in alice and bob tx
-        val addAlice2 = bobMinReceive + 20.sat // will be in alice and bob tx
-        val addBob1 = aliceMinReceive + 10.sat // will be in alice and bob tx
-        val addBob2 = bobMinOffer + 10.sat // will be only be in bob tx
+        val aliceMinReceive = TestConstants.Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.MinimumFeeratePerKw, Transactions.CommitmentFormat.AnchorOutputs.htlcSuccessWeight)
+        val aliceMinOffer = TestConstants.Alice.nodeParams.dustLimit + weight2fee(FeeratePerKw.MinimumFeeratePerKw, Transactions.CommitmentFormat.AnchorOutputs.htlcTimeoutWeight)
+        val bobMinReceive = TestConstants.Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.MinimumFeeratePerKw, Transactions.CommitmentFormat.AnchorOutputs.htlcSuccessWeight)
+        val bobMinOffer = TestConstants.Bob.nodeParams.dustLimit + weight2fee(FeeratePerKw.MinimumFeeratePerKw, Transactions.CommitmentFormat.AnchorOutputs.htlcTimeoutWeight)
+        val addAlice1 = aliceMinOffer + 5.sat // will be in alice and bob tx
+        val addAlice2 = aliceMinOffer + 15.sat // will be in alice and bob tx
+        val addBob1 = aliceMinReceive + 5.sat // will be in alice and bob tx
+        val addBob2 = bobMinOffer + 5.sat // will be only be in bob tx
         assertTrue(addAlice1 > aliceMinOffer && addAlice1 > bobMinReceive)
         assertTrue(addAlice2 > aliceMinOffer && addAlice2 > bobMinReceive)
         assertTrue(addBob1 > aliceMinReceive && addBob1 > bobMinOffer)
@@ -726,7 +727,7 @@ class NormalTestsCommon : LightningTestSuite() {
     @Test
     fun `recv ChannelCommand_Sign -- after ChannelCommand_UpdateFee`() {
         val (alice, _) = reachNormal()
-        val (alice1, actions1) = alice.process(ChannelCommand.Commitment.UpdateFee(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat)))
+        val (alice1, actions1) = alice.process(ChannelCommand.Commitment.UpdateFee(FeeratePerKw(500.sat)))
         actions1.hasOutgoingMessage<UpdateFee>()
         val (_, actions2) = alice1.process(ChannelCommand.Commitment.Sign)
         actions2.hasOutgoingMessage<CommitSig>()
@@ -778,7 +779,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice2, bob2) = nodes2
         val (nodes3, _, _) = addHtlc(300_000.msat, bob2, alice2) //   b->a (dust)
         val (bob3, alice3) = nodes3
-        val (nodes4, _, _) = addHtlc(1_000_000.msat, alice3, bob3) //  a->b (regular)
+        val (nodes4, _, _) = addHtlc(1_000_000.msat, alice3, bob3) //  a->b (dust)
         val (alice4, bob4) = nodes4
         val (nodes5, _, _) = addHtlc(50_000_000.msat, bob4, alice4) // b->a (regular)
         val (bob5, alice5) = nodes5
@@ -793,7 +794,7 @@ class NormalTestsCommon : LightningTestSuite() {
         val (alice9, _) = alice8.process(ChannelCommand.MessageReceived(commitSig))
         assertIs<LNChannel<Normal>>(alice9)
         assertEquals(1, alice9.commitments.latest.localCommit.index)
-        assertEquals(3, alice9.commitments.latest.localCommit.htlcRemoteSigs.size)
+        assertEquals(4, alice9.commitments.latest.localCommit.htlcRemoteSigs.size)
     }
 
     @Test
@@ -820,9 +821,9 @@ class NormalTestsCommon : LightningTestSuite() {
     @Test
     fun `recv CommitSig -- only fee update`() {
         val (alice0, bob0) = reachNormal()
-        val (alice1, actions1) = alice0.process(ChannelCommand.Commitment.UpdateFee(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat), false))
+        val (alice1, actions1) = alice0.process(ChannelCommand.Commitment.UpdateFee(FeeratePerKw(500.sat), false))
         val updateFee = actions1.findOutgoingMessage<UpdateFee>()
-        assertEquals(FeeratePerKw.CommitmentFeerate + FeeratePerKw(1_000.sat), updateFee.feeratePerKw)
+        assertEquals(FeeratePerKw(500.sat), updateFee.feeratePerKw)
         val (bob1, _) = bob0.process(ChannelCommand.MessageReceived(updateFee))
         val (alice2, actions2) = alice1.process(ChannelCommand.Commitment.Sign)
         val commitSig = actions2.findOutgoingMessage<CommitSig>()
@@ -1444,19 +1445,19 @@ class NormalTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Normal>>(bob1)
         val commitTx = bob1.signCommitTx()
 
-        val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw.CommitmentFeerate * 4)
+        val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(20_000.sat))
         val (bob2, actions) = bob1.process(ChannelCommand.MessageReceived(fee))
         assertIs<LNChannel<Closing>>(bob2)
         actions.hasPublishTx(commitTx)
         actions.hasWatchConfirmed(commitTx.txid)
         val error = actions.findOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 9_680.sat, reserve = 0.sat, fees = 23_460.sat).message)
+        assertEquals(error.toAscii(), CannotAffordFees(bob.channelId, missing = 22_137.sat, reserve = 0.sat, fees = 23_460.sat).message)
     }
 
     @Test
     fun `recv UpdateFee -- remote feerate is too small`() {
         val (_, bob) = reachNormal()
-        assertEquals(FeeratePerKw.CommitmentFeerate, bob.commitments.latest.localCommit.spec.feerate)
+        assertEquals(FeeratePerKw(FeeratePerByte(1.sat)), bob.commitments.latest.localCommit.spec.feerate)
         val (bob1, actions) = bob.process(ChannelCommand.MessageReceived(UpdateFee(bob.channelId, FeeratePerKw(252.sat))))
         assertIs<LNChannel<Closing>>(bob1)
         val commitTx = bob.signCommitTx()
@@ -1815,7 +1816,7 @@ class NormalTestsCommon : LightningTestSuite() {
             claimTx.txOut[0].amount
         }.sum()
         // at best we have a little less than 500 000 + 250 000 + 100 000 + 50 000 = 900 000 (because fees)
-        assertEquals(880_880.sat, amountClaimed)
+        assertEquals(888_742.sat, amountClaimed)
 
         val rcp = aliceClosing.state.remoteCommitPublished
         assertNotNull(rcp)
@@ -1885,8 +1886,8 @@ class NormalTestsCommon : LightningTestSuite() {
             Transaction.correctlySpends(claimTx, listOf(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             claimTx.txOut[0].amount
         }.sum()
-        // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-        assertEquals(884_535.sat, amountClaimed)
+        // at best we have a little less than 500 000 + 250 000 + 100 000 + 50_000 = 900 000 (because fees)
+        assertEquals(891_580.sat, amountClaimed)
 
         val rcp = aliceClosing.state.nextRemoteCommitPublished
         assertNotNull(rcp)
@@ -1969,8 +1970,8 @@ class NormalTestsCommon : LightningTestSuite() {
         assertEquals(4, htlcInputs.size) // each htlc-penalty tx spends a different output
         actions2.hasWatchOutputsSpent(htlcInputs)
 
-        // two main outputs are 760 000 and 200 000 (minus fees)
-        assertEquals(798_725.sat, mainTx.txOut[0].amount)
+        // two main outputs are 810 000 and 190 000 (minus fees)
+        assertEquals(806_587.sat, mainTx.txOut[0].amount)
         assertEquals(147_345.sat, penaltyTx.txOut[0].amount)
         assertEquals(8_020.sat, htlcPenaltyTxs[0].txOut[0].amount)
         assertEquals(8_020.sat, htlcPenaltyTxs[1].txOut[0].amount)
