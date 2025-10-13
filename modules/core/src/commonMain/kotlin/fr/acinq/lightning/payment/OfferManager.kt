@@ -18,6 +18,7 @@ import fr.acinq.lightning.message.OnionMessages.Destination
 import fr.acinq.lightning.message.OnionMessages.IntermediateNode
 import fr.acinq.lightning.message.OnionMessages.buildMessage
 import fr.acinq.lightning.utils.currentTimestampMillis
+import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -153,14 +154,32 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             else -> {
                 val amount = request.requestedAmount
                 val preimage = randomBytes32()
-                val truncatedPayerNote = (request.payerNote ?: request.offer.description)?.let {
+                val truncatedPayerNote = request.payerNote?.let {
                     if (it.length <= 64) {
                         it
                     } else {
                         it.take(63) + "…"
                     }
                 }
-                val metadata = OfferPaymentMetadata.V1(request.offer.offerId, amount, preimage, request.payerId, truncatedPayerNote, request.quantity, currentTimestampMillis()).toPathId(nodeParams.nodePrivateKey)
+                val truncatedDescription = request.offer.description?.let {
+                    if (it.length <= 64) {
+                        it
+                    } else {
+                        it.take(63) + "…"
+                    }
+                }
+                val expirySeconds = request.offer.expirySeconds ?: nodeParams.bolt12InvoiceExpiry.inWholeSeconds
+                val metadata = OfferPaymentMetadata.V2(
+                    offerId = request.offer.offerId,
+                    amount = amount,
+                    preimage = preimage,
+                    createdAtSeconds = currentTimestampSeconds(),
+                    relativeExpirySeconds = expirySeconds,
+                    description = truncatedDescription,
+                    payerKey = request.payerId,
+                    payerNote = truncatedPayerNote,
+                    quantity = request.quantity_opt
+                ).toPathId(nodeParams.nodePrivateKey)
                 val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(metadata))).write().toByteVector()
                 val cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
                 val paymentInfo = OfferTypes.PaymentInfo(
@@ -191,7 +210,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 ).write().toByteVector()
                 val blindedRoute = RouteBlinding.create(randomKey(), listOf(remoteNodeId, nodeParams.nodeId), listOf(remoteNodePayload, recipientPayload)).route
                 val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
-                val invoice = Bolt12Invoice(request, preimage, blindedPrivateKey, nodeParams.bolt12InvoiceExpiry.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))
+                val invoice = Bolt12Invoice(request, preimage, blindedPrivateKey, expirySeconds, nodeParams.features.bolt12Features(), listOf(path))
                 val destination = Destination.BlindedPath(replyPath)
                 when (val invoiceMessage = buildMessage(randomKey(), randomKey(), intermediateNodes(destination), destination, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)))) {
                     is Left -> {

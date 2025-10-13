@@ -503,7 +503,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                 logger.warning { "payment with expiry too small: ${paymentPart.htlc.cltvExpiry}, min is ${minFinalCltvExpiry(nodeParams, paymentPart, incomingPayment, currentBlockHeight)}" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
-                            metadata.createdAtMillis + nodeParams.bolt12InvoiceExpiry.inWholeMilliseconds < currentTimestampMillis() && incomingPayment.parts.isEmpty() && !paysPreviousOnTheFlyFunding -> {
+                            metadata.createdAtSeconds + (metadata.relativeExpirySeconds ?: nodeParams.bolt12InvoiceExpiry.inWholeSeconds) < currentTimestampSeconds() && incomingPayment.parts.isEmpty() && !paysPreviousOnTheFlyFunding -> {
                                 logger.warning { "the invoice is expired" }
                                 Either.Left(rejectPaymentPart(privateKey, paymentPart, incomingPayment, currentBlockHeight))
                             }
