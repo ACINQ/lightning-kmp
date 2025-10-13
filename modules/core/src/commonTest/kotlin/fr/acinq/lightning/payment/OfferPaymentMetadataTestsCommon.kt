@@ -1,6 +1,9 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.byteVector32
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.utils.currentTimestampMillis
@@ -12,6 +15,11 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class OfferPaymentMetadataTestsCommon {
+
+    private fun paymentHash(preimage: ByteVector32): ByteVector32 = Crypto.sha256(preimage).byteVector32()
+    private fun OfferPaymentMetadata.V1.paymentHash(): ByteVector32 = paymentHash(preimage)
+    private fun OfferPaymentMetadata.V2.paymentHash(): ByteVector32 = paymentHash(preimage)
+
     @Test
     fun `encode - decode v1 metadata`() {
         val nodeKey = randomKey()
@@ -26,7 +34,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey.publicKey(), pathId))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
     }
 
     @Test
@@ -43,7 +51,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey.publicKey(), pathId))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
     }
 
     @Test
@@ -62,7 +70,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey.publicKey(), pathId))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
     }
 
     @Test
@@ -81,7 +89,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey.publicKey(), pathId))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
     }
 
     @Test
@@ -100,7 +108,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey.publicKey(), pathId))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
     }
 
     @Test
@@ -119,7 +127,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey.publicKey(), pathId))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
     }
 
     @Test
@@ -192,7 +200,7 @@ class OfferPaymentMetadataTestsCommon {
             metadata.toPathId(randomKey()), // signed with different key
         )
         testCases.forEach {
-            assertNull(OfferPaymentMetadata.fromPathId(nodeKey.publicKey(), it))
+            assertNull(OfferPaymentMetadata.fromPathId(nodeKey, it, metadata.paymentHash()))
         }
     }
 }

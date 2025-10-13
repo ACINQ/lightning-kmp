@@ -57,7 +57,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val (_, nextBlinding) = RouteBlinding.decryptPayload(trampolineKey, blindedRoute.firstPathKey, blindedRoute.encryptedPayloads.first()).right!!
         val (lastPayload, _) = RouteBlinding.decryptPayload(TestConstants.Alice.nodeParams.nodePrivateKey, nextBlinding, blindedRoute.encryptedPayloads.last()).right!!
         val pathId = RouteBlindingEncryptedData.read(lastPayload.toByteArray()).right!!.pathId!!
-        return OfferPaymentMetadata.fromPathId(TestConstants.Alice.nodeParams.nodeId, pathId) as OfferPaymentMetadata.V2
+        return OfferPaymentMetadata.fromPathId(TestConstants.Alice.nodeParams.nodePrivateKey, pathId, invoice.paymentHash) as OfferPaymentMetadata.V2
     }
 
     @Test

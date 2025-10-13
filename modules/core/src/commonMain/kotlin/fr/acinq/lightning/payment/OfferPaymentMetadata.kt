@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
 import fr.acinq.bitcoin.io.Output
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.crypto.ChaCha20Poly1305
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.LightningCodecs
 import kotlin.experimental.and
@@ -48,10 +49,31 @@ sealed class OfferPaymentMetadata {
     }
 
     /** Encode into a path_id that must be included in the [Bolt12Invoice]'s blinded path. */
-    fun toPathId(nodeKey: PrivateKey): ByteVector {
-        val encoded = this.encode()
-        val signature = Crypto.sign(Crypto.sha256(encoded), nodeKey)
-        return encoded + signature
+    fun toPathId(nodeKey: PrivateKey): ByteVector = when (this) {
+        is V1 -> {
+            val encoded = this.encode()
+            val signature = Crypto.sign(Crypto.sha256(encoded), nodeKey)
+            encoded + signature
+        }
+        is V2 -> {
+            // We only encrypt what comes after the version byte.
+            val encoded = run {
+                val out = ByteArrayOutput()
+                this.write(out)
+                out.toByteArray()
+            }
+            val (encrypted, mac) = run {
+                val paymentHash = Crypto.sha256(this.preimage).byteVector32()
+                val metadataKey = V2.deriveKey(nodeKey, paymentHash)
+                val nonce = paymentHash.take(12).toByteArray()
+                ChaCha20Poly1305.encrypt(metadataKey.value.toByteArray(), nonce, encoded, paymentHash.toByteArray())
+            }
+            val out = ByteArrayOutput()
+            out.write(2) // version
+            out.write(encrypted)
+            out.write(mac)
+            out.toByteArray().byteVector()
+        }
     }
 
     /** In this first version, we simply sign the payment metadata to verify its authenticity when receiving the payment. */
@@ -164,6 +186,11 @@ sealed class OfferPaymentMetadata {
 
                 return V2(offerId, amount, preimage, createdAtSeconds, relativeExpirySeconds, description, payerKey, payerNote, quantity)
             }
+
+            fun deriveKey(nodeKey: PrivateKey, paymentHash: ByteVector32): PrivateKey {
+                val tweak = Crypto.sha256("offer_payment_metadata_v2".encodeToByteArray() + paymentHash.toByteArray() + nodeKey.value.toByteArray())
+                return nodeKey * PrivateKey(tweak)
+            }
         }
     }
 
@@ -185,7 +212,7 @@ sealed class OfferPaymentMetadata {
          * Decode an [OfferPaymentMetadata] stored in a blinded path's path_id field.
          * @return null if the path_id doesn't contain valid data created by us.
          */
-        fun fromPathId(nodeId: PublicKey, pathId: ByteVector): OfferPaymentMetadata? {
+        fun fromPathId(nodeKey: PrivateKey, pathId: ByteVector, paymentHash: ByteVector32): OfferPaymentMetadata? {
             if (pathId.isEmpty()) return null
             val input = ByteArrayInput(pathId.toByteArray())
             when (LightningCodecs.byte(input)) {
@@ -196,20 +223,24 @@ sealed class OfferPaymentMetadata {
                     val metadata = LightningCodecs.bytes(input, metadataSize)
                     val signature = LightningCodecs.bytes(input, 64).byteVector64()
                     // Note that the signature includes the version byte.
-                    if (!Crypto.verifySignature(Crypto.sha256(pathId.take(1 + metadataSize)), signature, nodeId)) return null
+                    if (!Crypto.verifySignature(Crypto.sha256(pathId.take(1 + metadataSize)), signature, nodeKey.publicKey())) return null
                     // This call is safe since we verified that we have the right number of bytes and the signature was valid.
                     return V1.read(ByteArrayInput(metadata))
                 }
                 2 -> {
-                    val minimum = V2.minLength + 64
+                    val minimum = V2.minLength + 16
                     if (input.availableBytes < minimum) return null
-                    val metadataSize = input.availableBytes - 64
-                    val metadata = LightningCodecs.bytes(input, metadataSize)
-                    val signature = LightningCodecs.bytes(input, 64).byteVector64()
-                    // Note that the signature includes the version byte.
-                    if (!Crypto.verifySignature(Crypto.sha256(pathId.take(1 + metadataSize)), signature, nodeId)) return null
-                    // This call is safe since we verified that we have the right number of bytes and the signature was valid.
-                    return V2.read(ByteArrayInput(metadata))
+                    val metadataKey = V2.deriveKey(nodeKey, paymentHash)
+                    val nonce = paymentHash.take(12).toByteArray()
+                    val encryptedSize = input.availableBytes - 16
+                    return try {
+                        val encrypted = LightningCodecs.bytes(input, encryptedSize)
+                        val mac = LightningCodecs.bytes(input, 16)
+                        val decrypted = ChaCha20Poly1305.decrypt(metadataKey.value.toByteArray(), nonce, encrypted, paymentHash.toByteArray(), mac)
+                        V2.read(ByteArrayInput(decrypted))
+                    } catch (_: Throwable) {
+                        null
+                    }
                 }
                 else -> return null
             }
