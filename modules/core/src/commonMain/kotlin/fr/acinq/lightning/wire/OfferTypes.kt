@@ -726,6 +726,9 @@ object OfferTypes {
         }
     }
 
+    /** A bolt 12 offer and the private key used to sign invoices for that offer. */
+    data class OfferAndKey(val offer: Offer, val privateKey: PrivateKey)
+
     data class Offer(val records: TlvStream<OfferTlv>) {
         val chains: List<BlockHash> = records.get<OfferChains>()?.chains ?: listOf(Block.LivenetGenesisBlock.hash)
         val metadata: ByteVector? = records.get<OfferMetadata>()?.data
@@ -806,7 +809,7 @@ object OfferTypes {
                 features: Features,
                 blindedPathSessionKey: PrivateKey,
                 pathId: ByteVector? = null,
-            ): Pair<Offer, PrivateKey> {
+            ): OfferAndKey {
                 require(amount == null || description != null) { "an offer description must be provided if the amount isn't null" }
                 val blindedRouteDetails = OnionMessages.buildRouteToRecipient(
                     blindedPathSessionKey,
@@ -821,7 +824,7 @@ object OfferTypes {
                     // Note that we don't include an offer_node_id since we're using a blinded path.
                     OfferPaths(listOf(ContactInfo.BlindedPath(blindedRouteDetails.route))),
                 )
-                return Pair(Offer(TlvStream(tlvs)), blindedRouteDetails.blindedPrivateKey(nodePrivateKey))
+                return OfferAndKey(Offer(TlvStream(tlvs)), blindedRouteDetails.blindedPrivateKey(nodePrivateKey))
             }
 
             fun validate(records: TlvStream<OfferTlv>): Either<InvalidTlvPayload, Offer> {
@@ -896,13 +899,7 @@ object OfferTypes {
                     Features.areCompatible(offer.features, features) &&
                     checkSignature()
 
-        fun checkSignature(): Boolean =
-            verifySchnorr(
-                signatureTag,
-                rootHash(removeSignature(records)),
-                signature,
-                payerId
-            )
+        fun checkSignature(): Boolean = verifySchnorr(signatureTag, rootHash(removeSignature(records)), signature, payerId)
 
         fun encode(): String {
             val data = tlvSerializer.write(records)
@@ -915,8 +912,7 @@ object OfferTypes {
 
         companion object {
             val hrp = "lnr"
-            val signatureTag: ByteVector =
-                ByteVector(("lightning" + "invoice_request" + "signature").encodeToByteArray())
+            val signatureTag: ByteVector = ByteVector(("lightning" + "invoice_request" + "signature").encodeToByteArray())
 
             /**
              * Create a request to fetch an invoice for a given offer.
