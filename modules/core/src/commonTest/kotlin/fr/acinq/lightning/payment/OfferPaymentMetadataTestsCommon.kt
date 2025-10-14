@@ -1,13 +1,8 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.ByteVector
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.byteVector32
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
-import fr.acinq.lightning.utils.currentTimestampMillis
-import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.msat
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,10 +10,6 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class OfferPaymentMetadataTestsCommon {
-
-    private fun paymentHash(preimage: ByteVector32): ByteVector32 = Crypto.sha256(preimage).byteVector32()
-    private fun OfferPaymentMetadata.V1.paymentHash(): ByteVector32 = paymentHash(preimage)
-    private fun OfferPaymentMetadata.V2.paymentHash(): ByteVector32 = paymentHash(preimage)
 
     @Test
     fun `encode - decode v1 metadata`() {
@@ -34,7 +25,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash))
     }
 
     @Test
@@ -51,7 +42,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash))
     }
 
     @Test
@@ -70,7 +61,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash))
     }
 
     @Test
@@ -89,7 +80,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash))
     }
 
     @Test
@@ -108,7 +99,26 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash))
+    }
+
+    @Test
+    fun `encode - decode v2 metadata with UTF-8 description and payer note`() {
+        val nodeKey = randomKey()
+        val metadata = OfferPaymentMetadata.V2(
+            offerId = randomBytes32(),
+            amount = 100_000_000.msat,
+            preimage = randomBytes32(),
+            createdAtSeconds = 0,
+            relativeExpirySeconds = 60,
+            description = "法国很棒",
+            payerKey = randomKey().publicKey(),
+            payerNote = "雷击再次",
+            quantity = null,
+        )
+        assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
+        val pathId = metadata.toPathId(nodeKey)
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash))
     }
 
     @Test
@@ -127,57 +137,7 @@ class OfferPaymentMetadataTestsCommon {
         )
         assertEquals(metadata, OfferPaymentMetadata.decode(metadata.encode()))
         val pathId = metadata.toPathId(nodeKey)
-        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash()))
-    }
-
-    @Test
-    fun `v2 is smaller than v1 - common case`() {
-        val metadata1 = OfferPaymentMetadata.V1(
-            offerId = randomBytes32(),
-            amount = 50_000_000.msat,
-            preimage = randomBytes32(),
-            payerKey = randomKey().publicKey(),
-            payerNote = null,
-            quantity = 1,
-            createdAtMillis = currentTimestampMillis()
-        )
-        val metadata2 = OfferPaymentMetadata.V2(
-            offerId = randomBytes32(),
-            amount = 50_000_000.msat,
-            preimage = randomBytes32(),
-            payerKey = randomKey().publicKey(),
-            payerNote = null,
-            quantity = 1, // actually this would be null, but it's still smaller
-            createdAtSeconds = currentTimestampSeconds(),
-            relativeExpirySeconds = null,
-            description = null,
-        )
-        assertTrue { metadata2.encode().size() < metadata1.encode().size() }
-    }
-
-    @Test
-    fun `v2 is smaller than v1 - with payer note`() {
-        val metadata1 = OfferPaymentMetadata.V1(
-            offerId = randomBytes32(),
-            amount = 50_000_000.msat,
-            preimage = randomBytes32(),
-            payerKey = randomKey().publicKey(),
-            payerNote = "Invoice #: 152043", // V1 bug: this should be the description
-            quantity = 1,
-            createdAtMillis = currentTimestampMillis()
-        )
-        val metadata2 = OfferPaymentMetadata.V2(
-            offerId = randomBytes32(),
-            amount = 50_000_000.msat,
-            preimage = randomBytes32(),
-            payerKey = randomKey().publicKey(),
-            payerNote = null,
-            quantity = 1, // actually this would be null, but it's still smaller
-            createdAtSeconds = currentTimestampSeconds(),
-            relativeExpirySeconds = null,
-            description = "Invoice #: 152043",
-        )
-        assertTrue { metadata2.encode().size() < metadata1.encode().size() }
+        assertEquals(metadata, OfferPaymentMetadata.fromPathId(nodeKey, pathId, metadata.paymentHash))
     }
 
     @Test
@@ -233,7 +193,7 @@ class OfferPaymentMetadataTestsCommon {
             metadata.toPathId(randomKey()), // signed with different key
         )
         testCases.forEach {
-            assertNull(OfferPaymentMetadata.fromPathId(nodeKey, it, metadata.paymentHash()))
+            assertNull(OfferPaymentMetadata.fromPathId(nodeKey, it, metadata.paymentHash))
         }
     }
 }

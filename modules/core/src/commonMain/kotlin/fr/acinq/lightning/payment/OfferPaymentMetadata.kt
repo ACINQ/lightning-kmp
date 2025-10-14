@@ -100,8 +100,6 @@ sealed class OfferPaymentMetadata {
         }
 
         companion object {
-            val minLength: Int get() = 121
-
             fun read(input: Input): V1 {
                 val offerId = LightningCodecs.bytes(input, 32).byteVector32()
                 val amount = LightningCodecs.u64(input).msat
@@ -115,6 +113,7 @@ sealed class OfferPaymentMetadata {
         }
     }
 
+    /** In this version, we encrypt the payment metadata with a key derived from our seed. */
     data class V2(
         override val offerId: ByteVector32,
         override val amount: MilliSatoshi,
@@ -125,7 +124,6 @@ sealed class OfferPaymentMetadata {
         val payerKey: PublicKey?,
         val payerNote: String?,
         val quantity: Long?,
-
     ) : OfferPaymentMetadata() {
         override val version: Byte get() = 2
 
@@ -134,54 +132,51 @@ sealed class OfferPaymentMetadata {
             LightningCodecs.writeBigSize(amount.toLong(), out)
             LightningCodecs.writeBytes(preimage, out)
             LightningCodecs.writeBigSize(createdAtSeconds, out)
-
+            // We use bit flags to track which nullable fields are provided.
             var flags: Byte = 0
-            if (relativeExpirySeconds != null) { flags = flags or 0b00001 }
-            if (payerKey != null)              { flags = flags or 0b00010 }
-            if (quantity != null)              { flags = flags or 0b00100 }
-            if (description != null)           { flags = flags or 0b01000 }
-            if (payerNote != null)             { flags = flags or 0b10000 }
+            if (relativeExpirySeconds != null) flags = flags or 0b00001
+            if (payerKey != null) flags = flags or 0b00010
+            if (quantity != null) flags = flags or 0b00100
+            if (description != null) flags = flags or 0b01000
+            if (payerNote != null) flags = flags or 0b10000
             LightningCodecs.writeByte(flags.toInt(), out)
 
             relativeExpirySeconds?.let { LightningCodecs.writeBigSize(it, out) }
             payerKey?.let { LightningCodecs.writeBytes(it.value, out) }
-            quantity?.let { LightningCodecs.writeU64(it, out) }
+            quantity?.let { LightningCodecs.writeBigSize(it, out) }
             description?.let {
-                if (payerNote != null) { LightningCodecs.writeBigSize(it.length.toLong(), out) }
-                LightningCodecs.writeBytes(it.encodeToByteArray(), out)
+                // If we have both a description and a payer note, we need to encode the size
+                // to know when the payer note starts.
+                val encodedDescription = it.encodeToByteArray()
+                if (payerNote != null) LightningCodecs.writeBigSize(encodedDescription.size.toLong(), out)
+                LightningCodecs.writeBytes(encodedDescription, out)
             }
-            payerNote?.let {
-                LightningCodecs.writeBytes(it.encodeToByteArray(), out)
-            }
+            payerNote?.let { LightningCodecs.writeBytes(it.encodeToByteArray(), out) }
         }
 
         companion object {
-            val minLength: Int get() = 67
-
             fun read(input: Input): V2 {
                 val offerId = LightningCodecs.bytes(input, 32).byteVector32()
                 val amount = LightningCodecs.bigSize(input).msat
                 val preimage = LightningCodecs.bytes(input, 32).byteVector32()
                 val createdAtSeconds = LightningCodecs.bigSize(input)
+                // Bit flags indicate which fields are provided.
                 val flags = LightningCodecs.byte(input).toByte()
-
-                val hasExp   = (flags and 0b00001) != 0.toByte()
-                val hasPKey  = (flags and 0b00010) != 0.toByte()
-                val hasQnty  = (flags and 0b00100) != 0.toByte()
-                val hasDesc  = (flags and 0b01000) != 0.toByte()
-                val hasPNote = (flags and 0b10000) != 0.toByte()
-
-                val relativeExpirySeconds = if (hasExp) { LightningCodecs.bigSize(input) } else { null }
-                val payerKey = if (hasPKey) { PublicKey(LightningCodecs.bytes(input, 33)) } else { null }
-                val quantity = if (hasQnty) { LightningCodecs.u64(input) } else { null }
-                val description = if (hasDesc) {
-                    val strLen = if (hasPNote) { LightningCodecs.bigSize(input).toInt() } else { input.availableBytes }
-                    LightningCodecs.bytes(input, strLen).decodeToString()
-                } else { null }
-                val payerNote = if (hasPNote) {
-                    if (input.availableBytes > 0) { LightningCodecs.bytes(input, input.availableBytes).decodeToString() } else { "" }
-                } else { null }
-
+                val hasRelativeExpiry = (flags and 0b00001) != 0.toByte()
+                val hasPayerKey = (flags and 0b00010) != 0.toByte()
+                val hasQuantity = (flags and 0b00100) != 0.toByte()
+                val hasDescription = (flags and 0b01000) != 0.toByte()
+                val hasPayerNote = (flags and 0b10000) != 0.toByte()
+                // We can now read nullable fields.
+                val relativeExpirySeconds = if (hasRelativeExpiry) LightningCodecs.bigSize(input) else null
+                val payerKey = if (hasPayerKey) PublicKey(LightningCodecs.bytes(input, 33)) else null
+                val quantity = if (hasQuantity) LightningCodecs.bigSize(input) else null
+                val description = when {
+                    hasDescription && hasPayerNote -> LightningCodecs.bytes(input, LightningCodecs.bigSize(input).toInt()).decodeToString()
+                    hasDescription -> LightningCodecs.bytes(input, input.availableBytes).decodeToString()
+                    else -> null
+                }
+                val payerNote = if (hasPayerNote) LightningCodecs.bytes(input, input.availableBytes).decodeToString() else null
                 return V2(offerId, amount, preimage, createdAtSeconds, relativeExpirySeconds, description, payerKey, payerNote, quantity)
             }
 
@@ -213,25 +208,22 @@ sealed class OfferPaymentMetadata {
         fun fromPathId(nodeKey: PrivateKey, pathId: ByteVector, paymentHash: ByteVector32): OfferPaymentMetadata? {
             if (pathId.isEmpty()) return null
             val input = ByteArrayInput(pathId.toByteArray())
-            when (LightningCodecs.byte(input)) {
+            return when (LightningCodecs.byte(input)) {
                 1 -> {
-                    val minimum = V1.minLength + 64
-                    if (input.availableBytes < minimum) return null
+                    if (input.availableBytes < 185) return null
                     val metadataSize = input.availableBytes - 64
                     val metadata = LightningCodecs.bytes(input, metadataSize)
                     val signature = LightningCodecs.bytes(input, 64).byteVector64()
                     // Note that the signature includes the version byte.
                     if (!Crypto.verifySignature(Crypto.sha256(pathId.take(1 + metadataSize)), signature, nodeKey.publicKey())) return null
                     // This call is safe since we verified that we have the right number of bytes and the signature was valid.
-                    return V1.read(ByteArrayInput(metadata))
+                    V1.read(ByteArrayInput(metadata))
                 }
                 2 -> {
-                    val minimum = V2.minLength + 16
-                    if (input.availableBytes < minimum) return null
                     val metadataKey = V2.deriveKey(nodeKey, paymentHash)
                     val nonce = paymentHash.take(12).toByteArray()
                     val encryptedSize = input.availableBytes - 16
-                    return try {
+                    try {
                         val encrypted = LightningCodecs.bytes(input, encryptedSize)
                         val mac = LightningCodecs.bytes(input, 16)
                         val decrypted = ChaCha20Poly1305.decrypt(metadataKey.value.toByteArray(), nonce, encrypted, paymentHash.toByteArray(), mac)
@@ -240,7 +232,7 @@ sealed class OfferPaymentMetadata {
                         null
                     }
                 }
-                else -> return null
+                else -> null
             }
         }
 
