@@ -177,16 +177,16 @@ data class Normal(
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@Normal.copy(commitments = result.value.first), listOf())
                     }
-                    is UpdateFee -> when (val result = commitments.receiveFee(cmd.message, staticParams.nodeParams.onChainFeeConf.feerateTolerance)) {
+                    is UpdateFee -> when (val result = commitments.receiveFee(cmd.message)) {
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> Pair(this@Normal.copy(commitments = result.value), listOf())
                     }
-                    is CommitSigs -> when {
-                        spliceStatus == SpliceStatus.Aborted -> {
+                    is CommitSigs -> when (spliceStatus) {
+                        SpliceStatus.Aborted -> {
                             logger.warning { "received commit_sig after sending tx_abort, they probably sent it before receiving our tx_abort, ignoring..." }
                             Pair(this@Normal, listOf())
                         }
-                        spliceStatus is SpliceStatus.WaitingForSigs && cmd.message is CommitSig -> {
+                        is SpliceStatus.WaitingForSigs if cmd.message is CommitSig -> {
                             val (signingSession1, action) = spliceStatus.session.receiveCommitSig(channelKeys(), commitments.channelParams, cmd.message, currentBlockHeight.toLong(), logger)
                             when (action) {
                                 is InteractiveTxSigningSessionAction.AbortFundingAttempt -> {
@@ -207,9 +207,9 @@ data class Normal(
                             is Either.Left -> handleLocalError(cmd, result.value)
                             is Either.Right -> {
                                 val commitments1 = result.value.first
-                                val spliceStatus1 = when {
-                                    spliceStatus is SpliceStatus.QuiescenceRequested && commitments1.localIsQuiescent() -> SpliceStatus.InitiatorQuiescent(spliceStatus.command)
-                                    spliceStatus is SpliceStatus.ReceivedStfu && commitments1.localIsQuiescent() -> SpliceStatus.NonInitiatorQuiescent
+                                val spliceStatus1 = when (spliceStatus) {
+                                    is SpliceStatus.QuiescenceRequested if commitments1.localIsQuiescent() -> SpliceStatus.InitiatorQuiescent(spliceStatus.command)
+                                    is SpliceStatus.ReceivedStfu if commitments1.localIsQuiescent() -> SpliceStatus.NonInitiatorQuiescent
                                     else -> spliceStatus
                                 }
                                 val nextState = this@Normal.copy(commitments = commitments1, spliceStatus = spliceStatus1)
@@ -220,9 +220,9 @@ data class Normal(
                                     actions.add(ChannelAction.Message.SendToSelf(ChannelCommand.Commitment.Sign))
                                 }
                                 // If we're now quiescent, we may send our stfu message.
-                                when {
-                                    spliceStatus is SpliceStatus.QuiescenceRequested && commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = true)))
-                                    spliceStatus is SpliceStatus.ReceivedStfu && commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = false)))
+                                when (spliceStatus) {
+                                    is SpliceStatus.QuiescenceRequested if commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = true)))
+                                    is SpliceStatus.ReceivedStfu if commitments1.localIsQuiescent() -> actions.add(ChannelAction.Message.Send(Stfu(channelId, initiator = false)))
                                     else -> {}
                                 }
                                 Pair(nextState, actions)

@@ -41,10 +41,10 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- success case`() {
         val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
 
-        val a = 786_220_000.msat // initial balance alice
+        val a = 798_676_128.msat // initial balance alice
         val b = 200_000_000.msat // initial balance bob
         val p = 42_000_000.msat // a->b payment
-        val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+        val htlcOutputFee = 87_032.msat // fee due to the additional htlc output
 
         val ac0 = alice.state.commitments
         val bc0 = bob.state.commitments
@@ -127,10 +127,10 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- failure case`() {
         val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
 
-        val a = 786_220_000.msat // initial balance alice
+        val a = 798_676_128.msat // initial balance alice
         val b = 200_000_000.msat // initial balance bob
         val p = 42_000_000.msat // a->b payment
-        val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+        val htlcOutputFee = 87_032.msat // fee due to the additional htlc output
 
         val ac0 = alice.state.commitments
         val bc0 = bob.state.commitments
@@ -213,14 +213,14 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
     fun `correct values for availableForSend - availableForReceive -- multiple htlcs`() {
         val (alice, bob) = reachNormal(aliceFundingAmount = 800_000.sat, bobFundingAmount = 200_000.sat)
 
-        val a = 786_220_000.msat // initial balance alice
+        val a = 798_676_128.msat // initial balance alice
         val b = 200_000_000.msat // initial balance bob
         val p1 = 18_000_000.msat // a->b payment
         val p2 = 20_000_000.msat // a->b payment
         val p3 = 40_000_000.msat // b->a payment
         val ac0 = alice.state.commitments
         val bc0 = bob.state.commitments
-        val htlcOutputFee = (2 * 860_000).msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+        val htlcOutputFee = 87_032.msat // fee due to the additional htlc output
 
         assertTrue(ac0.availableBalanceForSend() > p1 + p2) // alice can afford the payment
         assertTrue(bc0.availableBalanceForSend() > p3) // alice can afford the payment

@@ -6,8 +6,6 @@ import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.Lightning.nodeFee
 import fr.acinq.lightning.Lightning.randomBytes32
-import fr.acinq.lightning.blockchain.fee.FeerateTolerance
-import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.crypto.KeyManager
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.payment.LiquidityPolicy
@@ -105,7 +103,6 @@ data class RecipientCltvExpiryParams(val min: CltvExpiryDelta, val max: CltvExpi
  * @param features features supported by the lightning node.
  * @param dustLimit threshold below which outputs will not be generated in commitment or HTLC transactions (i.e. HTLCs below this amount plus HTLC transaction fees are not enforceable on-chain).
  * @param maxRemoteDustLimit maximum dust limit we let our peer use for his commitment (in theory it should always be 546 sats).
- * @param onChainFeeConf on-chain feerates that will be applied to various transactions.
  * @param maxHtlcValueInFlightMsat cap on the total value of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
  * @param maxAcceptedHtlcs cap on the number of pending HTLCs in a channel: this lets us limit our exposure to HTLCs risk.
  * @param expiryDeltaBlocks cltv-expiry-delta used in our channel_update: since our channels are private and we don't relay payments, this will be basically ignored.
@@ -137,7 +134,6 @@ data class NodeParams(
     val features: Features,
     val dustLimit: Satoshi,
     val maxRemoteDustLimit: Satoshi,
-    val onChainFeeConf: OnChainFeeConf,
     val maxHtlcValueInFlightMsat: Long,
     val maxAcceptedHtlcs: Int,
     val expiryDeltaBlocks: CltvExpiryDelta,
@@ -216,11 +212,6 @@ data class NodeParams(
         ),
         dustLimit = 546.sat,
         maxRemoteDustLimit = 600.sat,
-        onChainFeeConf = OnChainFeeConf(
-            closeOnOfflineMismatch = true,
-            updateFeeMinDiffRatio = 0.1,
-            feerateTolerance = FeerateTolerance(ratioLow = 0.01, ratioHigh = 100.0)
-        ),
         maxHtlcValueInFlightMsat = 20_000_000_000L,
         maxAcceptedHtlcs = 19,
         expiryDeltaBlocks = CltvExpiryDelta(144),

@@ -25,10 +25,6 @@ data class OnChainFeerates(val fundingFeerate: FeeratePerKw, val mutualCloseFeer
     )
 }
 
-data class FeerateTolerance(val ratioLow: Double, val ratioHigh: Double)
-
-data class OnChainFeeConf(val closeOnOfflineMismatch: Boolean, val updateFeeMinDiffRatio: Double, val feerateTolerance: FeerateTolerance)
-
 /** Fee rate in satoshi-per-bytes. */
 data class FeeratePerByte(val feerate: Satoshi) {
     constructor(feeratePerKw: FeeratePerKw) : this(FeeratePerKB(feeratePerKw).feerate / 1000)
@@ -67,14 +63,8 @@ data class FeeratePerKw(val feerate: Satoshi) : Comparable<FeeratePerKw> {
 
     companion object {
         /**
-         * Minimum relay fee rate in satoshi per kilo-vbyte (taken from Bitcoin Core).
-         * Note that Bitcoin Core uses a *virtual size* and not the actual size in bytes: see [[MinimumFeeratePerKw]] below.
-         */
-        const val MinimumRelayFeeRate = 1000
-
-        /**
          * Why 253 and not 250 since feerate-per-kw should be feerate-per-kvb / 4 and the minimum relay fee rate is
-         * 1000 satoshi/kvb (see [[MinimumRelayFeeRate]])?
+         * 1000 satoshi/kvb?
          *
          * Because Bitcoin Core uses neither the actual tx size in bytes nor the tx weight to check fees, but a "virtual size"
          * which is (3 + weight) / 4.
@@ -89,12 +79,5 @@ data class FeeratePerKw(val feerate: Satoshi) : Comparable<FeeratePerKw> {
          * hence feerate-per-kw >= 253
          */
         val MinimumFeeratePerKw = FeeratePerKw(253.sat)
-
-        /**
-         * Since we're using anchor outputs, we don't need to constantly adjust the feerate of the commitment tx to match current on-chain feerates.
-         * We can instead set it to a low-enough value, that still ensures the transaction will relay through the bitcoin network, and then use CPFP to make it confirm.
-         * TODO: we should regularly get fee estimations from various sources to ensure this default value remains relay-able, and otherwise raise it dynamically.
-         */
-        val CommitmentFeerate = FeeratePerKw(FeeratePerByte(20.sat))
     }
 }

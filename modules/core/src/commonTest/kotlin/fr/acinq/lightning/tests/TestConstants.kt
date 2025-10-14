@@ -6,8 +6,6 @@ import fr.acinq.bitcoin.Chain
 import fr.acinq.bitcoin.MnemonicCode
 import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.blockchain.fee.FeerateTolerance
-import fr.acinq.lightning.blockchain.fee.OnChainFeeConf
 import fr.acinq.lightning.channel.LocalChannelParams
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.utils.testLoggerFactory
@@ -92,11 +90,6 @@ object TestConstants {
             ),
             dustLimit = 1_100.sat,
             maxRemoteDustLimit = 1_500.sat,
-            onChainFeeConf = OnChainFeeConf(
-                closeOnOfflineMismatch = true,
-                updateFeeMinDiffRatio = 0.1,
-                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 5.0)
-            ),
             maxHtlcValueInFlightMsat = 1_500_000_000L,
             maxAcceptedHtlcs = 100,
             htlcMinimum = 100.msat,
@@ -124,11 +117,6 @@ object TestConstants {
         ).copy(
             dustLimit = 1_000.sat,
             maxRemoteDustLimit = 1_500.sat,
-            onChainFeeConf = OnChainFeeConf(
-                closeOnOfflineMismatch = true,
-                updateFeeMinDiffRatio = 0.1,
-                feerateTolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 5.0)
-            ),
             minDepthBlocks = 3,
             maxHtlcValueInFlightMsat = 2_000_000_000L,
             maxAcceptedHtlcs = 80,

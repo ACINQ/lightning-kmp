@@ -12,7 +12,6 @@ import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchSpent
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
-import fr.acinq.lightning.blockchain.fee.FeerateTolerance
 import fr.acinq.lightning.blockchain.fee.OnChainFeerates
 import fr.acinq.lightning.channel.Helpers.Closing.inputsAlreadySpent
 import fr.acinq.lightning.channel.states.Channel
@@ -64,10 +63,6 @@ object Helpers {
             return Either.Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimit, Channel.MIN_DUST_LIMIT))
         }
 
-        if (isFeeDiffTooHigh(FeeratePerKw.CommitmentFeerate, open.commitmentFeerate, nodeParams.onChainFeeConf.feerateTolerance)) {
-            return Either.Left(FeerateTooDifferent(open.temporaryChannelId, FeeratePerKw.CommitmentFeerate, open.commitmentFeerate))
-        }
-
         return Either.Right(channelType)
     }
 
@@ -111,15 +106,6 @@ object Helpers {
      * @return true if the remote fee rate is too small
      */
     private fun isFeeTooSmall(remoteFeerate: FeeratePerKw): Boolean = remoteFeerate < FeeratePerKw.MinimumFeeratePerKw
-
-    /**
-     * @param referenceFee reference fee rate per kiloweight
-     * @param currentFee current fee rate per kiloweight
-     * @param tolerance maximum fee rate mismatch tolerated
-     * @return true if the difference between proposed and reference fee rates is too high.
-     */
-    fun isFeeDiffTooHigh(referenceFee: FeeratePerKw, currentFee: FeeratePerKw, tolerance: FeerateTolerance): Boolean =
-        currentFee < referenceFee * tolerance.ratioLow || referenceFee * tolerance.ratioHigh < currentFee
 
     /**
      * This indicates whether our side of the channel is above the reserve requested by our counterparty. In other words,

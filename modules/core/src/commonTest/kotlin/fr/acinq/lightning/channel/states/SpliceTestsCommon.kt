@@ -306,7 +306,7 @@ class SpliceTestsCommon : LightningTestSuite() {
     @Test
     fun `splice cpfp -- not enough funds`() {
         val (alice, bob) = reachNormal(aliceFundingAmount = 75_000.sat, bobFundingAmount = 25_000.sat)
-        val (alice1, bob1) = spliceOut(alice, bob, 65_000.sat)
+        val (alice1, bob1) = spliceOut(alice, bob, 72_000.sat)
         // After the splice-out, Alice doesn't have enough funds to pay the mining fees to CPFP.
         val spliceCpfp = ChannelCommand.Commitment.Splice.Request(
             replyTo = CompletableDeferred(),

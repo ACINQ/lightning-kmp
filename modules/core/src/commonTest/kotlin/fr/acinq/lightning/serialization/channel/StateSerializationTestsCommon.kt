@@ -2,6 +2,7 @@ package fr.acinq.lightning.serialization.channel
 
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.MilliSatoshi
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.LNChannel
 import fr.acinq.lightning.channel.SpliceStatus
@@ -139,7 +140,7 @@ class StateSerializationTestsCommon : LightningTestSuite() {
     fun `trim channel data if needed`() = runSuspendTest {
         val (alice, bob) = TestsHelper.reachNormal()
         val normalState = alice.state
-        val (alice1, _, _) = TestsHelper.mutualCloseAlice(alice, bob, FeeratePerKw.CommitmentFeerate)
+        val (alice1, _, _) = TestsHelper.mutualCloseAlice(alice, bob, FeeratePerKw(FeeratePerByte(20.sat)))
         val negotatingState = alice1.state
 
         // 20 Normal and 20 Negotiating mixed together

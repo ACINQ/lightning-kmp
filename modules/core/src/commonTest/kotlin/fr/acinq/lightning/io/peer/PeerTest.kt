@@ -585,7 +585,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, listOf(alice0 to bob0), automateMessaging = false)
 
         val replyTo = CompletableDeferred<ChannelCloseResponse>()
-        alice.send(WrappedChannelCommand(alice0.channelId, ChannelCommand.Close.MutualClose(replyTo, Script.write(Script.pay2pkh(randomKey().publicKey())).toByteVector(), FeeratePerKw.CommitmentFeerate)))
+        alice.send(WrappedChannelCommand(alice0.channelId, ChannelCommand.Close.MutualClose(replyTo, Script.write(Script.pay2pkh(randomKey().publicKey())).toByteVector(), FeeratePerKw(5000.sat))))
 
         bob.forward(alice2bob.expectStrict<Shutdown>())
         bob2alice.expectStrict<PeerStorageStore>()

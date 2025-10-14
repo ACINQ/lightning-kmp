@@ -241,7 +241,7 @@ object TestsHelper {
             CompletableDeferred(),
             aliceFundingAmount,
             createWallet(aliceNodeParams.keyManager, aliceFundingAmount + 3500.sat).second,
-            FeeratePerKw.CommitmentFeerate,
+            FeeratePerKw.MinimumFeeratePerKw,
             TestConstants.feeratePerKw,
             aliceChannelParams,
             TestConstants.Alice.nodeParams.dustLimit,
