@@ -17,13 +17,11 @@ import fr.acinq.lightning.message.OnionMessages
 import fr.acinq.lightning.message.OnionMessages.Destination
 import fr.acinq.lightning.message.OnionMessages.IntermediateNode
 import fr.acinq.lightning.message.OnionMessages.buildMessage
-import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlin.math.min
 
 sealed class OnionMessageAction {
     /** Send an outgoing onion message (invoice or invoice_request). */
@@ -244,7 +242,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         pathId != null && pathId.size() != 32 -> false
         else -> {
             val expected = deterministicOffer(nodeParams.chainHash, nodeParams.nodePrivateKey, walletParams.trampolineNode.id, offer.amount, offer.description, pathId?.let { ByteVector32(it) })
-            expected == Pair(offer, blindedPrivateKey)
+            expected == OfferTypes.OfferAndKey(offer, blindedPrivateKey)
         }
     }
 
@@ -260,7 +258,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             amount: MilliSatoshi?,
             description: String?,
             pathId: ByteVector32?,
-        ): Pair<OfferTypes.Offer, PrivateKey> {
+        ): OfferTypes.OfferAndKey {
             // We generate a deterministic session key based on:
             //  - a custom tag indicating that this is used in the Bolt 12 context
             //  - the offer parameters (amount, description and pathId)

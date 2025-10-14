@@ -2,7 +2,6 @@ package fr.acinq.lightning
 
 import co.touchlab.kermit.Logger
 import fr.acinq.bitcoin.Chain
-import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.lightning.Lightning.nodeFee
@@ -267,7 +266,7 @@ data class NodeParams(
      *
      * @return the default offer and the private key that will sign invoices for this offer.
      */
-    fun defaultOffer(trampolineNodeId: PublicKey): Pair<OfferTypes.Offer, PrivateKey> = OfferManager.deterministicOffer(chainHash, nodePrivateKey, trampolineNodeId, null, null, null)
+    fun defaultOffer(trampolineNodeId: PublicKey): OfferTypes.OfferAndKey = OfferManager.deterministicOffer(chainHash, nodePrivateKey, trampolineNodeId, null, null, null)
 
     /**
      * Generate a random Bolt 12 offer based on the node's seed and its trampoline node.
@@ -276,7 +275,7 @@ data class NodeParams(
      *
      * @return a random offer and the private key that will sign invoices for this offer.
      */
-    fun randomOffer(trampolineNodeId: PublicKey, amount: MilliSatoshi?, description: String?): Pair<OfferTypes.Offer, PrivateKey> {
+    fun randomOffer(trampolineNodeId: PublicKey, amount: MilliSatoshi?, description: String?): OfferTypes.OfferAndKey {
         // We generate a random nonce to ensure that this offer is unique.
         val nonce = randomBytes32()
         return OfferManager.deterministicOffer(chainHash, nodePrivateKey, trampolineNodeId, amount, description, nonce)

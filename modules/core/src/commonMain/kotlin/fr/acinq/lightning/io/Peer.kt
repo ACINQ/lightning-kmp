@@ -860,7 +860,7 @@ class Peer(
                 .first()
                 .let { event -> replyTo.complete(event.address) }
         }
-        peerConnection?.send(DNSAddressRequest(nodeParams.chainHash, nodeParams.defaultOffer(walletParams.trampolineNode.id).first, languageSubtag))
+        peerConnection?.send(DNSAddressRequest(nodeParams.chainHash, nodeParams.defaultOffer(walletParams.trampolineNode.id).offer, languageSubtag))
         return replyTo.await()
     }
 
