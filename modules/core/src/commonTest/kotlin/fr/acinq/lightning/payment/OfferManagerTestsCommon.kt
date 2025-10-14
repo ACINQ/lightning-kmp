@@ -24,7 +24,6 @@ import fr.acinq.lightning.wire.MessageOnion
 import fr.acinq.lightning.wire.OfferTypes
 import fr.acinq.lightning.wire.OnionMessage
 import fr.acinq.lightning.wire.RouteBlindingEncryptedData
-import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlin.test.*
@@ -298,38 +297,35 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         assertEquals(payerNote, metadata.payerNote)
     }
 
-    fun String.byteLength(): Int = this.toByteArray().size
-
     @Test
-    fun `OfferPaymentMetadata with long description or payerNote`() = runSuspendTest {
-        val longString = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
-        // Long description + Null payerNote
-        val (desc1, _) = OfferManager.truncateStrings(longString, null)
-        assertEquals(64, desc1!!.byteLength())
-        // Null description + Long payerNote
-        val (_, payerNote2) = OfferManager.truncateStrings(null, longString)
-        assertEquals(64, payerNote2!!.byteLength())
-        // Long description + Long payerNote
-        val (desc3, payerNote3) = OfferManager.truncateStrings(longString, longString)
-        assertEquals(32, desc3!!.byteLength())
-        assertEquals(32, payerNote3!!.byteLength())
-        // Long description + Short payerNote
-        val (desc4, payerNote4) = OfferManager.truncateStrings(longString, "tea")
-        assertEquals(61, desc4!!.byteLength())
-        assertEquals(3, payerNote4!!.byteLength())
-        assertEquals("tea", payerNote4)
-        // Short description + Long payerNote
-        val (desc5, payerNote5) = OfferManager.truncateStrings("tea", longString)
-        assertEquals(3, desc5!!.byteLength())
-        assertEquals(61, payerNote5!!.byteLength())
-        assertEquals("tea", desc5)
-        // Short description + Short payerNote
-        val (desc6, payerNote6) = OfferManager.truncateStrings("tea", "coffee")
-        assertEquals("tea", desc6)
-        assertEquals("coffee", payerNote6)
-        // String where UTF-8 representation is different than string length.
-        val trickyLongString = "Â🏀cdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz中" // str.length = 63
-        val (desc7, _) = OfferManager.truncateStrings(trickyLongString, null)
-        assertTrue(desc7!!.byteLength() <= 64)
+    fun `pay offer with long payer note and small description`() = runSuspendTest {
+        // Alice and Bob use the same trampoline node.
+        val aliceOfferManager = OfferManager(TestConstants.Alice.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
+        val bobOfferManager = OfferManager(TestConstants.Bob.nodeParams, aliceWalletParams, MutableSharedFlow(replay = 10), logger)
+        val offer = TestConstants.Alice.nodeParams.randomOffer(aliceTrampolineKey.publicKey(), null, "this is just tea").offer
+
+        // Bob sends an invoice request to Alice.
+        val payerNote = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+        val payOffer = PayOffer(UUID.randomUUID(), randomKey(), payerNote, 5500.msat, offer, 20.seconds)
+        val (_, invoiceRequests) = bobOfferManager.requestInvoice(payOffer)
+        assertEquals(invoiceRequests.size, 1)
+        val (messageForAlice, nextNodeAlice) = trampolineRelay(invoiceRequests.first(), aliceTrampolineKey)
+        assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Alice.nodeParams.nodeId)), nextNodeAlice)
+        // Alice sends an invoice back to Bob.
+        val invoiceResponse = aliceOfferManager.receiveMessage(messageForAlice, listOf(), 0)
+        assertIs<OnionMessageAction.SendMessage>(invoiceResponse)
+        val (messageForBob, nextNodeBob) = trampolineRelay(invoiceResponse.message, aliceTrampolineKey)
+        assertEquals(Either.Right(EncodedNodeId.WithPublicKey.Wallet(TestConstants.Bob.nodeParams.nodeId)), nextNodeBob)
+        val payInvoice = bobOfferManager.receiveMessage(messageForBob, listOf(), 0)
+        assertIs<OnionMessageAction.PayInvoice>(payInvoice)
+        assertEquals(OfferInvoiceReceived(payOffer, payInvoice.invoice), bobOfferManager.eventsFlow.first())
+        assertEquals(payOffer, payInvoice.payOffer)
+
+        // The payer note is truncated in the payment metadata.
+        val metadata = decryptPathId(payInvoice.invoice, aliceTrampolineKey)
+        assertEquals(metadata.description, "this is just tea")
+        assertEquals(46, metadata.payerNote!!.length)
+        assertEquals(48, metadata.payerNote.encodeToByteArray().size)
+        assertEquals(metadata.payerNote, payerNote.take(45) + "…")
     }
 }

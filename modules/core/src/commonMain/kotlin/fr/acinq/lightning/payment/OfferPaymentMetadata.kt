@@ -1,7 +1,6 @@
 package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.io.ByteArrayInput
 import fr.acinq.bitcoin.io.ByteArrayOutput
 import fr.acinq.bitcoin.io.Input
@@ -12,7 +11,6 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.LightningCodecs
 import kotlin.experimental.and
 import kotlin.experimental.or
-import kotlin.math.min
 
 /**
  * The flow for Bolt 12 offer payments is the following:
@@ -243,6 +241,31 @@ sealed class OfferPaymentMetadata {
                     }
                 }
                 else -> return null
+            }
+        }
+
+        /** Truncate a string to at most the provided [len], including an additional "…" character. */
+        private fun truncateNote(str: String, len: Int): String = when {
+            // The ellipsis "…" character uses 3-bytes when encoded as UTF-8.
+            str.encodeToByteArray().size <= len - 3 -> "$str…"
+            // We don't know how many bytes the last characters use in UTF-8, so we simply recursively remove characters.
+            else -> truncateNote(str.dropLast(1), len)
+        }
+
+        /** Truncates the offer description and payer note, where the combined size (in UTF-8) is guaranteed to be <= 64 bytes. */
+        fun truncateNotes(payerNote: String?, description: String?): Pair<String?, String?> {
+            val payerNoteLen = payerNote?.encodeToByteArray()?.size ?: 0
+            val descriptionLen = description?.encodeToByteArray()?.size ?: 0
+            return when {
+                // If strings are below the size limit, we don't need to do anything.
+                payerNoteLen + descriptionLen <= 64 -> Pair(payerNote, description)
+                // If only one string is provided, this is simple, we directly truncate it to at most 64 bytes.
+                payerNote == null || description == null -> Pair(payerNote?.let { truncateNote(it, 64) }, description?.let { truncateNote(it, 64) })
+                // If both strings exceed 32 bytes, we truncate both to at most 32 bytes each.
+                payerNoteLen > 32 && descriptionLen > 32 -> Pair(truncateNote(payerNote, 32), truncateNote(description, 32))
+                // Otherwise, we only need to truncate the largest one.
+                payerNoteLen < descriptionLen -> Pair(payerNote, truncateNote(description, 64 - payerNoteLen))
+                else -> Pair(truncateNote(payerNote, 64 - descriptionLen), description)
             }
         }
     }

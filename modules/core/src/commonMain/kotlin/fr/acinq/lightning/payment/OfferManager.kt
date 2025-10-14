@@ -20,7 +20,6 @@ import fr.acinq.lightning.message.OnionMessages.buildMessage
 import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
-import io.ktor.utils.io.core.toByteArray
 import kotlinx.coroutines.flow.MutableSharedFlow
 
 sealed class OnionMessageAction {
@@ -154,10 +153,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             else -> {
                 val amount = request.requestedAmount
                 val preimage = randomBytes32()
-                val (truncatedPayerNote, truncatedDescription) = truncateStrings(
-                    request.payerNote,
-                    request.offer.description
-                )
+                val (truncatedPayerNote, truncatedDescription) = OfferPaymentMetadata.truncateNotes(request.payerNote, request.offer.description)
                 val expirySeconds = request.offer.expirySeconds ?: nodeParams.bolt12InvoiceExpiry.inWholeSeconds
                 val metadata = OfferPaymentMetadata.V2(
                     offerId = request.offer.offerId,
@@ -275,47 +271,6 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             }
             val sessionKey = PrivateKey(Crypto.sha256(tweak + trampolineNodeId.value + nodePrivateKey.value).byteVector32())
             return OfferTypes.Offer.createBlindedOffer(chainHash, nodePrivateKey, trampolineNodeId, amount, description, Features.empty, sessionKey, pathId)
-        }
-
-        /**
-         * Returns a pair of strings, where the combined size (in UTF-8) is guaranteed to be <= 64 bytes.
-         */
-        fun truncateStrings(strA: String?, strB: String?): Pair<String?, String?> {
-            // NB: a string's length != it's UTF-8 encoding size,
-            // since a single character could be encoded with multiple bytes.
-            // Also, the ellipsis character (…) is encoded as 3 bytes in UTF-8.
-            val truncateLength = { str: String, len: Int ->
-                if (str.length <= len) { str } else { str.take(len-1) + "…" }
-            }
-            val truncateBytes = { str: String, len: Int ->
-                var targetLen = len
-                var truncated = truncateLength(str, targetLen)
-                while (truncated.toByteArray().size > len) {
-                    truncated = truncateLength(str, --targetLen)
-                }
-                truncated
-            }
-            var truncatedA = strA?.let { truncateLength(it, 64) }
-            var truncatedB = strB?.let { truncateLength(it, 64) }
-            var lenA = truncatedA?.toByteArray()?.size ?: 0
-            var lenB = truncatedB?.toByteArray()?.size ?: 0
-            if (lenA + lenB > 64) {
-                when {
-                    lenA > 32 && lenB > 32 -> {
-                        lenA = 32
-                        lenB = 32
-                    }
-                    lenA > 32 -> {
-                        lenA = 64 - lenB
-                    }
-                    lenB > 32 -> {
-                        lenB = 64 - lenA
-                    }
-                }
-                truncatedA = strA?.let { truncateBytes(it, lenA) }
-                truncatedB = strB?.let { truncateBytes(it, lenB) }
-            }
-            return Pair(truncatedA, truncatedB)
         }
     }
 }

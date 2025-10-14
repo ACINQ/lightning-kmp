@@ -181,6 +181,39 @@ class OfferPaymentMetadataTestsCommon {
     }
 
     @Test
+    fun `truncate long description or payerNote`() {
+        val longString = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+        // Long description + Null payerNote
+        val (_, desc1) = OfferPaymentMetadata.truncateNotes(null, longString)
+        assertEquals(64, desc1!!.encodeToByteArray().size)
+        // Null description + Long payerNote
+        val (payerNote2, _) = OfferPaymentMetadata.truncateNotes(longString, null)
+        assertEquals(64, payerNote2!!.encodeToByteArray().size)
+        // Long description + Long payerNote
+        val (payerNote3, desc3) = OfferPaymentMetadata.truncateNotes(longString, longString)
+        assertEquals(32, desc3!!.encodeToByteArray().size)
+        assertEquals(32, payerNote3!!.encodeToByteArray().size)
+        // Long description + Short payerNote
+        val (payerNote4, desc4) = OfferPaymentMetadata.truncateNotes("tea", longString)
+        assertEquals(61, desc4!!.encodeToByteArray().size)
+        assertEquals(3, payerNote4!!.encodeToByteArray().size)
+        assertEquals("tea", payerNote4)
+        // Short description + Long payerNote
+        val (payerNote5, desc5) = OfferPaymentMetadata.truncateNotes(longString, "tea")
+        assertEquals(3, desc5!!.encodeToByteArray().size)
+        assertEquals(61, payerNote5!!.encodeToByteArray().size)
+        assertEquals("tea", desc5)
+        // Short description + Short payerNote
+        val (payerNote6, desc6) = OfferPaymentMetadata.truncateNotes("tea", "coffee")
+        assertEquals("coffee", desc6)
+        assertEquals("tea", payerNote6)
+        // String where UTF-8 representation is different than string length.
+        val trickyLongString = "Â🏀cdefghijklmnopqrstuvwxyz1234567890abcdefghijklmnopqrstuvwxyz中" // str.length = 63
+        val (payerNote7, _) = OfferPaymentMetadata.truncateNotes(trickyLongString, null)
+        assertTrue(payerNote7!!.encodeToByteArray().size <= 64)
+    }
+
+    @Test
     fun `decode invalid path_id`() {
         val nodeKey = randomKey()
         val metadata = OfferPaymentMetadata.V1(
