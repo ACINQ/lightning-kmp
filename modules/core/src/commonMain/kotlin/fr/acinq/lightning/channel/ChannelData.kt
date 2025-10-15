@@ -97,14 +97,11 @@ data class LocalCommitPublished(
         // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
         // over all of them to check if they are relevant
         val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
-            // is this the commit tx itself? (we could do this outside of the loop...)
             val isCommitTx = commitTx.txid == tx.txid
-            // does the tx spend an output of the local commitment tx?
-            val spendsTheCommitTx = commitTx.txid == outPoint.txid
-            // is the tx one of our 3rd stage delayed txs? (a 3rd stage tx is a tx spending the output of an htlc tx, which
-            // is itself spending the output of the commitment tx)
-            val is3rdStageDelayedTx = htlcDelayedOutputs.contains(outPoint)
-            isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
+            val isMainTx = localOutput == outPoint
+            val isHtlcTx = htlcOutputs.contains(outPoint)
+            val isHtlcDelayedTx = htlcDelayedOutputs.contains(outPoint)
+            isCommitTx || isMainTx || isHtlcTx || isHtlcDelayedTx
         }
         // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
         return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.associateWith { tx }.toMap())
@@ -168,11 +165,10 @@ data class RemoteCommitPublished(
         // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
         // over all of them to check if they are relevant
         val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
-            // is this the commit tx itself? (we could do this outside of the loop...)
             val isCommitTx = commitTx.txid == tx.txid
-            // does the tx spend an output of the commitment tx?
-            val spendsTheCommitTx = commitTx.txid == outPoint.txid
-            isCommitTx || spendsTheCommitTx
+            val isMainTx = localOutput == outPoint
+            val isHtlcTx = htlcOutputs.contains(outPoint)
+            isCommitTx || isMainTx || isHtlcTx
         }
         // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
         return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.associateWith { tx }.toMap())
@@ -236,14 +232,12 @@ data class RevokedCommitPublished(
         // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
         // over all of them to check if they are relevant
         val relevantOutpoints = tx.txIn.map { it.outPoint }.filter { outPoint ->
-            // is this the commit tx itself? (we could do this outside of the loop...)
             val isCommitTx = commitTx.txid == tx.txid
-            // does the tx spend an output of the commitment tx?
-            val spendsTheCommitTx = commitTx.txid == outPoint.txid
-            // is the tx a 3rd stage txs? (a 3rd stage tx is a tx spending the output of an htlc tx, which
-            // is itself spending the output of the commitment tx)
-            val is3rdStageDelayedTx = htlcDelayedOutputs.contains(outPoint)
-            isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
+            val isMainTx = localOutput == outPoint
+            val isMainPenaltyTx = remoteOutput == outPoint
+            val isHtlcPenaltyTx = htlcOutputs.contains(outPoint)
+            val isHtlcDelayedPenaltyTx = htlcDelayedOutputs.contains(outPoint)
+            isCommitTx || isMainTx || isMainPenaltyTx || isHtlcPenaltyTx || isHtlcDelayedPenaltyTx
         }
         // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
         return this.copy(irrevocablySpent = irrevocablySpent + relevantOutpoints.associateWith { tx }.toMap())
