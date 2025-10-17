@@ -34,6 +34,8 @@ sealed class OfferPaymentMetadata {
     abstract val createdAtSeconds: Long
     abstract val relativeExpirySeconds: Long?
     val paymentHash: ByteVector32 get() = preimage.sha256()
+    abstract val payerKey: PublicKey?
+    abstract val payerNote: String?
 
     /** Encode into a format that can be stored in the payments DB. */
     fun encode(): ByteVector {
@@ -79,8 +81,8 @@ sealed class OfferPaymentMetadata {
         override val offerId: ByteVector32,
         override val amount: MilliSatoshi,
         override val preimage: ByteVector32,
-        val payerKey: PublicKey,
-        val payerNote: String?,
+        override val payerKey: PublicKey,
+        override val payerNote: String?,
         val quantity: Long,
         val createdAtMillis: Long
     ) : OfferPaymentMetadata() {
@@ -121,8 +123,8 @@ sealed class OfferPaymentMetadata {
         override val createdAtSeconds: Long,
         override val relativeExpirySeconds: Long?,
         val description: String?,
-        val payerKey: PublicKey?,
-        val payerNote: String?,
+        override val payerKey: PublicKey?,
+        override val payerNote: String?,
         val quantity: Long?,
     ) : OfferPaymentMetadata() {
         override val version: Byte get() = 2
