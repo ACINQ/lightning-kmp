@@ -93,13 +93,13 @@ public class NativeSocket: NSObject {
 			case .waiting(let error):
 				switch error {
 				case .posix(_):
-					log.debug("NWConnection.state => waiting: err(posix): \(String(describing: error))")
+					log.debug("NWConnection.state => waiting: err(posix): \(error)")
 				case .dns(_):
-					log.debug("NWConnection.state => waiting: err(dns): \(String(describing: error))")
+					log.debug("NWConnection.state => waiting: err(dns): \(error)")
 				case .tls(_):
-					log.debug("NWConnection.state => waiting: err(tls): \(String(describing: error))")
+					log.debug("NWConnection.state => waiting: err(tls): \(error))")
 				@unknown default:
-					log.debug("NWConnection.state => waiting: err(unknown): \(String(describing: error))")
+					log.debug("NWConnection.state => waiting: err(unknown): \(error)")
 				}
 				if case NWError.tls = error {
 					finish(.failure(error))
@@ -347,7 +347,7 @@ public class NativeSocket: NSObject {
 				log.debug("newOutgoingConnection.connect: success")
 				finishSubTask(connection, nil)
 			} failure: { (error: NWError) in
-				log.debug("newOutgoingConnection.connect: error: \(String(describing: error))")
+				log.debug("newOutgoingConnection.connect: error: \(error)")
 				finish(.failure(error))
 			}
 		}
@@ -360,7 +360,7 @@ public class NativeSocket: NSObject {
 		do {
 			listener = try NWListener(using: params, on: .any)
 		} catch {
-			log.error("Error opening NWListener on loopback: \(String(describing: error))")
+			log.error("Error opening NWListener on loopback: \(error)")
 			if let nwerr = error as? NWError {
 				return finish(.failure(nwerr))
 			} else {
@@ -386,13 +386,13 @@ public class NativeSocket: NSObject {
 			case .waiting(let error):
 				switch error {
 				case .posix(_):
-					log.debug("NWListener.state => waiting: err(posix): \(String(describing: error))")
+					log.debug("NWListener.state => waiting: err(posix): \(error)")
 				case .dns(_):
-					log.debug("NWListener.state => waiting: err(dns): \(String(describing: error))")
+					log.debug("NWListener.state => waiting: err(dns): \(error)")
 				case .tls(_):
-					log.debug("NWListener.state => waiting: err(tls): \(String(describing: error))")
+					log.debug("NWListener.state => waiting: err(tls): \(error)")
 				@unknown default:
-					log.debug("NWListener.state => waiting: err(unknown): \(String(describing: error))")
+					log.debug("NWListener.state => waiting: err(unknown): \(error)")
 				}
 			case .ready:
 				log.debug("NWListener.state => ready")
@@ -404,7 +404,7 @@ public class NativeSocket: NSObject {
 					listener.cancel()
 				}
 			case .failed(let nwerr):
-				log.warning("NWListener.state => failed: \(String(describing: nwerr))")
+				log.warning("NWListener.state => failed: \(nwerr)")
 				finish(.failure(nwerr))
 			case .cancelled:
 				log.warning("NWListener.state => cancelled")
@@ -432,7 +432,7 @@ public class NativeSocket: NSObject {
 					isComplete: false,
 					completion: .contentProcessed({ (error: NWError?) in
 						if let error = error {
-							log.error("TransferLoop[\(label)]: send.error: \(String(describing: error))")
+							log.error("TransferLoop[\(label)]: send.error: \(error)")
 						}
 					})
 				)
@@ -440,7 +440,7 @@ public class NativeSocket: NSObject {
 				
 			} else if let error = error {
 				
-				log.error("TransferLoop[\(label)]: rcv.receive.error: \(String(describing: error))")
+				log.error("TransferLoop[\(label)]: rcv.receive.error: \(error)")
 				rcv.cancel()
 			}
 		}
