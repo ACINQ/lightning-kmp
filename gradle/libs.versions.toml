@@ -5,7 +5,7 @@ kotlinx-datetime = "0.7.1"
 kotlinx-serialization = "1.9.0"
 ktor = "3.3.0"
 bitcoinkmp = "0.27.0" # when upgrading bitcoin-kmp, keep secpjnijvm in sync!
-secpjnijvm = "0.20.0"
+secpjnijvm = "0.21.0-SNAPSHOT"
 kermit = "2.0.8"
 slf4j = "2.0.17"
 
