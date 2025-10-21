@@ -98,6 +98,8 @@ public class NativeSocket: NSObject {
 					log.debug("NWConnection.state => waiting: err(dns): \(error)")
 				case .tls(_):
 					log.debug("NWConnection.state => waiting: err(tls): \(error))")
+				case .wifiAware(_):
+					log.debug("NWConnection.state => waiting: err(wifiAware): \(error))")
 				@unknown default:
 					log.debug("NWConnection.state => waiting: err(unknown): \(error)")
 				}
@@ -391,6 +393,8 @@ public class NativeSocket: NSObject {
 					log.debug("NWListener.state => waiting: err(dns): \(error)")
 				case .tls(_):
 					log.debug("NWListener.state => waiting: err(tls): \(error)")
+				case .wifiAware(_):
+					log.debug("NWListener.state => waiting: err(wifiAware): \(error)")
 				@unknown default:
 					log.debug("NWListener.state => waiting: err(unknown): \(error)")
 				}
