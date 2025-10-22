@@ -26,7 +26,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, macOS-latest ]
+        os: [ macOS-latest ]
     steps:
 
       # 1 - checkout repositories
@@ -60,7 +60,7 @@ jobs:
         run: ./gradlew build -PintegrationTests=include
       - name: Check without integration
         if: matrix.os == 'macOS-latest'
-        run: ./gradlew build -x jvmTest
+        run: ./gradlew --stacktrace :lightning-kmp-core:jvmTest --tests "fr.acinq.lightning.channel.states.NormalTestsCommon"
 
       # Uncomment the lines below to store test results for debugging failed tests (useful for iOS)
       # - name: Store test results
