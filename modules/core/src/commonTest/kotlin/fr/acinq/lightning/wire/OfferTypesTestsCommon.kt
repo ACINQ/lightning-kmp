@@ -538,7 +538,8 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         assertTrue(InvoiceRequest.validate(TlvStream(request.records.records, setOf(GenericTlv(197, ByteVector.fromHex("cd58"))))).isLeft)
         assertTrue(InvoiceRequest.validate(TlvStream(request.records.records, setOf(GenericTlv(3975455643, ByteVector.fromHex("e84ad9"))))).isLeft)
         val invoice = Bolt12Invoice(requestWithUnknownTlvs, randomBytes32(), key, 300, Features.empty, listOf())
-        assertEquals(removeSignature(invoice.invoiceRequest.records), removeSignature(requestWithUnknownTlvs.records))
+        assertNotNull(invoice.invoiceRequest)
+        assertEquals(removeSignature(invoice.invoiceRequest!!.records), removeSignature(requestWithUnknownTlvs.records))
     }
 
     @Test

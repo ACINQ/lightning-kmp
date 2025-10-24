@@ -4,8 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.bitcoin.utils.runTrying
-import fr.acinq.lightning.Feature
-import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
 import fr.acinq.lightning.Features.Companion.invoke
 import fr.acinq.lightning.MilliSatoshi
@@ -25,24 +23,29 @@ import fr.acinq.lightning.wire.OfferTypes.InvoicePaths
 import fr.acinq.lightning.wire.OfferTypes.InvoicePaymentHash
 import fr.acinq.lightning.wire.OfferTypes.InvoiceRelativeExpiry
 import fr.acinq.lightning.wire.OfferTypes.InvoiceRequest
+import fr.acinq.lightning.wire.OfferTypes.InvoiceRequestChain
 import fr.acinq.lightning.wire.OfferTypes.InvoiceTlv
+import fr.acinq.lightning.wire.OfferTypes.Offer
 import fr.acinq.lightning.wire.OfferTypes.PaymentInfo
 import fr.acinq.lightning.wire.OfferTypes.Signature
 import fr.acinq.lightning.wire.OfferTypes.filterInvoiceRequestFields
+import fr.acinq.lightning.wire.OfferTypes.filterOfferFields
 import fr.acinq.lightning.wire.OfferTypes.removeSignature
 import fr.acinq.lightning.wire.OfferTypes.rootHash
 import fr.acinq.lightning.wire.OfferTypes.signSchnorr
 import fr.acinq.lightning.wire.OfferTypes.verifySchnorr
 
 data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() {
-    val invoiceRequest: InvoiceRequest = InvoiceRequest.validate(filterInvoiceRequestFields(records)).right!!
+    val offer: Offer = Offer.validate(filterOfferFields(records)).right!!
+    val invoiceRequest: InvoiceRequest? = InvoiceRequest.validate(filterInvoiceRequestFields(records)).right
 
     override val amount: MilliSatoshi? = records.get<InvoiceAmount>()?.amount
     override val nodeId: PublicKey = records.get<InvoiceNodeId>()!!.nodeId
     override val paymentHash: ByteVector32 = records.get<InvoicePaymentHash>()!!.hash
-    val description: String? = invoiceRequest.offer.description
+    val description: String? = offer.description
     val createdAtSeconds: Long = records.get<InvoiceCreatedAt>()!!.timestampSeconds
     val relativeExpirySeconds: Long = records.get<InvoiceRelativeExpiry>()?.seconds ?: DEFAULT_EXPIRY_SECONDS
+    val chain: BlockHash = records.get<InvoiceRequestChain>()?.hash ?: Block.LivenetGenesisBlock.hash
 
     override val features: Features = records.get<InvoiceFeatures>()?.features?.let { Features(it).invoiceFeatures() } ?: Features.empty
 
@@ -54,8 +57,8 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
 
     // It is assumed that the request is valid for this offer.
     fun validateFor(request: InvoiceRequest): Either<String, Unit> {
-        val offerNodeIds = invoiceRequest.offer.issuerId?.let { listOf(it) } ?: invoiceRequest.offer.paths!!.map { it.route.blindedNodeIds.last() }
-        return if (invoiceRequest.unsigned() != request.unsigned()) {
+        val offerNodeIds = offer.issuerId?.let { listOf(it) } ?: offer.paths!!.map { it.route.blindedNodeIds.last() }
+        return if (invoiceRequest != null && invoiceRequest.unsigned() != request.unsigned()) {
             Either.Left("Invoice does not match request")
         } else if (!offerNodeIds.contains(nodeId)) {
             Either.Left("Wrong node id")
@@ -110,7 +113,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
         ): Bolt12Invoice {
             require(request.amount != null || request.offer.amount != null)
             val amount = request.amount ?: (request.offer.amount!! * request.quantity)
-            val tlvs: Set<InvoiceTlv> = removeSignature(request.records).records + setOfNotNull(
+            val records: Set<InvoiceTlv> = removeSignature(request.records).records + setOfNotNull(
                 InvoicePaths(paths.map { it.route }),
                 InvoiceBlindedPay(paths.map { it.paymentInfo }),
                 InvoiceCreatedAt(currentTimestampSeconds()),
@@ -120,12 +123,56 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
                 if (features != Features.empty) InvoiceFeatures(features.toByteArray().toByteVector()) else null,
                 InvoiceNodeId(nodeKey.publicKey()),
             ) + additionalTlvs
+            val unknown = request.records.unknown + customTlvs
             val signature = signSchnorr(
                 signatureTag,
-                rootHash(TlvStream(tlvs, request.records.unknown + customTlvs)),
+                rootHash(TlvStream(records, unknown)),
                 nodeKey
             )
-            return Bolt12Invoice(TlvStream(tlvs + Signature(signature), request.records.unknown + customTlvs))
+            return Bolt12Invoice(TlvStream(records + Signature(signature), unknown))
+        }
+
+        /**
+         * Creates an unsolicited invoice for a given offer.
+         *
+         * @param offer    the corresponding offer for the invoice
+         * @param preimage the preimage to use for the payment
+         * @param nodeKey  the key that was used to generate the offer, may be different from our public nodeId if we're hiding behind a blinded route
+         * @param features invoice features
+         * @param paths    the blinded paths to use to pay the invoice
+         */
+        operator fun invoke(
+            offer: Offer,
+            preimage: ByteVector32,
+            nodeKey: PrivateKey,
+            invoiceExpirySeconds: Long,
+            features: Features,
+            paths: List<PaymentBlindedContactInfo>,
+            additionalTlvs: Set<InvoiceTlv> = setOf(),
+            customTlvs: Set<GenericTlv> = setOf()
+        ): Bolt12Invoice {
+            require(offer.amount != null)
+            val chain = offer.chains.firstOrNull()
+            require(chain != null)
+            val amount = offer.amount!!
+            val records: Set<InvoiceTlv> = removeSignature(offer.records).records + setOfNotNull(
+                InvoicePaths(paths.map { it.route }),
+                InvoiceBlindedPay(paths.map { it.paymentInfo }),
+                InvoiceCreatedAt(currentTimestampSeconds()),
+                InvoiceRelativeExpiry(invoiceExpirySeconds),
+                InvoicePaymentHash(ByteVector32(Crypto.sha256(preimage))),
+                InvoiceAmount(amount),
+                if (features != Features.empty) InvoiceFeatures(features.toByteArray().toByteVector()) else null,
+                InvoiceNodeId(nodeKey.publicKey()),
+                if (chain != Block.LivenetGenesisBlock.hash) InvoiceRequestChain(chain) else null
+            ) + additionalTlvs
+            val unknown = offer.records.unknown + customTlvs
+            val signature = signSchnorr(
+                signatureTag,
+                rootHash(TlvStream(records, unknown)),
+                nodeKey
+            )
+            return Bolt12Invoice(TlvStream(records + Signature(signature), unknown))
         }
 
         sealed class Bolt12ParsingResult {
@@ -154,10 +201,29 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
             }
         }
 
-        private fun validate(records: TlvStream<InvoiceTlv>): Either<InvalidTlvPayload, Bolt12Invoice> {
-            when (val invoiceRequest = InvoiceRequest.validate(filterInvoiceRequestFields(records))) {
-                is Either.Left -> return Either.Left(invoiceRequest.value)
-                is Either.Right -> {}
+        fun validate(records: TlvStream<InvoiceTlv>): Either<InvalidTlvPayload, Bolt12Invoice> {
+            // An unsolicited invoice doesn't have an associated InvoiceRequest.
+            // So it won't have those fields (although `chain` may be required, e.g. for testnet)
+            val invoiceRequestFields = records.records
+                .filter { it.tag == 0L || (it.tag in 80..159) }
+                .filter { it !is InvoiceRequestChain }
+            if (invoiceRequestFields.isEmpty()) {
+                // Unsolicited invoice: no InvoiceRequest, but must have valid Offer.
+                when (val result = Offer.validate(filterOfferFields(records))) {
+                    is Either.Left -> return Either.Left(result.value)
+                    is Either.Right -> {
+                        records.get<InvoiceRequestChain>()?.hash?.let { chain ->
+                            if (!result.value.chains.contains(chain)) {
+                                return Either.Left(ForbiddenTlv(InvoiceRequestChain.tag))
+                            }
+                        }
+                    }
+                }
+            } else {
+                when (val result = InvoiceRequest.validate(filterInvoiceRequestFields(records))) {
+                    is Either.Left -> return Either.Left(result.value)
+                    is Either.Right -> {}
+                }
             }
             if (records.get<InvoiceAmount>() == null) return Either.Left(MissingRequiredTlv(170))
             if (records.get<InvoicePaths>() == null) return Either.Left(MissingRequiredTlv(160))

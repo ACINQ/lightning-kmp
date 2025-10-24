@@ -2,6 +2,11 @@ package fr.acinq.lightning.payment
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.bitcoin.ByteVector
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Either.Left
 import fr.acinq.bitcoin.utils.Either.Right
 import fr.acinq.lightning.*
@@ -11,9 +16,12 @@ import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.io.OfferInvoiceReceived
 import fr.acinq.lightning.io.OfferNotPaid
 import fr.acinq.lightning.io.PayOffer
+import fr.acinq.lightning.io.CardPaymentRequestReceived
+import fr.acinq.lightning.io.CardPaymentResponseReceived
 import fr.acinq.lightning.io.PeerEvent
 import fr.acinq.lightning.logging.MDCLogger
 import fr.acinq.lightning.message.OnionMessages
+import fr.acinq.lightning.message.OnionMessages.BuildMessageError
 import fr.acinq.lightning.message.OnionMessages.Destination
 import fr.acinq.lightning.message.OnionMessages.IntermediateNode
 import fr.acinq.lightning.message.OnionMessages.buildMessage
@@ -21,6 +29,7 @@ import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlin.time.Duration
 
 sealed class OnionMessageAction {
     /** Send an outgoing onion message (invoice or invoice_request). */
@@ -44,6 +53,19 @@ sealed class Bolt12InvoiceRequestFailure {
 class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, val eventsFlow: MutableSharedFlow<PeerEvent>, private val logger: MDCLogger) {
     val remoteNodeId: PublicKey = walletParams.trampolineNode.id
     private val pendingInvoiceRequests: HashMap<ByteVector32, PendingInvoiceRequest> = HashMap()
+
+    fun buildOnion(
+        destination: Destination,
+        content: TlvStream<OnionMessagePayloadTlv>
+    ): Either<BuildMessageError, OnionMessage> {
+        return buildMessage(
+            sessionKey = randomKey(),
+            blindedPathSessionKey = randomKey(),
+            intermediateNodes = intermediateNodes(destination),
+            destination = destination,
+            content = content
+        )
+    }
 
     /**
      * @return invoice requests that must be sent and the corresponding path_id that must be used in case of a timeout.
@@ -81,6 +103,8 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         return OnionMessages.decryptMessage(nodeParams.nodePrivateKey, msg, logger)?.let { decrypted ->
             val invoiceRequestTlvs = decrypted.content.records.get<OnionMessagePayloadTlv.InvoiceRequest>()?.tlvs
             when {
+                isCardPaymentRequest(decrypted) -> null
+                isCardPaymentResponse(decrypted) -> null
                 invoiceRequestTlvs != null -> when (val invoiceRequest = OfferTypes.InvoiceRequest.validate(invoiceRequestTlvs)) {
                     is Left -> {
                         logger.warning { "received invalid invoice_request: ${invoiceRequest.value}" }
@@ -99,6 +123,24 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 }
             }
         }
+    }
+
+    private suspend fun isCardPaymentRequest(decrypted: OnionMessages.DecryptedMessage): Boolean {
+        val request = decrypted.content.records.get<OnionMessagePayloadTlv.CardPaymentRequest>() ?: return false
+        val invoice = Bolt12Invoice.validate(request.tlvs).right ?: return false
+        val params = invoice.records.get<OfferTypes.CardParams>() ?: return false
+        val updatedInvoice = Bolt12Invoice(invoice.records.remove<OfferTypes.CardParams>())
+        eventsFlow.emit(CardPaymentRequestReceived(updatedInvoice, params.params))
+        return true
+    }
+
+    private suspend fun isCardPaymentResponse(decrypted: OnionMessages.DecryptedMessage): Boolean {
+        val response = decrypted.content.records.get<OnionMessagePayloadTlv.CardPaymentResponse>() ?: return false
+        val invoiceError = OfferTypes.InvoiceError.validate(response.tlvs).right ?: return false
+        var requestId = decrypted.pathId ?: return false
+        if (requestId.size() != 16) { return false }
+        eventsFlow.emit(CardPaymentResponseReceived(invoiceError.error, requestId))
+        return true
     }
 
     private suspend fun receiveInvoiceResponse(content: MessageOnion, payOffer: PayOffer, request: OfferTypes.InvoiceRequest): OnionMessageAction.PayInvoice? {
@@ -131,8 +173,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
     }
 
     private fun receiveInvoiceRequest(request: OfferTypes.InvoiceRequest, pathId: ByteVector?, blindedPrivateKey: PrivateKey, replyPath: RouteBlinding.BlindedRoute?, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): OnionMessageAction.SendMessage? {
-        // We must use the most restrictive minimum HTLC value between local and remote.
-        val minHtlc = (listOf(nodeParams.htlcMinimum) + remoteChannelUpdates.map { it.htlcMinimumMsat }).max()
+        val minHtlc = getMinHtlc(remoteChannelUpdates)
         return when {
             replyPath == null -> {
                 logger.warning { "offerId:${request.offer.offerId} ignoring invoice request: no reply path" }
@@ -166,36 +207,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     payerNote = truncatedPayerNote,
                     quantity = request.quantity_opt
                 ).toPathId(nodeParams.nodePrivateKey)
-                val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(metadata))).write().toByteVector()
-                val cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
-                val paymentInfo = OfferTypes.PaymentInfo(
-                    feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
-                    feeProportionalMillionths = remoteChannelUpdates.maxOfOrNull { it.feeProportionalMillionths } ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
-                    // We include our min_final_cltv_expiry_delta in the path, but we *don't* include it in the payment_relay field
-                    // for our trampoline node (below). This ensures that we will receive payments with at least this final expiry delta.
-                    // This ensures that even when payers haven't received the latest block(s) or don't include a safety margin in the
-                    // expiry they use, we can still safely receive their payment.
-                    cltvExpiryDelta = cltvExpiryDelta + nodeParams.minFinalCltvExpiryDelta,
-                    minHtlc = minHtlc,
-                    // Payments are allowed to overpay at most two times the invoice amount.
-                    maxHtlc = amount * 2,
-                    allowedFeatures = ByteVector.empty
-                )
-                // Once the invoice expires, the blinded path shouldn't be usable anymore.
-                // We assume 10 minutes between each block to convert the invoice expiry to a cltv_expiry_delta.
-                // When paying the invoice, payers may add any number of blocks to the current block height to protect recipient privacy.
-                // We assume that they won't add more than 720 blocks, which is reasonable because adding a large delta increases the risk
-                // that intermediate nodes reject the payment because they don't want their funds potentially locked for a long duration.
-                val pathExpiry = (paymentInfo.cltvExpiryDelta + CltvExpiryDelta(720) + (nodeParams.bolt12InvoiceExpiry.inWholeMinutes.toInt() / 10)).toCltvExpiry(currentBlockHeight.toLong())
-                val remoteNodePayload = RouteBlindingEncryptedData(
-                    TlvStream(
-                        RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
-                        RouteBlindingEncryptedDataTlv.PaymentRelay(cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
-                        RouteBlindingEncryptedDataTlv.PaymentConstraints(pathExpiry, paymentInfo.minHtlc)
-                    )
-                ).write().toByteVector()
-                val blindedRoute = RouteBlinding.create(randomKey(), listOf(remoteNodeId, nodeParams.nodeId), listOf(remoteNodePayload, recipientPayload)).route
-                val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
+                val path = paymentBlindedContactInfo(remoteChannelUpdates, currentBlockHeight, amount, metadata)
                 val invoice = Bolt12Invoice(request, preimage, blindedPrivateKey, expirySeconds, nodeParams.features.bolt12Features(), listOf(path))
                 val destination = Destination.BlindedPath(replyPath)
                 when (val invoiceMessage = buildMessage(randomKey(), randomKey(), intermediateNodes(destination), destination, TlvStream(OnionMessagePayloadTlv.Invoice(invoice.records)))) {
@@ -204,12 +216,70 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                         sendInvoiceError("failed to build onion message", replyPath)
                     }
                     is Right -> {
-                        logger.info { "sending BOLT 12 invoice with amount=${invoice.amount}, paymentHash=${invoice.paymentHash}, payerId=${invoice.invoiceRequest.payerId} to introduction node ${destination.route.firstNodeId}" }
+                        logger.info { "sending BOLT 12 invoice with amount=${invoice.amount}, paymentHash=${invoice.paymentHash}, payerId=${request.payerId} to introduction node ${destination.route.firstNodeId}" }
                         OnionMessageAction.SendMessage(invoiceMessage.value)
                     }
                 }
             }
         }
+    }
+
+    fun createUnsolicitedInvoice(offer: OfferTypes.Offer, timeout: Duration, nodeKey: PrivateKey, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): Bolt12Invoice {
+        require(offer.amount != null) { "offer.amount must be provided for an unsolicited invoice" }
+        val amount = offer.amount
+        val preimage = randomBytes32()
+        val metadata = OfferPaymentMetadata.V2(
+            offerId = nodeKey.value,
+            amount = amount,
+            preimage = preimage,
+            createdAtSeconds = currentTimestampSeconds(),
+            relativeExpirySeconds = timeout.inWholeSeconds,
+            description = offer.description,
+            payerKey = null,
+            payerNote = null,
+            quantity = null
+        ).toPathId(nodeParams.nodePrivateKey)
+        val path = paymentBlindedContactInfo(remoteChannelUpdates, currentBlockHeight, amount, metadata)
+        return Bolt12Invoice(offer, preimage, nodeKey, timeout.inWholeSeconds, nodeParams.features.bolt12Features(), listOf(path))
+    }
+
+    private fun getMinHtlc(remoteChannelUpdates: List<ChannelUpdate>): MilliSatoshi {
+        // We must use the most restrictive minimum HTLC value between local and remote.
+        return (listOf(nodeParams.htlcMinimum) + remoteChannelUpdates.map { it.htlcMinimumMsat }).max()
+    }
+
+    private fun paymentBlindedContactInfo(remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int, amount: MilliSatoshi, metadata: ByteVector): Bolt12Invoice.Companion.PaymentBlindedContactInfo {
+        val minHtlc = getMinHtlc(remoteChannelUpdates)
+        val cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
+        val paymentInfo = OfferTypes.PaymentInfo(
+            feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
+            feeProportionalMillionths = remoteChannelUpdates.maxOfOrNull { it.feeProportionalMillionths } ?: walletParams.invoiceDefaultRoutingFees.feeProportional,
+            // We include our min_final_cltv_expiry_delta in the path, but we *don't* include it in the payment_relay field
+            // for our trampoline node (below). This ensures that we will receive payments with at least this final expiry delta.
+            // This ensures that even when payers haven't received the latest block(s) or don't include a safety margin in the
+            // expiry they use, we can still safely receive their payment.
+            cltvExpiryDelta = cltvExpiryDelta + nodeParams.minFinalCltvExpiryDelta,
+            minHtlc = minHtlc,
+            // Payments are allowed to overpay at most two times the invoice amount.
+            maxHtlc = amount * 2,
+            allowedFeatures = ByteVector.empty
+        )
+        // Once the invoice expires, the blinded path shouldn't be usable anymore.
+        // We assume 10 minutes between each block to convert the invoice expiry to a cltv_expiry_delta.
+        // When paying the invoice, payers may add any number of blocks to the current block height to protect recipient privacy.
+        // We assume that they won't add more than 720 blocks, which is reasonable because adding a large delta increases the risk
+        // that intermediate nodes reject the payment because they don't want their funds potentially locked for a long duration.
+        val pathExpiry = (paymentInfo.cltvExpiryDelta + CltvExpiryDelta(720) + (nodeParams.bolt12InvoiceExpiry.inWholeMinutes.toInt() / 10)).toCltvExpiry(currentBlockHeight.toLong())
+        val remoteNodePayload = RouteBlindingEncryptedData(
+            TlvStream(
+                RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
+                RouteBlindingEncryptedDataTlv.PaymentRelay(cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
+                RouteBlindingEncryptedDataTlv.PaymentConstraints(pathExpiry, paymentInfo.minHtlc)
+            )
+        ).write().toByteVector()
+        val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(metadata))).write().toByteVector()
+        val blindedRoute = RouteBlinding.create(randomKey(), listOf(remoteNodeId, nodeParams.nodeId), listOf(remoteNodePayload, recipientPayload)).route
+        return Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRoute), paymentInfo)
     }
 
     private fun sendInvoiceError(message: String, replyPath: RouteBlinding.BlindedRoute): OnionMessageAction.SendMessage? {

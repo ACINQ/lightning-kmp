@@ -638,6 +638,27 @@ object OfferTypes {
         }
     }
 
+    data class CardParams(val params: String) : InvoiceTlv() {
+        override val tag: Long get() = CardParams.tag
+
+        override fun write(out: Output) {
+            val bytes = params.encodeToByteArray()
+            LightningCodecs.writeBytes(bytes, out)
+        }
+
+        companion object : TlvValueReader<CardParams> {
+            // BOLT CARD: B(66) + O(79) + L(76) + T(84) = 305
+            //            C(67) + A(65) + R(82) + D(68) = 282
+            const val tag: Long = 1_000_305_282
+
+            override fun read(input: Input): CardParams {
+                val bytes = LightningCodecs.bytes(input, input.availableBytes)
+                val params = bytes.decodeToString()
+                return CardParams(params)
+            }
+        }
+    }
+
     /**
      * Signature from the sender when used in an invoice request.
      * Signature from the recipient when used in an invoice.
@@ -667,7 +688,7 @@ object OfferTypes {
         return tlv.tag in 0..159 || tlv.tag in 1000000000..2999999999
     }
 
-    fun filterOfferFields(tlvs: TlvStream<InvoiceRequestTlv>): TlvStream<OfferTlv> {
+    fun <T : Bolt12Tlv> filterOfferFields(tlvs: TlvStream<T>): TlvStream<OfferTlv> {
         return TlvStream(
             tlvs.records.filterIsInstance<OfferTlv>().toSet(),
             tlvs.unknown.filter { isOfferTlv(it) }.toSet()
@@ -1039,6 +1060,8 @@ object OfferTypes {
                 InvoiceFeatures.tag to InvoiceFeatures as TlvValueReader<InvoiceTlv>,
                 InvoiceNodeId.tag to InvoiceNodeId as TlvValueReader<InvoiceTlv>,
                 Signature.tag to Signature as TlvValueReader<InvoiceTlv>,
+                // Extensions
+                CardParams.tag to CardParams as TlvValueReader<InvoiceTlv>
             )
         )
     }
@@ -1051,6 +1074,14 @@ object OfferTypes {
                 if (records.get<Error>() == null) return Left(MissingRequiredTlv(5))
                 return Right(InvoiceError(records))
             }
+
+            val tlvSerializer = TlvStreamSerializer(
+                true, @Suppress("UNCHECKED_CAST") mapOf(
+                    ErroneousField.tag to ErroneousField.Companion as TlvValueReader<InvoiceErrorTlv>,
+                    SuggestedValue.tag to SuggestedValue.Companion as TlvValueReader<InvoiceErrorTlv>,
+                    Error.tag to Error.Companion as TlvValueReader<InvoiceErrorTlv>
+                )
+            )
         }
     }
 

@@ -96,21 +96,37 @@ sealed class OnionMessagePayloadTlv : Tlv {
      */
     data class InvoiceError(val tlvs: TlvStream<OfferTypes.InvoiceErrorTlv>) : OnionMessagePayloadTlv() {
         override val tag: Long get() = InvoiceError.tag
-        override fun write(out: Output) = tlvSerializer.write(tlvs, out)
+        override fun write(out: Output) = OfferTypes.InvoiceError.tlvSerializer.write(tlvs, out)
 
         companion object : TlvValueReader<InvoiceError> {
             const val tag: Long = 68
 
-            val tlvSerializer = TlvStreamSerializer(
-                true, @Suppress("UNCHECKED_CAST") mapOf(
-                    OfferTypes.ErroneousField.tag to OfferTypes.ErroneousField.Companion as TlvValueReader<OfferTypes.InvoiceErrorTlv>,
-                    OfferTypes.SuggestedValue.tag to OfferTypes.SuggestedValue.Companion as TlvValueReader<OfferTypes.InvoiceErrorTlv>,
-                    OfferTypes.Error.tag to OfferTypes.Error.Companion as TlvValueReader<OfferTypes.InvoiceErrorTlv>,
-                )
-            )
-
             override fun read(input: Input): InvoiceError =
-                InvoiceError(tlvSerializer.read(input))
+                InvoiceError(OfferTypes.InvoiceError.tlvSerializer.read(input))
+        }
+    }
+
+    data class CardPaymentRequest(val tlvs: TlvStream<OfferTypes.InvoiceTlv>) : OnionMessagePayloadTlv() {
+        override val tag: Long get() = CardPaymentRequest.tag
+        override fun write(out: Output) = OfferTypes.Invoice.tlvSerializer.write(tlvs, out)
+
+        companion object : TlvValueReader<CardPaymentRequest> {
+            const val tag: Long = 305_282_066
+
+            override fun read(input: Input): CardPaymentRequest =
+                CardPaymentRequest(OfferTypes.Invoice.tlvSerializer.read(input))
+        }
+    }
+
+    data class CardPaymentResponse(val tlvs: TlvStream<OfferTypes.InvoiceErrorTlv>) : OnionMessagePayloadTlv() {
+        override val tag: Long get() = CardPaymentResponse.tag
+        override fun write(out: Output) = OfferTypes.InvoiceError.tlvSerializer.write(tlvs, out)
+
+        companion object : TlvValueReader<CardPaymentResponse> {
+            const val tag: Long = 305_282_068
+
+            override fun read(input: Input): CardPaymentResponse =
+                CardPaymentResponse(OfferTypes.InvoiceError.tlvSerializer.read(input))
         }
     }
 }
@@ -134,7 +150,9 @@ data class MessageOnion(val records: TlvStream<OnionMessagePayloadTlv>) {
                 OnionMessagePayloadTlv.EncryptedData.tag to OnionMessagePayloadTlv.EncryptedData.Companion as TlvValueReader<OnionMessagePayloadTlv>,
                 OnionMessagePayloadTlv.InvoiceRequest.tag to OnionMessagePayloadTlv.InvoiceRequest.Companion as TlvValueReader<OnionMessagePayloadTlv>,
                 OnionMessagePayloadTlv.Invoice.tag to OnionMessagePayloadTlv.Invoice.Companion as TlvValueReader<OnionMessagePayloadTlv>,
-                OnionMessagePayloadTlv.InvoiceError.tag to OnionMessagePayloadTlv.InvoiceError.Companion as TlvValueReader<OnionMessagePayloadTlv>
+                OnionMessagePayloadTlv.InvoiceError.tag to OnionMessagePayloadTlv.InvoiceError.Companion as TlvValueReader<OnionMessagePayloadTlv>,
+                OnionMessagePayloadTlv.CardPaymentRequest.tag to OnionMessagePayloadTlv.CardPaymentRequest.Companion as TlvValueReader<OnionMessagePayloadTlv>,
+                OnionMessagePayloadTlv.CardPaymentResponse.tag to OnionMessagePayloadTlv.CardPaymentResponse.Companion as TlvValueReader<OnionMessagePayloadTlv>
             )
         )
 
