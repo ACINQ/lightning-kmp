@@ -263,7 +263,7 @@ class Peer(
         val state = this
         val ctx = ChannelContext(
             StaticParams(nodeParams, remoteNodeId),
-            currentTipFlow.filterNotNull().first(),
+            getCurrentBlockHeight(),
             onChainFeeratesFlow,
             logger = MDCLogger(
                 logger = _channelLogger,
@@ -783,6 +783,8 @@ class Peer(
             }
     }
 
+    private suspend fun getCurrentBlockHeight(): Int = currentTipFlow.filterNotNull().first()
+
     suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
@@ -917,7 +919,7 @@ class Peer(
                         }
                     }
                     is ChannelAction.ProcessCmdRes.AddSettledFail -> {
-                        val currentTip = currentTipFlow.filterNotNull().first()
+                        val currentTip = getCurrentBlockHeight()
                         when (val result = outgoingPaymentHandler.processAddSettledFailed(actualChannelId, action, _channels, currentTip)) {
                             is OutgoingPaymentHandler.Progress -> {
                                 _eventsFlow.emit(PaymentProgress(result.request, result.fees))
@@ -1078,7 +1080,7 @@ class Peer(
     }
 
     private suspend fun processIncomingPayment(item: Either<WillAddHtlc, UpdateAddHtlc>) {
-        val currentBlockHeight = currentTipFlow.filterNotNull().first()
+        val currentBlockHeight = getCurrentBlockHeight()
         val currentFeerate = peerFeeratesFlow.filterNotNull().first().fundingFeerate
         val currentFeeCredit = feeCreditFlow.value
         val result = when (item) {
@@ -1375,7 +1377,8 @@ class Peer(
                                 else -> null
                             }
                         }
-                        offerManager.receiveMessage(msg, remoteChannelUpdates, currentTipFlow.filterNotNull().first())?.let {
+                        val currentBlockHeight = getCurrentBlockHeight()
+                        offerManager.receiveMessage(msg, remoteChannelUpdates, currentBlockHeight)?.let {
                             when (it) {
                                 is OnionMessageAction.PayInvoice -> input.send(
                                     PayInvoice(
@@ -1690,7 +1693,7 @@ class Peer(
                 }
             }
             is PayInvoice -> {
-                val currentTip = currentTipFlow.filterNotNull().first()
+                val currentTip = getCurrentBlockHeight()
                 when (val result = outgoingPaymentHandler.sendPayment(cmd, _channels, currentTip)) {
                     is OutgoingPaymentHandler.Progress -> {
                         _eventsFlow.emit(PaymentProgress(result.request, result.fees))
