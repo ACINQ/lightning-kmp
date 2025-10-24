@@ -783,6 +783,17 @@ class Peer(
             }
     }
 
+    private fun getRemoteChannelUpdates(): List<ChannelUpdate> {
+        return _channels.values.mapNotNull { channelState ->
+            when (channelState) {
+                is Normal -> channelState.remoteChannelUpdate
+                is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
+                is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
+                else -> null
+            }
+        }
+    }
+
     private suspend fun getCurrentBlockHeight(): Int = currentTipFlow.filterNotNull().first()
 
     suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
@@ -818,14 +829,7 @@ class Peer(
     suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expiry: Duration? = null): Bolt11Invoice {
         // we add one extra hop which uses a virtual channel with a "peer id", using the highest remote fees and expiry across all
         // channels to maximize the likelihood of success on the first payment attempt
-        val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
-            when (channelState) {
-                is Normal -> channelState.remoteChannelUpdate
-                is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
-                is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
-                else -> null
-            }
-        }
+        val remoteChannelUpdates = getRemoteChannelUpdates()
         val extraHops = listOf(
             listOf(
                 Bolt11Invoice.TaggedField.ExtraHop(
@@ -1369,14 +1373,7 @@ class Peer(
                     }
                     is OnionMessage -> {
                         logger.info { "received ${msg::class.simpleName}" }
-                        val remoteChannelUpdates = _channels.values.mapNotNull { channelState ->
-                            when (channelState) {
-                                is Normal -> channelState.remoteChannelUpdate
-                                is Offline -> (channelState.state as? Normal)?.remoteChannelUpdate
-                                is Syncing -> (channelState.state as? Normal)?.remoteChannelUpdate
-                                else -> null
-                            }
-                        }
+                        val remoteChannelUpdates = getRemoteChannelUpdates()
                         val currentBlockHeight = getCurrentBlockHeight()
                         offerManager.receiveMessage(msg, remoteChannelUpdates, currentBlockHeight)?.let {
                             when (it) {
