@@ -29,6 +29,11 @@ data class Feerates(
  */
 suspend fun IClient.computeSpliceCpfpFeerate(commitments: Commitments, targetFeerate: FeeratePerKw, spliceWeight: Int, logger: MDCLogger): Pair<FeeratePerKw, Satoshi> {
     val (parentsWeight, parentsFees) = commitments.all
+        // We start by filtering out confirmed transactions: we don't need to pay for their weight.
+        .filter { it.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx }
+        // Then we check if unconfirmed transactions are really unconfirmed, because we wait for min-depth
+        // before updating their status to LocalFundingStatus.ConfirmedFundingTx, but we don't need to pay
+        // for their weight as soon as they have at least one confirmation.
         .takeWhile { getConfirmations(it.fundingTxId).let { confirmations -> confirmations == null || confirmations == 0 } } // we check for null in case the tx has been evicted
         .fold(Pair(0, 0.sat)) { (parentsWeight, parentsFees), commitment ->
             when (commitment.localFundingStatus) {
