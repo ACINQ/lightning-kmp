@@ -128,7 +128,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
-        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat)))
+        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(2500.sat)))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
         bob.forward(open)
@@ -188,7 +188,7 @@ class PeerTest : LightningTestSuite() {
         val (alice, bob, alice2bob, bob2alice) = newPeers(this, nodeParams, walletParams, automateMessaging = false)
 
         val wallet = createWallet(nodeParams.first.keyManager, 300_000.sat).second
-        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(3000.sat), FeeratePerKw(2500.sat)))
+        alice.send(OpenChannel(250_000.sat, wallet, FeeratePerKw(2500.sat)))
 
         val open = alice2bob.expect<OpenDualFundedChannel>()
         bob.forward(open)

@@ -46,7 +46,6 @@ sealed class PeerCommand
 data class OpenChannel(
     val fundingAmount: Satoshi,
     val walletInputs: List<WalletState.Utxo>,
-    val commitTxFeerate: FeeratePerKw,
     val fundingTxFeerate: FeeratePerKw,
 ) : PeerCommand()
 
@@ -1414,7 +1413,7 @@ class Peer(
                         replyTo = CompletableDeferred(),
                         fundingAmount = cmd.fundingAmount,
                         walletInputs = cmd.walletInputs,
-                        commitTxFeerate = cmd.commitTxFeerate,
+                        commitTxFeerate = FeeratePerKw(FeeratePerByte(1.sat)),
                         fundingTxFeerate = cmd.fundingTxFeerate,
                         localChannelParams = localParams,
                         dustLimit = nodeParams.dustLimit,
@@ -1529,7 +1528,7 @@ class Peer(
                                                 replyTo = CompletableDeferred(),
                                                 fundingAmount = localFundingAmount,
                                                 walletInputs = cmd.walletInputs,
-                                                commitTxFeerate = currentFeerates.commitmentFeerate,
+                                                commitTxFeerate = FeeratePerKw(FeeratePerByte(1.sat)),
                                                 fundingTxFeerate = currentFeerates.fundingFeerate,
                                                 localChannelParams = localParams,
                                                 dustLimit = nodeParams.dustLimit,
@@ -1656,7 +1655,7 @@ class Peer(
                                         replyTo = CompletableDeferred(),
                                         fundingAmount = 0.sat, // we don't have funds to contribute
                                         walletInputs = listOf(),
-                                        commitTxFeerate = currentFeerates.commitmentFeerate,
+                                        commitTxFeerate = FeeratePerKw(FeeratePerByte(1.sat)),
                                         fundingTxFeerate = fundingFeerate,
                                         localChannelParams = localParams,
                                         dustLimit = nodeParams.dustLimit,
