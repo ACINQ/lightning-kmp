@@ -130,7 +130,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
     ): ProcessAddResult {
         // There are several checks we could perform *before* decrypting the onion.
         // But we need to carefully handle which error message is returned to prevent information leakage, so we always peel the onion first.
-        return when (val res = toPaymentPart(privateKey, htlc)) {
+        return when (val res = toPaymentPart(privateKey, htlc, logger)) {
             is Either.Left -> res.value
             is Either.Right -> processPaymentPart(res.value, remoteFeatures, currentBlockHeight, currentFeerate, remoteFundingRates, currentFeeCredit)
         }
@@ -518,7 +518,6 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
     fun checkPaymentsTimeout(currentTimestampSeconds: Long): List<PeerCommand> {
         val actions = mutableListOf<PeerCommand>()
         val keysToRemove = mutableSetOf<ByteVector32>()
-
         // BOLT 04:
         // - MUST fail all HTLCs in the HTLC set after some reasonable timeout.
         //   - SHOULD wait for at least 60 seconds after the initial HTLC.
@@ -529,13 +528,18 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                 keysToRemove += paymentHash
                 payment.parts.forEach { part ->
                     when (part) {
-                        is HtlcPart -> actions += actionForFailureMessage(PaymentTimeout, part.htlc)
-                        is WillAddHtlcPart -> actions += actionForWillAddHtlcFailure(privateKey, PaymentTimeout, part.htlc)
+                        is HtlcPart -> {
+                            logger.warning { "failing HTLC #${part.htlc.id}: MPP timeout" }
+                            actions += actionForFailureMessage(PaymentTimeout, part.htlc)
+                        }
+                        is WillAddHtlcPart -> {
+                            logger.warning { "failing on-the-fly part #${part.htlc.id}: MPP timeout" }
+                            actions += actionForWillAddHtlcFailure(privateKey, PaymentTimeout, part.htlc)
+                        }
                     }
                 }
             }
         }
-
         pending.minusAssign(keysToRemove)
         return actions
     }
@@ -566,12 +570,18 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
 
     companion object {
         /** Convert an incoming htlc to a payment part abstraction. Payment parts are then summed together to reach the full payment amount. */
-        private fun toPaymentPart(privateKey: PrivateKey, htlc: Either<WillAddHtlc, UpdateAddHtlc>): Either<ProcessAddResult.Rejected, PaymentPart> {
+        private fun toPaymentPart(privateKey: PrivateKey, htlc: Either<WillAddHtlc, UpdateAddHtlc>, logger: MDCLogger): Either<ProcessAddResult.Rejected, PaymentPart> {
             return when (val decrypted = IncomingPaymentPacket.decrypt(htlc, privateKey)) {
                 is Either.Left -> {
                     val action = when (htlc) {
-                        is Either.Left -> actionForWillAddHtlcFailure(privateKey, decrypted.value, htlc.value)
-                        is Either.Right -> actionForFailureMessage(decrypted.value, htlc.value)
+                        is Either.Left -> {
+                            logger.warning { "onion validation failed for on-the-fly part #${htlc.value.id}: ${decrypted.value.message}" }
+                            actionForWillAddHtlcFailure(privateKey, decrypted.value, htlc.value)
+                        }
+                        is Either.Right -> {
+                            logger.warning { "onion validation failed for HTLC #${htlc.value.id}: ${decrypted.value.message}" }
+                            actionForFailureMessage(decrypted.value, htlc.value)
+                        }
                     }
                     Either.Left(ProcessAddResult.Rejected(listOf(action), null))
                 }
