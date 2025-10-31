@@ -1149,7 +1149,7 @@ data class InteractiveTxSigningSession(
                     localCommitIndex = localCommitIndex,
                     commitmentFormat = fundingParams.commitmentFormat,
                     spec = localCommit.value.spec,
-                    log = logger
+                    logger = logger
                 )) {
                     is Either.Left -> Pair(this, InteractiveTxSigningSessionAction.AbortFundingAttempt(signedLocalCommit.value))
                     is Either.Right -> {
@@ -1226,7 +1226,8 @@ data class InteractiveTxSigningSession(
             remoteCommitmentIndex: Long,
             commitTxFeerate: FeeratePerKw,
             remotePerCommitmentPoint: PublicKey,
-            localHtlcs: Set<DirectedHtlc>
+            localHtlcs: Set<DirectedHtlc>,
+            logger: MDCLogger
         ): Either<ChannelException, Pair<InteractiveTxSigningSession, CommitSig>> {
             val fundingKey = session.localFundingKey
             val localCommitKeys = session.channelKeys.localCommitmentKeys(channelParams, localCommitmentIndex)
@@ -1265,6 +1266,13 @@ data class InteractiveTxSigningSession(
                     }
                 }
                 val localSigsOfRemoteHtlcTxs = firstCommitTx.remoteHtlcTxs.map { it.localSig(remoteCommitKeys) }
+                // NB: IN/OUT htlcs are inverted because this is the remote commit
+                logger.info {
+                    val spec = firstCommitTx.remoteSpec
+                    val htlcsIn = spec.htlcs.outgoings().map { it.id }.joinToString(",")
+                    val htlcsOut = spec.htlcs.incomings().map { it.id }.joinToString(",")
+                    "built remote commit number=$remoteCommitmentIndex toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txId=${firstCommitTx.remoteCommitTx.tx.txid} fundingTxId=${unsignedTx.txid}"
+                }
                 val commitSig = CommitSig(channelParams.channelId, localSigOfRemoteCommitTx, localSigsOfRemoteHtlcTxs, batchSize = 1)
                 // We haven't received the remote commit_sig: we don't have local htlc txs yet.
                 val unsignedLocalCommit = UnsignedLocalCommit(localCommitmentIndex, firstCommitTx.localSpec, firstCommitTx.localCommitTx.tx.txid)

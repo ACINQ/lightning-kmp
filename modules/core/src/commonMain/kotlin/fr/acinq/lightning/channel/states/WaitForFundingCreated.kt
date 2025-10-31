@@ -69,7 +69,8 @@ data class WaitForFundingCreated(
                                 remoteCommitmentIndex = 0,
                                 commitTxFeerate,
                                 remoteFirstPerCommitmentPoint,
-                                emptySet()
+                                emptySet(),
+                                logger
                             )
                             when (signingSession) {
                                 is Either.Left -> {
