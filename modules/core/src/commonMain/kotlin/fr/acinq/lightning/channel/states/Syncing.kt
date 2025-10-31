@@ -29,7 +29,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     // They haven't received our commit_sig: we retransmit it, and will send our tx_signatures once we've received
                                     // their commit_sig or their tx_signatures (depending on who must send tx_signatures first).
                                     logger.info { "re-sending commit_sig for channel creation with fundingTxId=${state.signingSession.fundingTx.txId}" }
-                                    when (val commitSig = state.signingSession.remoteCommit.sign(state.channelParams, channelKeys, state.signingSession, cmd.message.currentCommitNonce)) {
+                                    when (val commitSig = state.signingSession.remoteCommit.sign(state.channelParams, channelKeys, state.signingSession, cmd.message.currentCommitNonce, logger)) {
                                         is Either.Left -> logger.warning { "cannot retransmit commit_sig: ${commitSig.value.message}" }
                                         is Either.Right -> add(ChannelAction.Message.Send(commitSig.value))
                                     }
@@ -48,7 +48,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                                 // They haven't received our commit_sig: we retransmit it.
                                                 // We're waiting for signatures from them, and will send our tx_signatures once we receive them.
                                                 logger.info { "re-sending commit_sig for rbf attempt with fundingTxId=${cmd.message.nextFundingTxId}" }
-                                                when (val commitSig = state.rbfStatus.session.remoteCommit.sign(state.commitments.channelParams, channelKeys, state.rbfStatus.session, cmd.message.currentCommitNonce)) {
+                                                when (val commitSig = state.rbfStatus.session.remoteCommit.sign(state.commitments.channelParams, channelKeys, state.rbfStatus.session, cmd.message.currentCommitNonce, logger)) {
                                                     is Either.Left -> logger.warning { "cannot retransmit commit_sig: ${commitSig.value.message}" }
                                                     is Either.Right -> add(ChannelAction.Message.Send(commitSig.value))
                                                 }
@@ -70,7 +70,8 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                                     state.commitments.latest.commitInput(channelKeys),
                                                     state.commitments.latest.commitmentFormat,
                                                     batchSize = 1,
-                                                    remoteNonce = cmd.message.currentCommitNonce
+                                                    remoteNonce = cmd.message.currentCommitNonce,
+                                                    logger
                                                 )) {
                                                     is Either.Left -> logger.warning { "cannot retransmit commit_sig: ${commitSig.value.message}" }
                                                     is Either.Right -> add(ChannelAction.Message.Send(commitSig.value))
@@ -106,7 +107,8 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                             state.commitments.latest.commitInput(channelKeys),
                                             state.commitments.latest.commitmentFormat,
                                             batchSize = 1,
-                                            remoteNonce = cmd.message.currentCommitNonce
+                                            remoteNonce = cmd.message.currentCommitNonce,
+                                            logger
                                         )) {
                                             is Either.Left -> logger.warning { "cannot retransmit commit_sig: ${commitSig.value.message}" }
                                             is Either.Right -> actions.add(ChannelAction.Message.Send(commitSig.value))
@@ -147,7 +149,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                             // They haven't received our commit_sig: we retransmit it.
                                             // We're waiting for signatures from them, and will send our tx_signatures once we receive them.
                                             logger.info { "re-sending commit_sig for splice attempt with fundingTxIndex=${state.spliceStatus.session.fundingParams.fundingTxIndex} fundingTxId=${state.spliceStatus.session.fundingTx.txId}" }
-                                            when (val commitSig = state.spliceStatus.session.remoteCommit.sign(state.commitments.channelParams, channelKeys, state.spliceStatus.session, cmd.message.currentCommitNonce)) {
+                                            when (val commitSig = state.spliceStatus.session.remoteCommit.sign(state.commitments.channelParams, channelKeys, state.spliceStatus.session, cmd.message.currentCommitNonce, logger)) {
                                                 is Either.Left -> logger.warning { "cannot retransmit commit_sig: ${commitSig.value.message}" }
                                                 is Either.Right -> actions.add(ChannelAction.Message.Send(commitSig.value))
                                             }
@@ -169,7 +171,8 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                                         state.commitments.latest.commitInput(channelKeys),
                                                         state.commitments.latest.commitmentFormat,
                                                         batchSize = 1,
-                                                        remoteNonce = cmd.message.currentCommitNonce
+                                                        remoteNonce = cmd.message.currentCommitNonce,
+                                                        logger
                                                     )) {
                                                         is Either.Left -> logger.warning { "cannot retransmit commit_sig: ${commitSig.value.message}" }
                                                         is Either.Right -> actions.add(ChannelAction.Message.Send(commitSig.value))
@@ -439,7 +442,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                     // Note that we ignore errors and simply skip failures to sign: we've already signed those updates before
                                     // the disconnection, so we don't expect any error here unless our peer sends an invalid nonce. In that
                                     // case, we simply won't send back our commit_sig until they fix their node.
-                                    c.nextRemoteCommit?.sign(commitments.channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubkey, commitInput, c.commitmentFormat, batchSize, remoteNonce)?.right
+                                    c.nextRemoteCommit?.sign(commitments.channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubkey, commitInput, c.commitmentFormat, batchSize, remoteNonce, logger)?.right
                                 })
                                 val retransmit = when (retransmitRevocation) {
                                     null -> buildList {

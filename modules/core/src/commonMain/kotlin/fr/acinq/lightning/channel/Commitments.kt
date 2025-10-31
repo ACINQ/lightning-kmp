@@ -112,7 +112,7 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val txId: TxId
             localCommitIndex: Long,
             commitmentFormat: Transactions.CommitmentFormat,
             spec: CommitmentSpec,
-            log: MDCLogger
+            logger: MDCLogger
         ): Either<ChannelException, LocalCommit> {
             val (localCommitTx, sortedHtlcTxs) = Commitments.makeLocalTxs(
                 channelParams = channelParams,
@@ -125,6 +125,11 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val txId: TxId
                 commitmentFormat = commitmentFormat,
                 spec = spec,
             )
+            logger.info {
+                val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
+                val htlcsOut = spec.htlcs.outgoings().map { it.id }.joinToString(",")
+                "built local commit number=$localCommitIndex toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${localCommitTx.tx.txid} fundingTxId=${commitInput.outPoint.txid}"
+            }
             val remoteSigOk = when (commitmentFormat) {
                 Transactions.CommitmentFormat.AnchorOutputs -> localCommitTx.checkRemoteSig(fundingKey.publicKey(), remoteFundingPubKey, commit.signature)
                 Transactions.CommitmentFormat.SimpleTaprootChannels -> when (val remoteSig = commit.sigOrPartialSig) {
@@ -136,7 +141,7 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val txId: TxId
                 }
             }
             if (!remoteSigOk) {
-                log.error { "remote signature $commit is invalid" }
+                logger.error { "remote signature $commit is invalid" }
                 return Either.Left(InvalidCommitmentSignature(channelParams.channelId, localCommitTx.tx.txid))
             }
             if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
@@ -164,6 +169,7 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
         commitmentFormat: Transactions.CommitmentFormat,
         batchSize: Int,
         remoteNonce: IndividualNonce?,
+        logger: MDCLogger
     ): Either<ChannelException, CommitSig> {
         val fundingKey = channelKeys.fundingKey(fundingTxIndex)
         val commitKeys = channelKeys.remoteCommitmentKeys(channelParams, remotePerCommitmentPoint)
@@ -178,6 +184,12 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
             commitmentFormat = commitmentFormat,
             spec = spec
         )
+        // NB: IN/OUT htlcs are inverted because this is the remote commit
+        logger.info {
+            val htlcsIn = spec.htlcs.outgoings().map { it.id }.joinToString(",")
+            val htlcsOut = spec.htlcs.incomings().map { it.id }.joinToString(",")
+            "built remote commit number=$index toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txId=${remoteCommitTx.tx.txid} fundingTxId=${commitInput.outPoint.txid}"
+        }
         val htlcSigs = sortedHtlcTxs.map { it.localSig(commitKeys) }
         return when (commitmentFormat) {
             Transactions.CommitmentFormat.AnchorOutputs -> {
@@ -197,7 +209,7 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
         }
     }
 
-    fun sign(channelParams: ChannelParams, channelKeys: ChannelKeys, signingSession: InteractiveTxSigningSession, remoteNonce: IndividualNonce?): Either<ChannelException, CommitSig> {
+    fun sign(channelParams: ChannelParams, channelKeys: ChannelKeys, signingSession: InteractiveTxSigningSession, remoteNonce: IndividualNonce?, logger: MDCLogger): Either<ChannelException, CommitSig> {
         return sign(
             channelParams,
             signingSession.remoteCommitParams,
@@ -207,7 +219,8 @@ data class RemoteCommit(val index: Long, val spec: CommitmentSpec, val txid: TxI
             signingSession.commitInput(channelKeys),
             signingSession.fundingParams.commitmentFormat,
             batchSize = 1,
-            remoteNonce
+            remoteNonce,
+            logger
         )
     }
 }
@@ -552,7 +565,7 @@ data class Commitment(
         remoteNextPerCommitmentPoint: PublicKey,
         batchSize: Int,
         nextRemoteNonce: IndividualNonce?,
-        log: MDCLogger
+        logger: MDCLogger
     ): Either<ChannelException, Pair<Commitment, CommitSig>> {
         val fundingKey = localFundingKey(channelKeys)
         // remote commitment will include all local changes + remote acked changes
@@ -583,7 +596,7 @@ data class Commitment(
         }
         val htlcSigs = sortedHtlcTxs.map { it.localSig(commitKeys) }
         // NB: IN/OUT htlcs are inverted because this is the remote commit
-        log.info {
+        logger.info {
             val htlcsIn = spec.htlcs.outgoings().map { it.id }.joinToString(",")
             val htlcsOut = spec.htlcs.incomings().map { it.id }.joinToString(",")
             "built remote commit number=${remoteCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txId=${remoteCommitTx.tx.txid} fundingTxId=$fundingTxId"
@@ -593,7 +606,7 @@ data class Commitment(
         return Either.Right(Pair(commitment1, commitSig))
     }
 
-    fun receiveCommit(params: ChannelParams, channelKeys: ChannelKeys, commitKeys: LocalCommitmentKeys, changes: CommitmentChanges, commit: CommitSig, log: MDCLogger): Either<ChannelException, Commitment> {
+    fun receiveCommit(params: ChannelParams, channelKeys: ChannelKeys, commitKeys: LocalCommitmentKeys, changes: CommitmentChanges, commit: CommitSig, logger: MDCLogger): Either<ChannelException, Commitment> {
         // they sent us a signature for *their* view of *our* next commit tx
         // so in terms of rev.hashes and indexes we have:
         // ourCommit.index -> our current revocation hash, which is about to become our old revocation hash
@@ -604,12 +617,7 @@ data class Commitment(
         // and will increment our index
         val fundingKey = localFundingKey(channelKeys)
         val spec = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
-        return LocalCommit.fromCommitSig(params, localCommitParams, commitKeys, fundingKey, remoteFundingPubkey, commitInput(fundingKey), commit, localCommit.index + 1, commitmentFormat, spec, log).map { localCommit1 ->
-            log.info {
-                val htlcsIn = spec.htlcs.incomings().map { it.id }.joinToString(",")
-                val htlcsOut = spec.htlcs.outgoings().map { it.id }.joinToString(",")
-                "built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${localCommit1.txId} fundingTxId=$fundingTxId"
-            }
+        return LocalCommit.fromCommitSig(params, localCommitParams, commitKeys, fundingKey, remoteFundingPubkey, commitInput(fundingKey), commit, localCommit.index + 1, commitmentFormat, spec, logger).map { localCommit1 ->
             copy(localCommit = localCommit1)
         }
     }
@@ -854,13 +862,13 @@ data class Commitments(
         return failure?.let { Either.Left(it) } ?: Either.Right(copy(changes = changes1))
     }
 
-    fun sendCommit(channelKeys: ChannelKeys, remoteCommitNonces: Map<TxId, IndividualNonce>, log: MDCLogger): Either<ChannelException, Pair<Commitments, CommitSigs>> {
+    fun sendCommit(channelKeys: ChannelKeys, remoteCommitNonces: Map<TxId, IndividualNonce>, logger: MDCLogger): Either<ChannelException, Pair<Commitments, CommitSigs>> {
         val remoteNextPerCommitmentPoint = remoteNextCommitInfo.right ?: return Either.Left(CannotSignBeforeRevocation(channelId))
         if (!changes.localHasChanges()) return Either.Left(CannotSignWithoutChanges(channelId))
         val (active1, sigs) = active.map { c ->
             val commitKeys = channelKeys.remoteCommitmentKeys(channelParams, remoteNextPerCommitmentPoint)
             val remoteNonce = remoteCommitNonces[c.fundingTxId]
-            when (val res = c.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, remoteNonce, log)) {
+            when (val res = c.sendCommit(channelParams, channelKeys, commitKeys, changes, remoteNextPerCommitmentPoint, active.size, remoteNonce, logger)) {
                 is Either.Left -> return Either.Left(res.left)
                 is Either.Right -> res.value
             }
@@ -876,7 +884,7 @@ data class Commitments(
         return Either.Right(Pair(commitments1, CommitSigs.fromSigs(sigs)))
     }
 
-    fun receiveCommit(commits: CommitSigs, channelKeys: ChannelKeys, log: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
+    fun receiveCommit(commits: CommitSigs, channelKeys: ChannelKeys, logger: MDCLogger): Either<ChannelException, Pair<Commitments, RevokeAndAck>> {
         // We may receive more commit_sig than the number of active commitments, because there can be a race where we send splice_locked
         // while our peer is sending us a batch of commit_sig. When that happens, we simply need to discard the commit_sig that belong
         // to commitments we deactivated.
@@ -890,7 +898,7 @@ data class Commitments(
         val commitKeys = channelKeys.localCommitmentKeys(channelParams, localCommitIndex + 1)
         // Signatures are sent in order (most recent first), calling `zip` will drop trailing sigs that are for deactivated/pruned commitments.
         val active1 = active.zip(sigs).map {
-            when (val commitment1 = it.first.receiveCommit(channelParams, channelKeys, commitKeys, changes, it.second, log)) {
+            when (val commitment1 = it.first.receiveCommit(channelParams, channelKeys, commitKeys, changes, it.second, logger)) {
                 is Either.Left -> return Either.Left(commitment1.value)
                 is Either.Right -> commitment1.value
             }

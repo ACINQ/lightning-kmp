@@ -928,7 +928,6 @@ class Peer(
                                 _eventsFlow.emit(PaymentProgress(result.request, result.fees))
                                 result.actions.forEach { input.send(it) }
                             }
-
                             is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
                             is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
                             null -> logger.debug { "non-final error, another payment attempt (retry) is still pending: ${action.result}" }

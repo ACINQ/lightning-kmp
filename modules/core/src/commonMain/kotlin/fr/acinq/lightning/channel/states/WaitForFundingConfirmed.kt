@@ -195,7 +195,8 @@ data class WaitForFundingConfirmed(
                                     remoteCommitmentIndex = replacedCommitment.remoteCommit.index,
                                     replacedCommitment.localCommit.spec.feerate,
                                     replacedCommitment.remoteCommit.remotePerCommitmentPoint,
-                                    replacedCommitment.localCommit.spec.htlcs
+                                    replacedCommitment.localCommit.spec.htlcs,
+                                    logger
                                 )
                                 when (signingSession) {
                                     is Either.Left -> {

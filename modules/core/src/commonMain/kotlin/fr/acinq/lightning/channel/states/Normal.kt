@@ -639,7 +639,8 @@ data class Normal(
                                         remoteCommitmentIndex = parentCommitment.remoteCommit.index,
                                         parentCommitment.localCommit.spec.feerate,
                                         parentCommitment.remoteCommit.remotePerCommitmentPoint,
-                                        localHtlcs = parentCommitment.localCommit.spec.htlcs
+                                        localHtlcs = parentCommitment.localCommit.spec.htlcs,
+                                        logger
                                     )
                                     when (signingSession) {
                                         is Either.Left -> {
