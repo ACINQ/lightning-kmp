@@ -880,9 +880,9 @@ data class Normal(
         // We watch for confirmation in all cases, to allow pruning outdated commitments when transactions confirm.
         val fundingScript = action.commitment.commitInput(channelKeys()).txOut.publicKeyScript
         val watchConfirmed = WatchConfirmed(channelId, action.commitment.fundingTxId, fundingScript, staticParams.nodeParams.minDepthBlocks, WatchConfirmed.ChannelFundingDepthOk)
-        val commitments = commitments.add(action.commitment)
+        val commitments1 = commitments.add(action.commitment)
         val remoteNextCommitNonces1 = remoteNextCommitNonces + listOfNotNull(action.nextRemoteCommitNonce?.let { action.commitment.fundingTxId to it }).toMap()
-        val nextState = this@Normal.copy(commitments = commitments, remoteNextCommitNonces = remoteNextCommitNonces1, spliceStatus = SpliceStatus.None)
+        val nextState = this@Normal.copy(commitments = commitments1, remoteNextCommitNonces = remoteNextCommitNonces1, spliceStatus = SpliceStatus.None)
         val actions = buildList {
             add(ChannelAction.Storage.StoreState(nextState))
             action.fundingTx.signedTx?.let { add(ChannelAction.Blockchain.PublishTx(it, ChannelAction.Blockchain.PublishTx.Type.FundingTx)) }
