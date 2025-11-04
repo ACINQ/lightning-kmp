@@ -1,7 +1,6 @@
 package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomKey
@@ -302,7 +301,6 @@ class Peer(
                     delay(1.minutes)
                 }
             }
-
         }
         launch {
             suspend fun updateFeerates() {
@@ -940,7 +938,7 @@ class Peer(
                         }
                     }
                     is ChannelAction.Storage.StoreState -> {
-                        logger.info { "storing state=${action.data::class.simpleName}" }
+                        logger.info { "storing state=${action.data::class.simpleName} latestFundingTxId=${action.data.fundingTxId} latestFundingTxIndex=${action.data.fundingTxIndex}" }
                         db.channels.addOrUpdateChannel(action.data)
                         if (action.data is Closed) {
                             updatePeerStorage(nodeParams, channels - channelId, peerConnection, theirInit?.features, logger)

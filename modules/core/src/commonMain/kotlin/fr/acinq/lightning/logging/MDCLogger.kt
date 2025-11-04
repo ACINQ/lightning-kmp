@@ -51,8 +51,6 @@ suspend fun <T> MDCLogger.withMDC(mdc: Map<String, Any>, f: suspend (MDCLogger) 
     return f(logger)
 }
 
-
-
 /**
  * Utility functions to build MDC for various objects without polluting main classes
  */
@@ -82,6 +80,7 @@ fun ChannelState.mdc(): Map<String, Any> {
     return buildMap {
         put("state", state.stateName)
         when (state) {
+            WaitForInit -> {}
             is WaitForOpenChannel -> put("temporaryChannelId", state.temporaryChannelId)
             is WaitForAcceptChannel -> put("temporaryChannelId", state.temporaryChannelId)
             is WaitForFundingCreated -> put("channelId", state.channelId)
@@ -89,14 +88,23 @@ fun ChannelState.mdc(): Map<String, Any> {
             is ChannelStateWithCommitments -> put("channelId", state.channelId)
             is Offline -> put("channelId", state.state.channelId)
             is Syncing -> put("channelId", state.state.channelId)
-            else -> {}
+            Aborted -> {}
         }
-        when(state) {
-            is ChannelStateWithCommitments -> {
-                put("commitments", "active=${state.commitments.active.map { it.fundingTxIndex }} inactive=${state.commitments.inactive.map { it.fundingTxIndex }}")
-                put("balances", "toLocal=${state.commitments.latest.localCommit.spec.toLocal} toRemote=${state.commitments.latest.localCommit.spec.toRemote} capacity=${state.commitments.latest.fundingAmount}")
+        val commitments = when (state) {
+            is ChannelStateWithCommitments -> state.commitments
+            is Offline -> when (val inner = state.state) {
+                is ChannelStateWithCommitments -> inner.commitments
+                else -> null
             }
-            else -> {}
+            is Syncing -> when (val inner = state.state) {
+                is ChannelStateWithCommitments -> inner.commitments
+                else -> null
+            }
+            else -> null
+        }
+        commitments?.let { commitments ->
+            put("commitments", "active=${commitments.active.map { it.fundingTxIndex }} fundingTxs=${commitments.active.map { it.fundingTxId }} inactive=${commitments.inactive.map { it.fundingTxIndex }}")
+            put("balances", "toLocal=${commitments.latest.localCommit.spec.toLocal} toRemote=${commitments.latest.localCommit.spec.toRemote} capacity=${commitments.latest.fundingAmount}")
         }
     }
 }
@@ -104,7 +112,7 @@ fun ChannelState.mdc(): Map<String, Any> {
 fun LightningMessage.mdc(): Map<String, Any> {
     val msg = this
     return buildMap {
-        when(msg) {
+        when (msg) {
             is HasTemporaryChannelId -> put("temporaryChannelId", msg.temporaryChannelId)
             is HasChannelId -> put("channelId", msg.channelId)
             else -> {}
