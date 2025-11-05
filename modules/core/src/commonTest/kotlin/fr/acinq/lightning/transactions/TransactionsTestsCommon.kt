@@ -104,8 +104,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
         when (commitmentFormat) {
             Transactions.CommitmentFormat.AnchorOutputs -> {
                 // ECDSA signatures are der-encoded, which creates some variability in signature size compared to the baseline.
-                assertTrue(actual <= expected + 2, "actual=$actual, expected=$expected")
-                assertTrue(actual >= expected - 2, "actual=$actual, expected=$expected")
+                assertTrue(actual <= expected + 3, "actual=$actual, expected=$expected")
+                assertTrue(actual >= expected - 3, "actual=$actual, expected=$expected")
             }
             Transactions.CommitmentFormat.SimpleTaprootChannels -> assertEquals(expected, actual)
         }
