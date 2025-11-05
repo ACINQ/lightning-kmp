@@ -92,14 +92,8 @@ fun ChannelState.mdc(): Map<String, Any> {
         }
         val commitments = when (state) {
             is ChannelStateWithCommitments -> state.commitments
-            is Offline -> when (val inner = state.state) {
-                is ChannelStateWithCommitments -> inner.commitments
-                else -> null
-            }
-            is Syncing -> when (val inner = state.state) {
-                is ChannelStateWithCommitments -> inner.commitments
-                else -> null
-            }
+            is Offline if state.state is ChannelStateWithCommitments -> state.state.commitments
+            is Syncing if state.state is ChannelStateWithCommitments -> state.state.commitments
             else -> null
         }
         commitments?.let { commitments ->
