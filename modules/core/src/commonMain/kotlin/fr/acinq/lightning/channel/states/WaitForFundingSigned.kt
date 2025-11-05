@@ -2,6 +2,7 @@ package fr.acinq.lightning.channel.states
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.TxId
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.ChannelEvents
@@ -47,6 +48,8 @@ data class WaitForFundingSigned(
     val channelOrigin: Origin?,
 ) : PersistedChannelState() {
     override val channelId: ByteVector32 = channelParams.channelId
+    override val fundingTxId: TxId = signingSession.fundingTxId
+    override val fundingTxIndex: Long = signingSession.fundingParams.fundingTxIndex
 
     override suspend fun ChannelContext.processInternal(cmd: ChannelCommand): Pair<ChannelState, List<ChannelAction>> {
         return when (cmd) {

@@ -1,7 +1,6 @@
 package fr.acinq.lightning.io
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
 import fr.acinq.lightning.Lightning.randomKey
@@ -302,7 +301,6 @@ class Peer(
                     delay(1.minutes)
                 }
             }
-
         }
         launch {
             suspend fun updateFeerates() {
@@ -339,8 +337,8 @@ class Peer(
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
                 val (state1, actions) = state.process(ChannelCommand.Init.Restore(it))
-                processActions(it.channelId, peerConnection, actions, state1)
                 _channels = _channels + (it.channelId to state1)
+                processActions(it.channelId, peerConnection, actions, state1)
                 it.channelId
             }
             logger.info { "restored ${channelIds.size} channels" }
@@ -940,7 +938,7 @@ class Peer(
                         }
                     }
                     is ChannelAction.Storage.StoreState -> {
-                        logger.info { "storing state=${action.data::class.simpleName}" }
+                        logger.info { "storing state=${action.data::class.simpleName} latestFundingTxId=${action.data.fundingTxId} latestFundingTxIndex=${action.data.fundingTxIndex}" }
                         db.channels.addOrUpdateChannel(action.data)
                         if (action.data is Closed) {
                             updatePeerStorage(nodeParams, channels - channelId, peerConnection, theirInit?.features, logger)
@@ -1322,8 +1320,8 @@ class Peer(
                             _channels[msg.channelId]?.let { state ->
                                 val event1 = ChannelCommand.MessageReceived(msg)
                                 val (state1, actions) = state.process(event1)
-                                processActions(msg.channelId, peerConnection, actions, state1)
                                 _channels = _channels + (msg.channelId to state1)
+                                processActions(msg.channelId, peerConnection, actions, state1)
                             } ?: run {
                                 logger.error { "received ${msg::class.simpleName} for unknown channel ${msg.channelId}" }
                                 peerConnection?.send(Error(msg.channelId, "unknown channel"))
@@ -1334,8 +1332,8 @@ class Peer(
                         _channels.values.filterIsInstance<Normal>().find { it.matchesShortChannelId(msg.shortChannelId) }?.let { state ->
                             val event1 = ChannelCommand.MessageReceived(msg)
                             val (state1, actions) = state.process(event1)
-                            processActions(state.channelId, peerConnection, actions, state1)
                             _channels = _channels + (state.channelId to state1)
+                            processActions(state.channelId, peerConnection, actions, state1)
                         }
                     }
                     is WillAddHtlc -> when {
@@ -1400,8 +1398,8 @@ class Peer(
                     val state = _channels[cmd.watch.channelId] ?: error("channel ${cmd.watch.channelId} not found")
                     val event1 = ChannelCommand.WatchReceived(cmd.watch)
                     val (state1, actions) = state.process(event1)
-                    processActions(cmd.watch.channelId, peerConnection, actions, state1)
                     _channels = _channels + (cmd.watch.channelId to state1)
+                    processActions(cmd.watch.channelId, peerConnection, actions, state1)
                 }
             }
             is OpenChannel -> {
@@ -1709,14 +1707,14 @@ class Peer(
                     // this is for all channels
                     _channels.forEach { (key, value) ->
                         val (state1, actions) = value.process(cmd.channelCommand)
-                        processActions(key, peerConnection, actions, state1)
                         _channels = _channels + (key to state1)
+                        processActions(key, peerConnection, actions, state1)
                     }
                 } else {
                     _channels[cmd.channelId]?.let { state ->
                         val (state1, actions) = state.process(cmd.channelCommand)
-                        processActions(cmd.channelId, peerConnection, actions, state1)
                         _channels = _channels + (cmd.channelId to state1)
+                        processActions(cmd.channelId, peerConnection, actions, state1)
                     } ?: logger.error { "received ${cmd.channelCommand::class.simpleName} for an unknown channel ${cmd.channelId}" }
                 }
             }

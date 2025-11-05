@@ -290,6 +290,8 @@ sealed class ChannelState {
 /** A channel state that is persisted to the DB. */
 sealed class PersistedChannelState : ChannelState() {
     abstract val channelId: ByteVector32
+    abstract val fundingTxId: TxId
+    abstract val fundingTxIndex: Long
 
     fun ChannelContext.channelKeys(): ChannelKeys = when (val state = this@PersistedChannelState) {
         is WaitForFundingSigned -> state.channelParams.localParams.channelKeys(keyManager)
@@ -397,6 +399,8 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
     // Remote nonces that must be used when signing the next remote commitment transaction (one per active commitment).
     abstract val remoteNextCommitNonces: Map<TxId, IndividualNonce>
     override val channelId: ByteVector32 get() = commitments.channelId
+    override val fundingTxId: TxId get() = commitments.latest.fundingTxId
+    override val fundingTxIndex: Long get() = commitments.latest.fundingTxIndex
     val isChannelOpener: Boolean get() = commitments.channelParams.localParams.isChannelOpener
     val paysCommitTxFees: Boolean get() = commitments.channelParams.localParams.paysCommitTxFees
     val remoteNodeId: PublicKey get() = commitments.remoteNodeId
