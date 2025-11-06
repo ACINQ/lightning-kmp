@@ -83,7 +83,9 @@ object Transactions {
         abstract val anchorAmount: Satoshi
 
         object AnchorOutputs : CommitmentFormat() {
-            override val fundingInputWeight: Int = 384
+            // See https://github.com/lightning/bolts/blob/master/03-transactions.md#appendix-a-expected-weights
+            // funding input weight = 4 * funding_input_size + witness_size = 4 * 41 + 222 = 386
+            override val fundingInputWeight: Int = 386
             override val commitWeight: Int = 1124
             override val htlcOutputWeight: Int = 172
             override val htlcTimeoutWeight: Int = 666
