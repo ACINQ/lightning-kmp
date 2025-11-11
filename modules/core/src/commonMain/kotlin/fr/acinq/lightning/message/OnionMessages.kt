@@ -55,7 +55,8 @@ object OnionMessages {
     fun buildRouteToRecipient(
         sessionKey: PrivateKey,
         intermediateNodes: List<IntermediateNode>,
-        recipient: Destination.Recipient
+        recipient: Destination.Recipient,
+        allowCompactFormat: Boolean = false
     ): RouteBlinding. BlindedRouteDetails {
         val intermediatePayloads = buildIntermediatePayloads(intermediateNodes, recipient.nodeId)
         val tlvs = setOfNotNull(
@@ -66,7 +67,8 @@ object OnionMessages {
         return RouteBlinding.create(
             sessionKey,
             intermediateNodes.map { it.nodeId.publicKey } + recipient.nodeId.publicKey,
-            intermediatePayloads + lastPayload
+            intermediatePayloads + lastPayload,
+            allowCompactFormat
         )
     }
 

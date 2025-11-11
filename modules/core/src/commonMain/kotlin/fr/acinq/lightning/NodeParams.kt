@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.update
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
@@ -157,6 +158,7 @@ data class NodeParams(
     val paymentRecipientExpiryParams: RecipientCltvExpiryParams,
     val zeroConfPeers: Set<PublicKey>,
     val liquidityPolicy: MutableStateFlow<LiquidityPolicy>,
+    val compactOfferKeys: MutableStateFlow<Set<PublicKey>>,
     val usePeerStorage: Boolean,
 ) {
     val nodePrivateKey get() = keyManager.nodeKeys.nodeKey.privateKey
@@ -247,6 +249,7 @@ data class NodeParams(
                 maxAllowedFeeCredit = 0.msat
             )
         ),
+        compactOfferKeys = MutableStateFlow(emptySet()),
         usePeerStorage = true,
     )
 
@@ -272,4 +275,26 @@ data class NodeParams(
         return OfferManager.deterministicOffer(chainHash, nodePrivateKey, trampolineNodeId, amount, description, nonce)
     }
 
+    /**
+     * Generate a compact Bolt 12 offer based on the node's seed and its trampoline node.
+     * A compact offer is smaller since it allows the encryptedData payload to be empty for
+     * the final recipient (us) within the blinded path. This allows it to fit in restricted
+     * spaces (e.g. bolt card)
+     *
+     * Each generated offer is unique, since a random nonce is used to generate the blindedPathSessionKey.
+     * This offer will stay valid after restoring the seed on a different device: we will
+     * automatically keep accepting payments for this offer.
+     *
+     * The caller must store the returned `OfferAndKey.privateKey.publicKey`,
+     * and set/update the NodeParams.compactOfferKeys with the value.
+     *
+     * @return a compact offer and the private key that will sign invoices for this offer.
+     */
+    fun compactOffer(trampolineNodeId: PublicKey): OfferTypes.OfferAndKey {
+        // We generate a random nonce to ensure that this offer is unique.
+        val nonce = randomBytes32()
+        val result = OfferManager.deterministicCompactOffer(chainHash, nodePrivateKey, trampolineNodeId, nonce)
+        compactOfferKeys.update { it.plus(result.privateKey.publicKey()) }
+        return result
+    }
 }
