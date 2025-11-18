@@ -282,11 +282,10 @@ data class NodeParams(
      * spaces (e.g. bolt card)
      *
      * Each generated offer is unique, since a random nonce is used to generate the blindedPathSessionKey.
-     * This offer will stay valid after restoring the seed on a different device: we will
-     * automatically keep accepting payments for this offer.
      *
-     * The caller must store the returned `OfferAndKey.privateKey.publicKey`,
-     * and set/update the NodeParams.compactOfferKeys with the value.
+     * The caller is responsible for storing the returned `OfferAndKey.privateKey.publicKey`.
+     * Next time you start lightning-kmp, you must set the NodeParams.compactOfferKeys with this value.
+     * It has been added to the set before returning, but lightning-kmp doesn't persist it.
      *
      * @return a compact offer and the private key that will sign invoices for this offer.
      */
