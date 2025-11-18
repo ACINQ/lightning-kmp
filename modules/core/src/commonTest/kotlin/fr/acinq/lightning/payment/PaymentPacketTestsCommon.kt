@@ -133,7 +133,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             val pathKey = payload.get<OnionPaymentPayloadTlv.PathKey>()?.publicKey ?: add.pathKey
             assertNotNull(pathKey)
             val encryptedData = payload.get<OnionPaymentPayloadTlv.EncryptedRecipientData>()!!.data
-            val nextPathKey = RouteBlinding.decryptPayload(privateKey, pathKey, encryptedData).map { it.second }.right
+            val nextPathKey = RouteBlinding.decryptPayload(privateKey, pathKey, encryptedData).map { it.nextPathKey }.right
             assertNotNull(nextPathKey)
             return Pair(decrypted.nextPacket, nextPathKey)
         }

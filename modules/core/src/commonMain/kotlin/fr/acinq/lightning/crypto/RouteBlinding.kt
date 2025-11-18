@@ -108,6 +108,8 @@ object RouteBlinding {
         return privateKey * PrivateKey(Sphinx.generateKey("blinded_node_id", sharedSecret))
     }
 
+    data class DecryptedPayload(val data: ByteVector, val nextPathKey: PublicKey, val useCompactRoute: Boolean)
+
     /**
      * Decrypt the encrypted payload (usually found in the onion) that contains instructions to locate the next node.
      *
@@ -119,12 +121,13 @@ object RouteBlinding {
     fun decryptPayload(
         privateKey: PrivateKey,
         pathKey: PublicKey,
-        encryptedPayload: ByteVector
-    ): Either<InvalidTlvPayload, Pair<ByteVector, PublicKey>> {
+        encryptedPayload: ByteVector,
+        allowCompactFormat: Boolean = false
+    ): Either<InvalidTlvPayload, DecryptedPayload> {
         val sharedSecret = Sphinx.computeSharedSecret(pathKey, privateKey)
         val nextPathKey = Sphinx.blind(pathKey, Sphinx.computeBlindingFactor(pathKey, sharedSecret))
-        if (encryptedPayload.isEmpty()) {
-            return Either.Right(Pair(encryptedPayload, nextPathKey))
+        if (encryptedPayload.isEmpty() && allowCompactFormat) {
+            return Either.Right(DecryptedPayload(encryptedPayload, nextPathKey, useCompactRoute = true))
         } else {
             return try {
                 val rho = Sphinx.generateKey("rho", sharedSecret)
@@ -135,7 +138,7 @@ object RouteBlinding {
                     byteArrayOf(),
                     encryptedPayload.takeRight(16).toByteArray()
                 )
-                Either.Right(Pair(ByteVector(decrypted), nextPathKey))
+                Either.Right(DecryptedPayload(ByteVector(decrypted), nextPathKey, useCompactRoute = false))
             } catch (_: Throwable) {
                 Either.Left(CannotDecodeTlv(OnionPaymentPayloadTlv.EncryptedRecipientData.tag))
             }
