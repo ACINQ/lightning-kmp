@@ -113,6 +113,18 @@ sealed class OnionMessagePayloadTlv : Tlv {
                 InvoiceError(tlvSerializer.read(input))
         }
     }
+
+    data class CardPaymentRequest(val tlvs: TlvStream<OfferTypes.OfferTlv>) : OnionMessagePayloadTlv() {
+        override val tag: Long get() = CardPaymentRequest.tag
+        override fun write(out: Output) = OfferTypes.Offer.tlvSerializer.write(tlvs, out)
+
+        companion object : TlvValueReader<CardPaymentRequest> {
+            const val tag: Long = 70
+
+            override fun read(input: Input): CardPaymentRequest =
+                CardPaymentRequest(OfferTypes.Offer.tlvSerializer.read(input))
+        }
+    }
 }
 
 data class MessageOnion(val records: TlvStream<OnionMessagePayloadTlv>) {
