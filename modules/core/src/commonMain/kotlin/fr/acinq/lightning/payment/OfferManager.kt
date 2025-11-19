@@ -82,13 +82,8 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
             val invoiceRequestTlvs = decrypted.content.records.get<OnionMessagePayloadTlv.InvoiceRequest>()?.tlvs
             when {
                 decrypted.useCompactRoute -> {
-                    val cardPaymentRequestTlvs = decrypted.content.records.get<OnionMessagePayloadTlv.CardPaymentRequest>()?.tlvs
-                    if (cardPaymentRequestTlvs != null && nodeParams.compactOfferKeys.value.contains(decrypted.blindedPrivateKey.publicKey())) {
-                        receiveCardPaymentRequest(cardPaymentRequestTlvs)
-                    } else {
-                        logger.warning { "ignoring unexpected message to compact route" }
-                        null
-                    }
+                    logger.warning { "unhandled compact route" }
+                    null
                 }
                 invoiceRequestTlvs != null -> when (val invoiceRequest = OfferTypes.InvoiceRequest.validate(invoiceRequestTlvs)) {
                     is Left -> {
@@ -106,18 +101,6 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     logger.warning { "ignoring onion message without invoice request (could be a duplicate invoice response)" }
                     null
                 }
-            }
-        }
-    }
-
-    private fun receiveCardPaymentRequest(offerTlvs: TlvStream<OfferTypes.OfferTlv>): OnionMessageAction? {
-        return when (val offer = OfferTypes.Offer.validate(offerTlvs)) {
-            is Left -> {
-                logger.warning { "received invalid card payment request: ${offer.value}" }
-                null
-            }
-            is Right -> {
-                TODO("check authentication from the card and pay offer if we didn't exceed the daily limit")
             }
         }
     }
