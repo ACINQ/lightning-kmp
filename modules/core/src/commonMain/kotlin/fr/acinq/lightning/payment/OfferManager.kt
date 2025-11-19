@@ -238,7 +238,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         pathId != null && pathId.size() != 32 -> false
         // Compact offers are randomly generated, but they don't store the nonce in the path_id to save space.
         // It is instead the wallet's responsibility to store the corresponding blinded public key(s).
-        pathId == null && nodeParams.compactOfferKeys.value.contains(blindedPrivateKey.publicKey()) -> true
+        pathId == null && nodeParams.compactOfferKeys.value.contains(blindedPrivateKey.publicKey()) -> offer.isMinimal()
         else -> {
             val expected = deterministicOffer(nodeParams.chainHash, nodeParams.nodePrivateKey, walletParams.trampolineNode.id, offer.amount, offer.description, pathId?.let { ByteVector32(it) })
             expected == OfferTypes.OfferAndKey(offer, blindedPrivateKey)

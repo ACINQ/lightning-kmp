@@ -152,7 +152,7 @@ class OnionMessagesTestsCommon {
         assertEquals(blindedAlice, blindedRoute.blindedHops.first().blindedPublicKey)
         assertEquals("bae3d9ea2b06efd1b7b9b49b6cdcaad0e789474a6939ffa54ff5ec9224d5b76c", Crypto.sha256(blindingKey.value + sharedSecret).toHexString())
         assertEquals("6970e870b473ddbc27e3098bfa45bb1aa54f1f637f803d957e6271d8ffeba89da2665d62123763d9b634e30714144a1c165ac9", blindedRoute.blindedHops.first().encryptedPayload.toHex())
-        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(alice, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.first.toByteArray()).right!!
+        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(alice, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.data.toByteArray()).right!!
         assertEquals(blindedPayload, decryptedPayload)
     }
 
@@ -176,7 +176,7 @@ class OnionMessagesTestsCommon {
         assertEquals(blindedBob, blindedRoute.blindedHops.first().blindedPublicKey)
         assertEquals("9afb8b2ebc174dcf9e270be24771da7796542398d29d4ff6a4e7b6b4b9205cfe", Crypto.sha256(blindingKey.value + sharedSecret).toHexString())
         assertEquals("1630da85e8759b8f3b94d74a539c6f0d870a87cf03d4986175865a2985553c997b560c32613bd9184c1a6d41a37027aabdab5433009d8409a1b638eb90373778a05716af2c2140b3196dca23997cdad4cfa7a7adc8d4", blindedRoute.blindedHops.first().encryptedPayload.toHex())
-        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(bob, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.first.toByteArray()).right!!
+        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(bob, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.data.toByteArray()).right!!
         assertEquals(blindedPayload, decryptedPayload)
         assertEquals(blindingOverride, decryptedPayload.nextPathKeyOverride)
     }
@@ -200,7 +200,7 @@ class OnionMessagesTestsCommon {
         assertEquals(blindedCarol, blindedRoute.blindedHops.first().blindedPublicKey)
         assertEquals("cc3b918cda6b1b049bdbe469c4dd952935e7c1518dd9c7ed0cd2cd5bc2742b82", Crypto.sha256(blindingKey.value + sharedSecret).toHexString())
         assertEquals("8285acbceb37dfb38b877a888900539be656233cd74a55c55344fb068f9d8da365340d21db96fb41b76123207daeafdfb1f571e3fea07a22e10da35f03109a0380b3c69fcbed9c698086671809658761cf65ecbc3c07a2e5", blindedRoute.blindedHops.first().encryptedPayload.toHex())
-        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(carol, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.first.toByteArray()).right!!
+        val decryptedPayload = RouteBlindingEncryptedData.read(RouteBlinding.decryptPayload(carol, blindingKey, blindedRoute.blindedHops.first().encryptedPayload).right!!.data.toByteArray()).right!!
         assertEquals(blindedPayload, decryptedPayload)
     }
 

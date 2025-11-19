@@ -92,7 +92,7 @@ object IncomingPaymentPacket {
     }
 
     private fun decryptRecipientData(privateKey: PrivateKey, pathKey: PublicKey, data: ByteVector, tlvs: TlvStream<OnionPaymentPayloadTlv>): Either<InvalidTlvPayload, PaymentOnion.FinalPayload.Blinded> {
-        return RouteBlinding.decryptPayload(privateKey, pathKey, data)
+        return RouteBlinding.decryptPayload(privateKey, pathKey, data, allowCompactFormat = false)
             .flatMap { (decryptedRecipientData, _) -> RouteBlindingEncryptedData.read(decryptedRecipientData.toByteArray()) }
             .flatMap { blindedTlvs -> PaymentOnion.FinalPayload.Blinded.validate(tlvs, blindedTlvs) }
     }
