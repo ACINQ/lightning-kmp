@@ -758,6 +758,8 @@ object OfferTypes {
 
         val offerId: ByteVector32 = rootHash(records)
 
+        fun isMinimal(): Boolean = records.records.filterNot { it is OfferChains || it is OfferPaths || it is OfferIssuerId}.isEmpty() && records.unknown.isEmpty()
+
         companion object {
             val hrp = "lno"
 
