@@ -1100,7 +1100,7 @@ object OfferTypes {
     fun signSchnorr(tag: ByteVector, msg: ByteVector32, key: PrivateKey): ByteVector64 {
         val h = ByteVector32(hash(tag.toByteArray(), msg.toByteArray()))
         // NB: we don't add auxiliary random data to keep signatures deterministic.
-        return Crypto.signSchnorr(h, key, Crypto.SchnorrTweak.NoTweak)
+        return Crypto.signSchnorr(h, key, null)
     }
 
     fun verifySchnorr(tag: ByteVector, msg: ByteVector32, signature: ByteVector64, publicKey: PublicKey): Boolean {
