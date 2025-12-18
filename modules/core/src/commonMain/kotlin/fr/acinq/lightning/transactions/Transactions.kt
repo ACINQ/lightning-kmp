@@ -141,7 +141,7 @@ object Transactions {
          * @param scriptTree_opt the script tree must be known if there is one, even when spending via the key path.
          */
         data class TaprootKeyPath(val internalKey: XonlyPublicKey, val scriptTree_opt: ScriptTree?) : RedeemInfo() {
-            override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, scriptTree_opt)).byteVector()
+            override val pubkeyScript: ByteVector = Script.write(Script.pay2tr(internalKey, scriptTree_opt?.let { Crypto.TaprootTweak.ScriptPathTweak(it.hash()) } ?: Crypto.TaprootTweak.KeyPathTweak)).byteVector()
         }
 
         /**

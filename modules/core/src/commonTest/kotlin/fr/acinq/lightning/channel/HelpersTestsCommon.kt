@@ -57,7 +57,7 @@ class HelpersTestsCommon : LightningTestSuite() {
             TxOut(539.sat, Script.pay2sh(Hex.decode("0000000000000000000000000000000000000000"))),
             TxOut(293.sat, Script.pay2wpkh(randomKey().publicKey())),
             TxOut(329.sat, Script.pay2wsh(Hex.decode("0000000000000000000000000000000000000000"))),
-            TxOut(353.sat, Script.pay2tr(randomKey().publicKey().xOnly())),
+            TxOut(353.sat, Script.pay2tr(randomKey().publicKey().xOnly(), Crypto.TaprootTweak.KeyPathTweak)),
         )
         outputsBelowDust.forEach { assertTrue(it.amount < Transactions.dustLimit(it.publicKeyScript)) }
 
@@ -66,7 +66,7 @@ class HelpersTestsCommon : LightningTestSuite() {
             TxOut(540.sat, Script.pay2sh(Hex.decode("0000000000000000000000000000000000000000"))),
             TxOut(294.sat, Script.pay2wpkh(randomKey().publicKey())),
             TxOut(330.sat, Script.pay2wsh(Hex.decode("0000000000000000000000000000000000000000"))),
-            TxOut(354.sat, Script.pay2tr(randomKey().publicKey().xOnly())),
+            TxOut(354.sat, Script.pay2tr(randomKey().publicKey().xOnly(), Crypto.TaprootTweak.KeyPathTweak)),
             TxOut(0.sat, listOf(OP_RETURN, OP_PUSHDATA(Hex.decode("deadbeef")))),
         )
         outputsAboveDust.forEach { assertTrue(it.amount >= Transactions.dustLimit(it.publicKeyScript)) }
@@ -79,7 +79,7 @@ class HelpersTestsCommon : LightningTestSuite() {
             Script.write(Script.pay2sh(Hex.decode("deadbeef"))).byteVector(),
             Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector(),
             Script.write(Script.pay2wsh(Hex.decode("deadbeef"))).byteVector(),
-            Script.write(Script.pay2tr(randomKey().publicKey().xOnly())).byteVector(),
+            Script.write(Script.pay2tr(randomKey().publicKey().xOnly(), Crypto.TaprootTweak.KeyPathTweak)).byteVector(),
             Script.write(listOf(OP_RETURN, OP_PUSHDATA(Hex.decode("deadbeefdeadbeef")))).byteVector(),
         )
         validScripts.forEach { assertTrue(isValidFinalScriptPubkey(it, allowAnySegwit = true, allowOpReturn = true)) }
