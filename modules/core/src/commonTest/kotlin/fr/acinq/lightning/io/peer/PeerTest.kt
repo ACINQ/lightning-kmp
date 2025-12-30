@@ -1,11 +1,14 @@
 package fr.acinq.lightning.io.peer
 
 import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.Script
+import fr.acinq.bitcoin.byteVector
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
+import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -609,6 +612,10 @@ class PeerTest : LightningTestSuite() {
         val backup = PersistedChannelState.fromEncryptedPeerStorage(TestConstants.Bob.nodeParams.nodePrivateKey, peerStorage.eps, null).getOrThrow()
         assertIs<PeerStorageDeserializationResult.Success>(backup)
         assertEquals(listOf(normal), backup.states) // the backup contains only the Normal channel
+        val emptyBackup = PersistedChannelState.fromEncryptedPeerStorage(TestConstants.Bob.nodeParams.nodePrivateKey, EncryptedPeerStorage(ByteVector.empty), null)
+        assertTrue(emptyBackup.isFailure)
+        val corruptedBackup = PersistedChannelState.fromEncryptedPeerStorage(TestConstants.Bob.nodeParams.nodePrivateKey, EncryptedPeerStorage(randomBytes(731).byteVector()), null)
+        assertTrue(corruptedBackup.isFailure)
 
         // usePeerStorage = false
         Peer.updatePeerStorage(TestConstants.Bob.nodeParams.copy(usePeerStorage = false), mapOf(normal.channelId to normal, closed.channelId to closed), peerConnection, Features(Feature.ProvideStorage to FeatureSupport.Optional), null)
