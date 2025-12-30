@@ -90,22 +90,25 @@ object Encryption {
     }
 
     private fun fromEncryptedPeerStorageCurrent(key: PrivateKey, encryptedPeerStorage: EncryptedPeerStorage): Result<Serialization.PeerStorageDeserializationResult> {
-        // data is prefixed by 1 byte of serialization meta-info
-        return runCatching { decrypt(key.value, encryptedPeerStorage.data.drop(1).toByteArray()) }
-            .map { Serialization.deserializePeerStorage(encryptedPeerStorage.data[0], it) }
+        // Data should be prefixed by 1 byte of serialization meta-info, if this is a recent peer storage.
+        return runCatching {
+            val decrypted = decrypt(key.value, encryptedPeerStorage.data.drop(1).toByteArray())
+            Serialization.deserializePeerStorage(encryptedPeerStorage.data[0], decrypted)
+        }
     }
 
     /**
-     * Backward compatibility for an older backup mechanism where each channel data was stored individually, and restored from channel_reestablish messages.
+     * Backwards-compatibility for an older backup mechanism where each channel data was stored individually, and restored from channel_reestablish messages.
      */
     private fun fromEncryptedPeerStorageLegacyChannelData(key: PrivateKey, encryptedPeerStorage: EncryptedPeerStorage): Result<Serialization.PeerStorageDeserializationResult> {
-        // The blob is a list of individually encrypted channel data (because each of them was previously stored separately)
+        // The blob should be a list of individually encrypted channel data (because each of them was previously stored separately).
         val input = ByteArrayInput(encryptedPeerStorage.data.toByteArray())
-        val encryptedChannelDatas = input.readCollection { input.readDelimitedByteArray() }.toList()
-        val res: List<Result<Serialization.DeserializationResult>> = encryptedChannelDatas.map { data ->
+        val encryptedChannelDatas = runCatching { input.readCollection { input.readDelimitedByteArray() }.toList() }
+            .getOrDefault(listOf())
+        val res = encryptedChannelDatas.map { data ->
             runCatching { decrypt(key.value, data.drop(2).toByteArray()) }
                 .recoverCatching { decrypt(key.value, data) }
-                .map { Serialization.deserialize(it) }
+                .mapCatching { Serialization.deserialize(it) }
         }
 
         val states = res.mapNotNull { it.getOrNull() }.filterIsInstance<Serialization.DeserializationResult.Success>().map { it.state }
