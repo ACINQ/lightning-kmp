@@ -32,6 +32,16 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
         }
     }
 
+    /** Flag to allow forwarding nodes to set `accountable` in their `update_add_htlc` */
+    data object UpgradeAccountability : RouteBlindingEncryptedDataTlv(), TlvValueReader<UpgradeAccountability> {
+        override val tag: Long = 3
+        override fun write(out: Output) {}
+        override fun read(input: Input): UpgradeAccountability {
+            require(input.availableBytes == 0)
+            return UpgradeAccountability
+        }
+    }
+
     /** Id of the next node. */
     data class OutgoingNodeId(val nodeId: EncodedNodeId) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = OutgoingNodeId.tag

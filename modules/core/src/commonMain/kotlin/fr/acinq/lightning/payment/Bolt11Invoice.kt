@@ -47,6 +47,8 @@ data class Bolt11Invoice(
 
     val routingInfo: List<TaggedField.RoutingInfo> = tags.filterIsInstance<TaggedField.RoutingInfo>()
 
+    override val accountable: Boolean = tags.contains(TaggedField.Accountable)
+
     init {
         val f = features.invoiceFeatures()
         require(f.hasFeature(Feature.VariableLengthOnion)) { "${Feature.VariableLengthOnion.rfcName} must be supported" }
@@ -140,7 +142,8 @@ data class Bolt11Invoice(
                 TaggedField.MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt()),
                 TaggedField.PaymentSecret(paymentSecret),
                 // We remove unknown features which could make the invoice too big.
-                TaggedField.Features(features.invoiceFeatures().copy(unknown = setOf()).toByteArray().toByteVector())
+                TaggedField.Features(features.invoiceFeatures().copy(unknown = setOf()).toByteArray().toByteVector()),
+                TaggedField.Accountable
             )
             description.left?.let { tags.add(TaggedField.Description(it)) }
             description.right?.let { tags.add(TaggedField.DescriptionHash(it)) }
@@ -198,6 +201,7 @@ data class Bolt11Invoice(
                         TaggedField.Features.tag -> tags.add(kotlin.runCatching { TaggedField.Features.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.RoutingInfo.tag -> tags.add(kotlin.runCatching { TaggedField.RoutingInfo.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.NodeId.tag -> tags.add(kotlin.runCatching { TaggedField.NodeId.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
+                        TaggedField.Accountable.tag -> tags.add(if (value.isEmpty()) TaggedField.Accountable else TaggedField.UnknownTag(tag, value))
                         else -> tags.add(TaggedField.UnknownTag(tag, value))
                     }
                     loop(input.drop(3 + len))
@@ -516,6 +520,12 @@ data class Bolt11Invoice(
                     return NodeId(PublicKey(Bech32.five2eight(input.toTypedArray(), 0)))
                 }
             }
+        }
+
+        /** Present if the recipient is willing to be held accountable for the timely resolution of HTLCs. */
+        data object Accountable : TaggedField() {
+            override val tag: Int5 = 31
+            override fun encode(): List<Int5> = emptyList()
         }
 
         /** Unknown tag (may or may not be valid) */

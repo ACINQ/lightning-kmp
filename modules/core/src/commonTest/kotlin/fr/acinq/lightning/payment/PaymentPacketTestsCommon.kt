@@ -88,7 +88,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         // Wallets don't need to create channel routes, but it's useful to test the end-to-end flow.
         fun encryptChannelRelay(paymentHash: ByteVector32, hops: List<ChannelHop>, finalPayload: PaymentOnion.FinalPayload): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
             val (firstAmount, firstExpiry, payloads) = hops.drop(1).reversed().fold(Triple(finalPayload.amount, finalPayload.expiry, listOf<PaymentOnion.PerHopPayload>(finalPayload))) { (amount, expiry, payloads), hop ->
-                val payload = PaymentOnion.ChannelRelayPayload.create(hop.lastUpdate.shortChannelId, amount, expiry)
+                val payload = PaymentOnion.ChannelRelayPayload.create(hop.lastUpdate.shortChannelId, amount, expiry, upgradeAccountability = true)
                 Triple(amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, listOf(payload) + payloads)
             }
             val onion = OutgoingPaymentPacket.buildOnion(hops.map { it.nextNodeId }, payloads, paymentHash, OnionRoutingPacket.PaymentPacketLength)
@@ -196,7 +196,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
 
         // C forwards the trampoline payment to D over its direct channel.
         val (amountD, expiryD, onionD) = run {
-            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerC.amountToForward, innerC.amountToForward, innerC.outgoingCltv, randomBytes32(), packetD)
+            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerC.amountToForward, innerC.amountToForward, innerC.outgoingCltv, randomBytes32(), packetD, upgradeAccountability = true)
             encryptChannelRelay(paymentHash, listOf(ChannelHop(c, d, channelUpdateCD)), payloadD)
         }
         assertEquals(amountCD, amountD)
@@ -208,7 +208,8 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
                 OnionPaymentPayloadTlv.AmountToForward(finalAmount),
                 OnionPaymentPayloadTlv.OutgoingCltv(finalExpiry),
                 OnionPaymentPayloadTlv.PaymentData(paymentSecret, finalAmount),
-                OnionPaymentPayloadTlv.PaymentMetadata(paymentMetadata)
+                OnionPaymentPayloadTlv.PaymentMetadata(paymentMetadata),
+                OnionPaymentPayloadTlv.UpgradeAccountability,
             )
         )
         assertEquals(payloadD, expectedFinalPayload)
@@ -236,7 +237,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
 
         // B forwards the trampoline payment to D over an indirect channel route.
         val (amountC, expiryC, onionC) = run {
-            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerB.amountToForward, innerB.amountToForward, innerB.outgoingCltv, randomBytes32(), packetC)
+            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerB.amountToForward, innerB.amountToForward, innerB.outgoingCltv, randomBytes32(), packetC, upgradeAccountability = true)
             encryptChannelRelay(paymentHash, listOf(ChannelHop(b, c, channelUpdateBC), ChannelHop(c, d, channelUpdateCD)), payloadD)
         }
         assertEquals(amountBC, amountC)
@@ -252,7 +253,8 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
                 OnionPaymentPayloadTlv.AmountToForward(finalAmount),
                 OnionPaymentPayloadTlv.OutgoingCltv(finalExpiry),
                 OnionPaymentPayloadTlv.PaymentData(paymentSecret, finalAmount),
-                OnionPaymentPayloadTlv.PaymentMetadata(paymentMetadata)
+                OnionPaymentPayloadTlv.PaymentMetadata(paymentMetadata),
+                OnionPaymentPayloadTlv.UpgradeAccountability,
             )
         )
         assertEquals(payloadD, expectedFinalPayload)
@@ -287,7 +289,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
 
         // B forwards the trampoline payment to D over an indirect channel route.
         val (amountC, expiryC, onionC) = run {
-            val payloadD = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(innerB.amountToForward, innerB.outgoingCltv, innerB.paymentSecret, innerB.paymentMetadata)
+            val payloadD = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(innerB.amountToForward, innerB.outgoingCltv, innerB.paymentSecret, innerB.paymentMetadata, upgradeAccountability = true)
             encryptChannelRelay(paymentHash, listOf(ChannelHop(b, c, channelUpdateBC), ChannelHop(c, d, channelUpdateCD)), payloadD)
         }
         assertEquals(amountBC, amountC)
@@ -304,6 +306,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
                 OnionPaymentPayloadTlv.OutgoingCltv(finalExpiry),
                 OnionPaymentPayloadTlv.PaymentData(paymentSecret, finalAmount),
                 OnionPaymentPayloadTlv.PaymentMetadata(paymentMetadata),
+                OnionPaymentPayloadTlv.UpgradeAccountability,
             )
         )
         assertEquals(payloadD, expectedFinalPayload)
@@ -389,7 +392,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
     @Test
     fun `receive a channel payment`() {
         // c -> d
-        val finalPayload = PaymentOnion.FinalPayload.Standard.createMultiPartPayload(finalAmount, finalAmount * 1.5, finalExpiry, paymentSecret, paymentMetadata)
+        val finalPayload = PaymentOnion.FinalPayload.Standard.createMultiPartPayload(finalAmount, finalAmount * 1.5, finalExpiry, paymentSecret, paymentMetadata, upgradeAccountability = true)
         val (firstAmount, firstExpiry, onion) = encryptChannelRelay(paymentHash, listOf(ChannelHop(c, d, channelUpdateCD)), finalPayload)
         val addD = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
         val payloadD = IncomingPaymentPacket.decrypt(addD, privD).right!!
@@ -413,7 +416,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         val (firstAmount, firstExpiry, onion) = encryptChannelRelay(
             paymentHash,
             listOf(ChannelHop(c, d, channelUpdateCD)),
-            PaymentOnion.FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, null)
+            PaymentOnion.FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, null, upgradeAccountability = true)
         )
         val addD = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet.copy(payload = onion.packet.payload.reversed()))
         val failure = IncomingPaymentPacket.decrypt(addD, privD)
@@ -429,7 +432,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         val (_, innerC, packetD) = decryptRelayToTrampoline(addC, privC)
         // C modifies the trampoline onion before forwarding the trampoline payment to D.
         val (amountD, expiryD, onionD) = run {
-            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerC.amountToForward, innerC.amountToForward, innerC.outgoingCltv, randomBytes32(), packetD.copy(payload = packetD.payload.reversed()))
+            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerC.amountToForward, innerC.amountToForward, innerC.outgoingCltv, randomBytes32(), packetD.copy(payload = packetD.payload.reversed()), upgradeAccountability = true)
             encryptChannelRelay(paymentHash, listOf(ChannelHop(c, d, channelUpdateCD)), payloadD)
         }
         val addD = UpdateAddHtlc(randomBytes32(), 2, amountD, paymentHash, expiryD, onionD.packet)
@@ -443,7 +446,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         val (firstAmount, firstExpiry, onion) = encryptChannelRelay(
             paymentHash.reversed(),
             listOf(ChannelHop(c, d, channelUpdateCD)),
-            PaymentOnion.FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, paymentMetadata)
+            PaymentOnion.FinalPayload.Standard.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret, paymentMetadata, upgradeAccountability = true)
         )
         val addD = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
         val failure = IncomingPaymentPacket.decrypt(addD, privD)
@@ -480,7 +483,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         val addC = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
         val (_, innerC, packetD) = decryptRelayToTrampoline(addC, privC)
         val (amountD, expiryD, onionD) = run {
-            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerC.amountToForward, innerC.amountToForward, innerC.outgoingCltv, randomBytes32(), packetD)
+            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerC.amountToForward, innerC.amountToForward, innerC.outgoingCltv, randomBytes32(), packetD, upgradeAccountability = true)
             encryptChannelRelay(paymentHash, listOf(ChannelHop(c, d, channelUpdateCD)), payloadD)
         }
         val addD = UpdateAddHtlc(randomBytes32(), 2, amountD - 100.msat, paymentHash, expiryD, onionD.packet)
@@ -495,7 +498,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         val addC = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
         val (_, innerC, packetD) = decryptRelayToTrampoline(addC, privC)
         val (amountD, expiryD, onionD) = run {
-            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerC.amountToForward, innerC.amountToForward, innerC.outgoingCltv, randomBytes32(), packetD)
+            val payloadD = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(innerC.amountToForward, innerC.amountToForward, innerC.outgoingCltv, randomBytes32(), packetD, upgradeAccountability = true)
             encryptChannelRelay(paymentHash, listOf(ChannelHop(c, d, channelUpdateCD)), payloadD)
         }
         val addD = UpdateAddHtlc(randomBytes32(), 2, amountD, paymentHash, expiryD - CltvExpiryDelta(12), onionD.packet)
@@ -523,7 +526,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
     fun `build htlc failure onion`() {
         // B sends a payment B -> C -> D.
         val (amountC, expiryC, onionC) = run {
-            val payloadD = PaymentOnion.FinalPayload.Standard.createMultiPartPayload(finalAmount, finalAmount, finalExpiry, paymentSecret, paymentMetadata = null)
+            val payloadD = PaymentOnion.FinalPayload.Standard.createMultiPartPayload(finalAmount, finalAmount, finalExpiry, paymentSecret, paymentMetadata = null, upgradeAccountability = true)
             encryptChannelRelay(paymentHash, listOf(ChannelHop(b, c, channelUpdateBC), ChannelHop(c, d, channelUpdateCD)), payloadD)
         }
         assertEquals(amountBC, amountC)

@@ -36,9 +36,10 @@ class PaymentOnionTestsCommon : LightningTestSuite() {
     @Test
     fun `encode - decode channel relay per-hop payload`() {
         val testCases = mapOf(
-            PaymentOnion.ChannelRelayPayload.create(ShortChannelId(0), MilliSatoshi(0), CltvExpiry(0)) to Hex.decode("0e 0200 0400 06080000000000000000"),
-            PaymentOnion.ChannelRelayPayload.create(ShortChannelId(42), MilliSatoshi(142000), CltvExpiry(500000)) to Hex.decode("14 0203022ab0 040307a120 0608000000000000002a"),
-            PaymentOnion.ChannelRelayPayload.create(ShortChannelId(561), MilliSatoshi(1105), CltvExpiry(1729)) to Hex.decode("12 02020451 040206c1 06080000000000000231")
+            PaymentOnion.ChannelRelayPayload.create(ShortChannelId(0), MilliSatoshi(0), CltvExpiry(0), upgradeAccountability = false) to Hex.decode("0e 0200 0400 06080000000000000000"),
+            PaymentOnion.ChannelRelayPayload.create(ShortChannelId(42), MilliSatoshi(142000), CltvExpiry(500000), upgradeAccountability = false) to Hex.decode("14 0203022ab0 040307a120 0608000000000000002a"),
+            PaymentOnion.ChannelRelayPayload.create(ShortChannelId(561), MilliSatoshi(1105), CltvExpiry(1729), upgradeAccountability = false) to Hex.decode("12 02020451 040206c1 06080000000000000231"),
+            PaymentOnion.ChannelRelayPayload.create(ShortChannelId(97), MilliSatoshi(9632), CltvExpiry(9800), upgradeAccountability = true) to Hex.decode("14 020225a0 04022648 06080000000000000061 1300"),
         )
 
         testCases.forEach {
