@@ -190,9 +190,9 @@ sealed class ChannelState {
 
     internal suspend fun ChannelContext.handleLocalError(cmd: ChannelCommand, t: Throwable): Pair<ChannelState, List<ChannelAction>> {
         when (cmd) {
-            is ChannelCommand.MessageReceived -> logger.error(t) { "error on message ${cmd.message::class.simpleName}" }
-            is ChannelCommand.WatchReceived -> logger.error { "error on watch event ${cmd.watch::class.simpleName}" }
-            else -> logger.error(t) { "error on command ${cmd::class.simpleName}" }
+            is ChannelCommand.MessageReceived -> logger.error(t) { "error on message ${cmd.message::class.simpleName}: ${t.message}" }
+            is ChannelCommand.WatchReceived -> logger.error { "error on watch event ${cmd.watch::class.simpleName}: ${t.message}" }
+            else -> logger.error(t) { "error on command ${cmd::class.simpleName}: ${t.message}" }
         }
 
         fun abort(channelId: ByteVector32?, state: ChannelState): Pair<ChannelState, List<ChannelAction>> {
