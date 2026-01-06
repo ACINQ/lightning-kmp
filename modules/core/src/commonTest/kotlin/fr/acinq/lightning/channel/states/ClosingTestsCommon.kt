@@ -634,24 +634,76 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (alice1, bob1) = nodes1
             val (alice2, bob2) = crossSign(alice1, bob1)
             val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
-            val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
-            val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
-            val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
-            val revAlice = actionsAlice4.hasOutgoingMessage<RevokeAndAck>()
-            val (alice5, actionsAlice5) = alice4.process(ChannelCommand.Commitment.Sign)
-            val commitSigAlice = actionsAlice5.hasOutgoingMessage<CommitSig>()
-            val (bob5, _) = bob4.process(ChannelCommand.MessageReceived(revAlice))
-            val (bob6, actionsBob6) = bob5.process(ChannelCommand.MessageReceived(commitSigAlice))
-            val revBob = actionsBob6.hasOutgoingMessage<RevokeAndAck>()
-            val (alice6, _) = alice5.process(ChannelCommand.MessageReceived(revBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice6, alice6.commitments.active.first(), Commitments.alternativeFeerates.first())
-            remoteClose(alternativeCommitTx, bob6)
+            val (bob4, alice4) = crossSign(bob3, alice3)
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), Commitments.alternativeFeerates[2])
+            assertNotEquals(alice4.commitments.active.first().localCommit.txId, alternativeCommitTx.txid)
+            remoteClose(alternativeCommitTx, bob4)
         }
 
         assertNotNull(remoteCommitPublished.localOutput)
         Transaction.correctlySpends(closingTxs.mainTx, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx)))
+        val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, closingTxs.mainTx)))
+        assertIs<Closed>(bobClosed.state)
+        assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))
+    }
+
+    @Test
+    fun `recv ClosingTxConfirmed -- remote commit -- alternative feerate -- restart before confirmation`() {
+        val (alice0, bob0) = reachNormal()
+        val (bobClosing, remoteCommitPublished, closingTxs) = run {
+            val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
+            val (alice1, bob1) = nodes1
+            val (alice2, bob2) = crossSign(alice1, bob1)
+            val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
+            val (bob4, alice4) = crossSign(bob3, alice3)
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), Commitments.alternativeFeerates[2])
+            assertNotEquals(alice4.commitments.active.first().localCommit.txId, alternativeCommitTx.txid)
+            remoteClose(alternativeCommitTx, bob4)
+        }
+
+        val bobRestart = LNChannel(bobClosing.ctx, WaitForInit)
+        val (bobClosing1, actions1) = bobRestart.process(ChannelCommand.Init.Restore(bobClosing.state))
+        assertIs<Closing>(bobClosing1.state)
+        assertEquals(4, actions1.size)
+        actions1.hasWatchFundingSpent(bobClosing.commitments.latest.fundingInput.txid)
+        actions1.hasWatchConfirmed(remoteCommitPublished.commitTx.txid)
+        actions1.hasPublishTx(closingTxs.mainTx)
+        assertNotNull(remoteCommitPublished.localOutput)
+        actions1.hasWatchOutputSpent(remoteCommitPublished.localOutput)
+
+        val (bobClosing2, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx)))
+        val (bobClosed, actions) = bobClosing2.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, closingTxs.mainTx)))
+        assertIs<Closed>(bobClosed.state)
+        assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))
+    }
+
+    @Test
+    fun `recv ClosingTxConfirmed -- remote commit -- alternative feerate -- restart after confirmation`() {
+        val (alice0, bob0) = reachNormal()
+        val (bobClosing, remoteCommitPublished, closingTxs) = run {
+            val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
+            val (alice1, bob1) = nodes1
+            val (alice2, bob2) = crossSign(alice1, bob1)
+            val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
+            val (bob4, alice4) = crossSign(bob3, alice3)
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), Commitments.alternativeFeerates[2])
+            assertNotEquals(alice4.commitments.active.first().localCommit.txId, alternativeCommitTx.txid)
+            val (bob5, remoteCommitPublished, closingTxs) = remoteClose(alternativeCommitTx, bob4)
+            val (bob6, _) = bob5.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, alternativeCommitTx)))
+            assertIs<LNChannel<Closing>>(bob6)
+            Triple(bob6, remoteCommitPublished, closingTxs)
+        }
+
+        val bobRestart = LNChannel(bobClosing.ctx, WaitForInit)
+        val (bobClosing1, actions1) = bobRestart.process(ChannelCommand.Init.Restore(bobClosing.state))
+        assertIs<Closing>(bobClosing1.state)
+        assertEquals(2, actions1.size)
+        actions1.hasPublishTx(closingTxs.mainTx)
+        assertNotNull(remoteCommitPublished.localOutput)
+        actions1.hasWatchOutputSpent(remoteCommitPublished.localOutput)
+
         val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, closingTxs.mainTx)))
         assertIs<Closed>(bobClosed.state)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))
@@ -857,7 +909,8 @@ class ClosingTestsCommon : LightningTestSuite() {
             val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
             val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
             val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
-            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), Commitments.alternativeFeerates.first())
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), Commitments.alternativeFeerates[1])
+            assertNotEquals(alice4.commitments.active.first().localCommit.txId, alternativeCommitTx.txid)
             remoteClose(alternativeCommitTx, bob4)
         }
 
@@ -865,6 +918,68 @@ class ClosingTestsCommon : LightningTestSuite() {
         Transaction.correctlySpends(closingTxs.mainTx, remoteCommitPublished.commitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val (bobClosing1, _) = bobClosing.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx)))
+        val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, closingTxs.mainTx)))
+        assertIs<Closed>(bobClosed.state)
+        assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))
+    }
+
+    @Test
+    fun `recv ClosingTxConfirmed -- next remote commit -- alternative feerate -- restart before confirmation`() {
+        val (alice0, bob0) = reachNormal()
+        val (bobClosing, remoteCommitPublished, closingTxs) = run {
+            val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
+            val (alice1, bob1) = nodes1
+            val (alice2, bob2) = crossSign(alice1, bob1)
+            val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
+            val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
+            val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
+            val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), Commitments.alternativeFeerates[1])
+            assertNotEquals(alice4.commitments.active.first().localCommit.txId, alternativeCommitTx.txid)
+            remoteClose(alternativeCommitTx, bob4)
+        }
+
+        val bobRestart = LNChannel(bobClosing.ctx, WaitForInit)
+        val (bobClosing1, actions1) = bobRestart.process(ChannelCommand.Init.Restore(bobClosing.state))
+        assertIs<Closing>(bobClosing1.state)
+        actions1.hasWatchFundingSpent(bobClosing.commitments.latest.fundingInput.txid)
+        actions1.hasWatchConfirmed(remoteCommitPublished.commitTx.txid)
+        actions1.hasPublishTx(closingTxs.mainTx)
+        assertNotNull(remoteCommitPublished.localOutput)
+        actions1.hasWatchOutputSpent(remoteCommitPublished.localOutput)
+
+        val (bobClosing2, _) = bobClosing1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, remoteCommitPublished.commitTx)))
+        val (bobClosed, actions) = bobClosing2.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, closingTxs.mainTx)))
+        assertIs<Closed>(bobClosed.state)
+        assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))
+    }
+
+    @Test
+    fun `recv ClosingTxConfirmed -- next remote commit -- alternative feerate -- restart after confirmation`() {
+        val (alice0, bob0) = reachNormal()
+        val (bobClosing, remoteCommitPublished, closingTxs) = run {
+            val (nodes1, r, htlc) = addHtlc(75_000_000.msat, alice0, bob0)
+            val (alice1, bob1) = nodes1
+            val (alice2, bob2) = crossSign(alice1, bob1)
+            val (alice3, bob3) = fulfillHtlc(htlc.id, r, alice2, bob2)
+            val (bob4, actionsBob4) = bob3.process(ChannelCommand.Commitment.Sign)
+            val commitSigBob = actionsBob4.hasOutgoingMessage<CommitSig>()
+            val (alice4, _) = alice3.process(ChannelCommand.MessageReceived(commitSigBob))
+            val alternativeCommitTx = useAlternativeCommitSig(alice4, alice4.commitments.active.first(), Commitments.alternativeFeerates[1])
+            assertNotEquals(alice4.commitments.active.first().localCommit.txId, alternativeCommitTx.txid)
+            val (bob5, remoteCommitPublished, closingTxs) = remoteClose(alternativeCommitTx, bob4)
+            val (bob6, _) = bob5.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 0, alternativeCommitTx)))
+            assertIs<LNChannel<Closing>>(bob6)
+            Triple(bob6, remoteCommitPublished, closingTxs)
+        }
+
+        val bobRestart = LNChannel(bobClosing.ctx, WaitForInit)
+        val (bobClosing1, actions1) = bobRestart.process(ChannelCommand.Init.Restore(bobClosing.state))
+        assertIs<Closing>(bobClosing1.state)
+        actions1.hasPublishTx(closingTxs.mainTx)
+        assertNotNull(remoteCommitPublished.localOutput)
+        actions1.hasWatchOutputSpent(remoteCommitPublished.localOutput)
+
         val (bobClosed, actions) = bobClosing1.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(bob0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, closingTxs.mainTx)))
         assertIs<Closed>(bobClosed.state)
         assertTrue(actions.contains(ChannelAction.Storage.StoreState(bobClosed.state)))

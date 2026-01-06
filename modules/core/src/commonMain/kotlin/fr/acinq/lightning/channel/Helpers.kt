@@ -713,7 +713,13 @@ object Helpers {
                 commitTx: Transaction,
                 feerates: OnChainFeerates
             ): Pair<RemoteCommitPublished, RemoteCommitSecondStageTransactions> {
-                require(remoteCommit.txid == commitTx.txid) { "txid mismatch, provided tx is not the current remote commit tx" }
+                if (remoteCommit.txid != commitTx.txid) {
+                    // This may only happen when our peer has published an alternative feerate commitment transaction.
+                    // It doesn't matter though, because:
+                    //  - alternative feerates are only used for older (non-taproot) channels when there are no HTLCs
+                    //  - we will still be able to claim our main output from the published transaction
+                    logger.warning { "txid mismatch (${remoteCommit.txid} != ${commitTx.txid}), provided tx is not the current remote commit tx, is it an alternative feerate commit?" }
+                }
                 val commitKeys = channelKeys.remoteCommitmentKeys(commitment.channelParams, remoteCommit.remotePerCommitmentPoint)
                 val outputs = makeRemoteCommitTxOutputs(channelKeys, commitKeys, commitment, remoteCommit)
                 val mainTx = claimMainOutput(commitKeys, commitTx, commitment.localCommitParams.dustLimit, commitment.commitmentFormat, commitment.localChannelParams.defaultFinalScriptPubKey, feerates.claimMainFeerate)
