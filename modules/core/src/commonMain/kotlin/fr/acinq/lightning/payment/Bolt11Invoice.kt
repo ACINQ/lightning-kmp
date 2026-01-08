@@ -201,7 +201,7 @@ data class Bolt11Invoice(
                         TaggedField.Features.tag -> tags.add(kotlin.runCatching { TaggedField.Features.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.RoutingInfo.tag -> tags.add(kotlin.runCatching { TaggedField.RoutingInfo.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
                         TaggedField.NodeId.tag -> tags.add(kotlin.runCatching { TaggedField.NodeId.decode(value) }.getOrDefault(TaggedField.InvalidTag(tag, value)))
-                        TaggedField.Accountable.tag -> tags.add(if (value.isEmpty()) TaggedField.Accountable else TaggedField.UnknownTag(tag, value))
+                        TaggedField.Accountable.tag -> tags.add(if (value.isEmpty()) TaggedField.Accountable else TaggedField.InvalidTag(tag, value))
                         else -> tags.add(TaggedField.UnknownTag(tag, value))
                     }
                     loop(input.drop(3 + len))
