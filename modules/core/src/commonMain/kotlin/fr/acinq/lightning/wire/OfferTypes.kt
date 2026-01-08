@@ -441,6 +441,19 @@ object OfferTypes {
         }
     }
 
+    /**
+     * By setting this field, we let the payer know that we will resolve the payment quickly once we receive it.
+     * If we don't, our reputation will be negatively impacted (channel jamming protection).
+     */
+    data object InvoiceAccountable : InvoiceTlv(), TlvValueReader<InvoiceAccountable> {
+        override val tag: Long = 161
+        override fun write(out: Output) {}
+        override fun read(input: Input): InvoiceAccountable {
+            require(input.availableBytes == 0)
+            return InvoiceAccountable
+        }
+    }
+
     data class PaymentInfo(
         val feeBase: MilliSatoshi,
         val feeProportionalMillionths: Long,
@@ -1030,6 +1043,7 @@ object OfferTypes {
                 InvoiceRequestPayerNote.tag to InvoiceRequestPayerNote as TlvValueReader<InvoiceTlv>,
                 // Invoice part
                 InvoicePaths.tag to InvoicePaths as TlvValueReader<InvoiceTlv>,
+                InvoiceAccountable.tag to InvoiceAccountable as TlvValueReader<InvoiceTlv>,
                 InvoiceBlindedPay.tag to InvoiceBlindedPay as TlvValueReader<InvoiceTlv>,
                 InvoiceCreatedAt.tag to InvoiceCreatedAt as TlvValueReader<InvoiceTlv>,
                 InvoiceRelativeExpiry.tag to InvoiceRelativeExpiry as TlvValueReader<InvoiceTlv>,
