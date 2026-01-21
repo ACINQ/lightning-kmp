@@ -235,13 +235,46 @@ sealed class RevokeAndAckTlv : Tlv {
 }
 
 sealed class ChannelReestablishTlv : Tlv {
-    data class NextFunding(val txId: TxId) : ChannelReestablishTlv() {
+    /**
+     * When disconnected in the middle of an interactive-tx session, this field is used to request a retransmission of
+     * [TxSignatures] for the given [txId].
+     *
+     * @param txId the txId of the partially signed funding transaction.
+     * @param retransmitCommitSig true if [CommitSig] must be retransmitted before [TxSignatures].
+     */
+    data class NextFunding(val txId: TxId, val retransmitCommitSig: Boolean) : ChannelReestablishTlv() {
         override val tag: Long get() = NextFunding.tag
-        override fun write(out: Output) = LightningCodecs.writeTxHash(TxHash(txId), out)
+        override fun write(out: Output) {
+            LightningCodecs.writeTxHash(TxHash(txId), out)
+            LightningCodecs.writeByte(if (retransmitCommitSig) 1 else 0, out)
+        }
 
         companion object : TlvValueReader<NextFunding> {
-            const val tag: Long = 0
-            override fun read(input: Input): NextFunding = NextFunding(TxId(LightningCodecs.txHash(input)))
+            const val tag: Long = 1
+            override fun read(input: Input): NextFunding = NextFunding(
+                txId = TxId(LightningCodecs.txHash(input)),
+                retransmitCommitSig = (LightningCodecs.byte(input) % 2) == 1,
+            )
+        }
+    }
+
+    /**
+     * @param txId the txId of our latest outgoing [ChannelReady] or [SpliceLocked] for this channel.
+     * @param retransmitAnnSigs true if [AnnouncementSignatures] must be retransmitted.
+     */
+    data class MyCurrentFundingLocked(val txId: TxId, val retransmitAnnSigs: Boolean) : ChannelReestablishTlv() {
+        override val tag: Long get() = MyCurrentFundingLocked.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeTxHash(TxHash(txId), out)
+            LightningCodecs.writeByte(if (retransmitAnnSigs) 1 else 0, out)
+        }
+
+        companion object : TlvValueReader<MyCurrentFundingLocked> {
+            const val tag: Long = 5
+            override fun read(input: Input): MyCurrentFundingLocked = MyCurrentFundingLocked(
+                txId = TxId(LightningCodecs.txHash(input)),
+                retransmitAnnSigs = (LightningCodecs.byte(input) % 2) == 1,
+            )
         }
     }
 

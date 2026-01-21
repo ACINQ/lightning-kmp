@@ -352,13 +352,16 @@ data class WaitForFundingConfirmed(
         return Pair(nextState, actions)
     }
 
-    /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
-    fun getUnsignedFundingTxId(): TxId? {
+    /**
+     * If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction.
+     * The second parameter should be set to true when commit_sig also needs to be retransmitted.
+     */
+    fun getUnsignedFundingTxId(): Pair<TxId?, Boolean> {
         return when (rbfStatus) {
-            is RbfStatus.WaitingForSigs -> rbfStatus.session.fundingTx.txId
+            is RbfStatus.WaitingForSigs -> Pair(rbfStatus.session.fundingTx.txId, rbfStatus.session.retransmitRemoteCommitSig)
             else -> when (latestFundingTx.sharedTx) {
-                is PartiallySignedSharedTransaction -> latestFundingTx.txId
-                is FullySignedSharedTransaction -> null
+                is PartiallySignedSharedTransaction -> Pair(latestFundingTx.txId, false)
+                is FullySignedSharedTransaction -> Pair(null, false)
             }
         }
     }

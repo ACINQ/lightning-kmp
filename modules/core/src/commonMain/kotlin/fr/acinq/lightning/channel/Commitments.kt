@@ -690,6 +690,8 @@ data class Commitments(
     // We always use the last commitment that was created, to make sure we never go back in time.
     val latest = FullCommitment(channelParams, changes, active.first())
 
+    fun lastLocalLocked(zeroConf: Boolean): Commitment? = active.find { zeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }
+
     val all = buildList {
         addAll(active)
         addAll(inactive)
@@ -1067,7 +1069,7 @@ data class Commitments(
         // This ensures that we only have to send splice_locked for the latest commitment instead of sending it for every commitment.
         // A side-effect is that previous commitments that are implicitly locked don't necessarily have their status correctly set.
         // That's why we look at locked commitments separately and then select the one with the oldest fundingTxIndex.
-        val lastLocalLocked = active.find { staticParams.useZeroConf || it.localFundingStatus is LocalFundingStatus.ConfirmedFundingTx }
+        val lastLocal = lastLocalLocked(staticParams.useZeroConf)
         val lastRemoteLocked = active.find { it.remoteFundingStatus == RemoteFundingStatus.Locked }
         return when {
             // We select the locked commitment with the smaller value for fundingTxIndex, but both have to be defined.
@@ -1076,9 +1078,9 @@ data class Commitments(
             //  - transactions with the same fundingTxIndex double-spend each other, so only one of them can confirm
             //  - we don't allow creating a splice on top of an unconfirmed transaction that has RBF attempts (because it
             //    would become invalid if another of the RBF attempts end up being confirmed)
-            lastLocalLocked != null && lastRemoteLocked != null -> listOf(lastLocalLocked, lastRemoteLocked).minByOrNull { it.fundingTxIndex }
+            lastLocal != null && lastRemoteLocked != null -> listOf(lastLocal, lastRemoteLocked).minByOrNull { it.fundingTxIndex }
             // Special case for the initial funding tx, we only require a local lock because channel_ready doesn't explicitly reference a funding tx.
-            lastLocalLocked != null && lastLocalLocked.fundingTxIndex == 0L -> lastLocalLocked
+            lastLocal != null && lastLocal.fundingTxIndex == 0L -> lastLocal
             else -> null
         }
     }
