@@ -1106,11 +1106,8 @@ data class InteractiveTxSigningSession(
     //     +-------+                             +-------+
     val fundingTxId: TxId = fundingTx.txId
     val localCommitIndex = localCommit.fold({ it.index }, { it.index })
-    // This value tells our peer whether we need them to retransmit their commit_sig on reconnection or not.
-    val nextLocalCommitmentNumber = when (localCommit) {
-        is Either.Left -> localCommit.value.index
-        is Either.Right -> localCommit.value.index + 1
-    }
+    // If we haven't received the remote commit_sig, we will request a retransmission on reconnection.
+    val retransmitRemoteCommitSig: Boolean = localCommit.isLeft
 
     fun localFundingKey(channelKeys: ChannelKeys): PrivateKey = fundingParams.fundingKey(channelKeys)
 
