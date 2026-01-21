@@ -317,12 +317,13 @@ sealed class PersistedChannelState : ChannelState() {
             }
             ChannelReestablish(
                 channelId = channelId,
-                nextLocalCommitmentNumber = state.signingSession.nextLocalCommitmentNumber,
+                nextLocalCommitmentNumber = 1,
                 nextRemoteRevocationNumber = 0,
                 yourLastCommitmentSecret = PrivateKey(ByteVector32.Zeroes),
                 myCurrentPerCommitmentPoint = myFirstPerCommitmentPoint,
                 nextCommitNonces = nextCommitNonce?.let { listOf(nextFundingTxId to it) } ?: listOf(),
                 nextFundingTxId = nextFundingTxId,
+                retransmitCommitSig = state.signingSession.retransmitRemoteCommitSig,
                 currentCommitNonce = currentCommitNonce
             )
         }
@@ -330,24 +331,13 @@ sealed class PersistedChannelState : ChannelState() {
             val channelKeys = channelKeys()
             val yourLastPerCommitmentSecret = state.commitments.remotePerCommitmentSecrets.lastIndex?.let { state.commitments.remotePerCommitmentSecrets.getHash(it) } ?: ByteVector32.Zeroes
             val myCurrentPerCommitmentPoint = channelKeys.commitmentPoint(state.commitments.localCommitIndex)
-            // If we disconnected while signing a funding transaction, we may need our peer to retransmit their commit_sig.
-            val nextLocalCommitmentNumber = when (state) {
-                is WaitForFundingConfirmed -> when (state.rbfStatus) {
-                    is RbfStatus.WaitingForSigs -> state.rbfStatus.session.nextLocalCommitmentNumber
-                    else -> state.commitments.localCommitIndex + 1
-                }
-                is Normal -> when (state.spliceStatus) {
-                    is SpliceStatus.WaitingForSigs -> state.spliceStatus.session.nextLocalCommitmentNumber
-                    else -> state.commitments.localCommitIndex + 1
-                }
-                else -> state.commitments.localCommitIndex + 1
-            }
-            // If we disconnected while signing a funding transaction, we may need our peer to (re)transmit their tx_signatures.
-            val unsignedFundingTxId = when (state) {
+            // If we disconnected while signing a funding transaction, we may need our peer to (re)transmit their tx_signatures and commit_sig.
+            val (unsignedFundingTxId, retransmitCommitSig) = when (state) {
                 is WaitForFundingConfirmed -> state.getUnsignedFundingTxId()
                 is Normal -> state.getUnsignedFundingTxId()
-                else -> null
+                else -> Pair(null, false)
             }
+            val lastFundingLocked = state.commitments.lastLocalLocked(staticParams.useZeroConf)
             // We send our verification nonces for all active commitments.
             val nextCommitNonces = state.commitments.active.mapNotNull { c ->
                 when (c.commitmentFormat) {
@@ -378,12 +368,14 @@ sealed class PersistedChannelState : ChannelState() {
             }
             ChannelReestablish(
                 channelId = channelId,
-                nextLocalCommitmentNumber = nextLocalCommitmentNumber,
+                nextLocalCommitmentNumber = state.commitments.localCommitIndex + 1,
                 nextRemoteRevocationNumber = state.commitments.remoteCommitIndex,
                 yourLastCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
                 myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
                 nextCommitNonces = nextCommitNonces + listOfNotNull(interactiveTxNextCommitNonce),
                 nextFundingTxId = unsignedFundingTxId,
+                retransmitCommitSig = retransmitCommitSig,
+                currentFundingLocked = lastFundingLocked?.fundingTxId,
                 currentCommitNonce = interactiveTxCurrentCommitNonce,
             )
         }

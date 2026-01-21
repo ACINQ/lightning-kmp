@@ -1450,6 +1450,8 @@ data class ChannelReestablish(
         myCurrentPerCommitmentPoint: PublicKey,
         nextCommitNonces: List<Pair<TxId, IndividualNonce>>,
         nextFundingTxId: TxId? = null,
+        retransmitCommitSig: Boolean = false,
+        currentFundingLocked: TxId? = null,
         currentCommitNonce: IndividualNonce? = null
     ) : this(
         channelId = channelId,
@@ -1459,8 +1461,9 @@ data class ChannelReestablish(
         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
         tlvStream = TlvStream(
             setOfNotNull(
+                nextFundingTxId?.let { ChannelReestablishTlv.NextFunding(it, retransmitCommitSig) },
+                currentFundingLocked?.let { ChannelReestablishTlv.MyCurrentFundingLocked(it, retransmitAnnSigs = false) },
                 if (nextCommitNonces.isNotEmpty()) ChannelReestablishTlv.NextLocalNonces(nextCommitNonces) else null,
-                nextFundingTxId?.let { ChannelReestablishTlv.NextFunding(it) },
                 currentCommitNonce?.let { ChannelReestablishTlv.CurrentCommitNonce(it) },
             )
         )
@@ -1469,6 +1472,8 @@ data class ChannelReestablish(
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
+    val retransmitInteractiveTxCommitSig: Boolean = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.retransmitCommitSig ?: false
+    val myCurrentFundingLocked: TxId? = tlvStream.get<ChannelReestablishTlv.MyCurrentFundingLocked>()?.txId
     val nextCommitNonces: Map<TxId, IndividualNonce> = tlvStream.get<ChannelReestablishTlv.NextLocalNonces>()?.nonces?.toMap() ?: mapOf()
     val currentCommitNonce: IndividualNonce? = tlvStream.get<ChannelReestablishTlv.CurrentCommitNonce>()?.nonce
 
@@ -1487,6 +1492,7 @@ data class ChannelReestablish(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             ChannelReestablishTlv.NextFunding.tag to ChannelReestablishTlv.NextFunding.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.MyCurrentFundingLocked.tag to ChannelReestablishTlv.MyCurrentFundingLocked.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.NextLocalNonces.tag to ChannelReestablishTlv.NextLocalNonces.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.CurrentCommitNonce.tag to ChannelReestablishTlv.CurrentCommitNonce.Companion as TlvValueReader<ChannelReestablishTlv>,
         )

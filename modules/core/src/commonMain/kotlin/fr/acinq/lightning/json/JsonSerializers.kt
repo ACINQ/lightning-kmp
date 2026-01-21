@@ -95,6 +95,7 @@
     JsonSerializers.ShutdownTlvShutdownNonceSerializer::class,
     JsonSerializers.ClosingCompleteTlvSerializer::class,
     JsonSerializers.ClosingSigTlvSerializer::class,
+    JsonSerializers.MyCurrentFundingLockedTlvSerializer::class,
     JsonSerializers.ChannelReestablishTlvSerializer::class,
     JsonSerializers.ChannelReestablishTlvNextLocalNoncesSerializer::class,
     JsonSerializers.ChannelReadyTlvSerializer::class,
@@ -210,6 +211,7 @@ object JsonSerializers {
                 subclass(UpdateFee::class, UpdateFeeSerializer)
             }
             polymorphic(Tlv::class) {
+                subclass(ChannelReestablishTlv.MyCurrentFundingLocked::class, MyCurrentFundingLockedTlvSerializer)
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(ChannelReadyTlv.NextLocalNonce::class, ChannelReadyTlvNextLocalNonceSerializer)
                 subclass(CommitSigTlv.FundingTx::class, CommitSigTlvFundingTxSerializer)
@@ -580,6 +582,9 @@ object JsonSerializers {
 
     @Serializer(forClass = ChannelReadyTlv::class)
     object ChannelReadyTlvSerializer
+
+    @Serializer(forClass = ChannelReestablishTlv.MyCurrentFundingLocked::class)
+    object MyCurrentFundingLockedTlvSerializer
 
     @Serializer(forClass = ChannelReestablishTlv::class)
     object ChannelReestablishTlvSerializer
