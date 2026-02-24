@@ -1,9 +1,9 @@
 package fr.acinq.lightning.tests.bitcoind
 
-import fr.acinq.lightning.io.MyHttpClient
 import fr.acinq.lightning.logging.debug
 import fr.acinq.lightning.tests.utils.testLoggerFactory
 import fr.acinq.lightning.utils.JsonRPCResponse
+import io.ktor.client.HttpClient
 import io.ktor.client.call.*
 import io.ktor.client.plugins.auth.*
 import io.ktor.client.plugins.auth.providers.*
@@ -23,7 +23,7 @@ object BitcoinJsonRPCClient {
     private val scheme = if (ssl) "https" else "http"
     private val serviceUri = "$scheme://$host:$port/wallet/" // wallet/ specifies to use the default bitcoind wallet, named ""
 
-    private val httpClient = MyHttpClient {
+    private val httpClient = HttpClient {
         install(ContentNegotiation) {
             json()
         }
