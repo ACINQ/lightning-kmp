@@ -222,22 +222,22 @@ class Peer(
     // The channels map, as initially loaded from the database at "boot" (on Peer.init).
     // As the channelsFlow is unavailable until the electrum connection is up-and-running,
     // this may provide useful information for the UI.
-    private val _bootChannelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>?>(null)
-    val bootChannelsFlow: StateFlow<Map<ByteVector32, ChannelState>?> get() = _bootChannelsFlow
+    val bootChannelsFlow: StateFlow<Map<ByteVector32, ChannelState>?>
+        field = MutableStateFlow(null)
 
     // channels map, indexed by channel id
     // note that a channel starts with a temporary id then switches to its final id once accepted
-    private val _channelsFlow = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
-    val channelsFlow: StateFlow<Map<ByteVector32, ChannelState>> get() = _channelsFlow
+    val channelsFlow: StateFlow<Map<ByteVector32, ChannelState>>
+        field = MutableStateFlow<Map<ByteVector32, ChannelState>>(HashMap())
 
-    private var _channels by _channelsFlow
-    val channels: Map<ByteVector32, ChannelState> get() = _channelsFlow.value
+    private var _channels by channelsFlow
+    val channels: Map<ByteVector32, ChannelState> get() = channelsFlow.value
 
-    private val _connectionState = MutableStateFlow<Connection>(Connection.CLOSED(null))
-    val connectionState: StateFlow<Connection> get() = _connectionState
+    val connectionState: StateFlow<Connection>
+        field = MutableStateFlow<Connection>(Connection.CLOSED(null))
 
-    private val _eventsFlow = MutableSharedFlow<PeerEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
-    val eventsFlow: SharedFlow<PeerEvent> get() = _eventsFlow.asSharedFlow()
+    val eventsFlow: SharedFlow<PeerEvent>
+        field = MutableSharedFlow<PeerEvent>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
 
     // encapsulates logic for validating incoming payments
     private val incomingPaymentHandler = IncomingPaymentHandler(nodeParams, db.payments)
@@ -281,7 +281,7 @@ class Peer(
 
     private var swapInJob: Job? = null
 
-    private val offerManager = OfferManager(nodeParams, walletParams, _eventsFlow, logger)
+    private val offerManager = OfferManager(nodeParams, walletParams, eventsFlow, logger)
 
     init {
         logger.info { "initializing peer" }
@@ -332,7 +332,7 @@ class Peer(
         launch {
             // we don't restore closed channels
             val bootChannels = db.channels.listLocalChannels().filterNot { it is Closed }
-            _bootChannelsFlow.value = bootChannels.associateBy { it.channelId }
+            bootChannelsFlow.value = bootChannels.associateBy { it.channelId }
             val channelIds = bootChannels.map {
                 logger.info { "restoring channel ${it.channelId} from local storage" }
                 val state = WaitForInit
@@ -380,7 +380,7 @@ class Peer(
             // Clean up previous connection state: we do this here to ensure that it is handled before the Connected event for the new connection.
             // That means we're not sending this event if we don't reconnect. It's ok, since that has the same effect as not detecting a disconnection and closing the app.
             input.send(Disconnected)
-            _connectionState.value = Connection.ESTABLISHING
+            connectionState.value = Connection.ESTABLISHING
 
             val connectionId = currentTimestampMillis()
             val logger = MDCLogger(logger = nodeParams.loggerFactory.newLogger(this::class), staticMdc = mapOf("remoteNodeId" to remoteNodeId, "connectionId" to connectionId))
@@ -402,12 +402,12 @@ class Peer(
             } catch (ex: Throwable) {
                 logger.warning(ex) { "Noise handshake: ${ex.message}: " }
                 socket.close()
-                _connectionState.value = Connection.CLOSED(ex as? TcpSocket.IOException)
+                connectionState.value = Connection.CLOSED(ex as? TcpSocket.IOException)
                 return false
             }
 
             val session = LightningSession(enc, dec, ck)
-            _connectionState.value = Connection.ESTABLISHED
+            connectionState.value = Connection.ESTABLISHED
             // TODO use atomic counter instead
             val peerConnection = PeerConnection(connectionId, Channel(UNLIMITED), logger)
             // Inform the peer about the new connection.
@@ -423,7 +423,7 @@ class Peer(
     fun disconnect() {
         connectionJob?.cancel()
         connectionJob = null
-        _connectionState.value = Connection.CLOSED(null)
+        connectionState.value = Connection.CLOSED(null)
     }
 
     private suspend fun openSocket(timeout: Duration): TcpSocket? {
@@ -445,7 +445,7 @@ class Peer(
                 else -> TcpSocket.IOException.ConnectionRefused(ex)
             }
             socket?.close()
-            _connectionState.value = Connection.CLOSED(ioException)
+            connectionState.value = Connection.CLOSED(ioException)
             null
         }
     }
@@ -453,10 +453,10 @@ class Peer(
     private fun connectionLoop(socket: TcpSocket, session: LightningSession, peerConnection: PeerConnection, logger: MDCLogger): ConnectionJob {
         val job = launch {
             fun closeSocket(ex: TcpSocket.IOException?) {
-                if (_connectionState.value is Connection.CLOSED) return
+                if (connectionState.value is Connection.CLOSED) return
                 logger.warning { "closing TCP socket: ${ex?.message}" }
                 socket.close()
-                _connectionState.value = Connection.CLOSED(ex)
+                connectionState.value = Connection.CLOSED(ex)
                 cancel()
             }
 
@@ -915,7 +915,7 @@ class Peer(
                     is ChannelAction.ProcessCmdRes.NotExecuted -> logger.warning(action.t) { "command not executed" }
                     is ChannelAction.ProcessCmdRes.AddFailed -> {
                         when (val result = outgoingPaymentHandler.processAddFailed(actualChannelId, action)) {
-                            is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
+                            is OutgoingPaymentHandler.Failure -> eventsFlow.emit(PaymentNotSent(result.request, result.failure))
                             null -> logger.debug { "non-final error, more partial payments are still pending: ${action.error.message}" }
                         }
                     }
@@ -923,17 +923,17 @@ class Peer(
                         val currentTip = getCurrentBlockHeight()
                         when (val result = outgoingPaymentHandler.processAddSettledFailed(actualChannelId, action, _channels, currentTip)) {
                             is OutgoingPaymentHandler.Progress -> {
-                                _eventsFlow.emit(PaymentProgress(result.request, result.fees))
+                                eventsFlow.emit(PaymentProgress(result.request, result.fees))
                                 result.actions.forEach { input.send(it) }
                             }
-                            is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
-                            is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
+                            is OutgoingPaymentHandler.Success -> eventsFlow.emit(PaymentSent(result.request, result.payment))
+                            is OutgoingPaymentHandler.Failure -> eventsFlow.emit(PaymentNotSent(result.request, result.failure))
                             null -> logger.debug { "non-final error, another payment attempt (retry) is still pending: ${action.result}" }
                         }
                     }
                     is ChannelAction.ProcessCmdRes.AddSettledFulfill -> {
                         when (val result = outgoingPaymentHandler.processAddSettledFulfilled(action)) {
-                            is OutgoingPaymentHandler.Success -> _eventsFlow.emit(PaymentSent(result.request, result.payment))
+                            is OutgoingPaymentHandler.Success -> eventsFlow.emit(PaymentSent(result.request, result.payment))
                             null -> logger.error { "unknown payment fulfilled: this should never happen" }
                         }
                     }
@@ -1038,7 +1038,7 @@ class Peer(
                                 }
                             }
                             is ChannelAction.Storage.StoreOutgoingPayment.ViaClose -> {
-                                _eventsFlow.emit(ChannelClosing(channelId))
+                                eventsFlow.emit(ChannelClosing(channelId))
                                 ChannelCloseOutgoingPayment(
                                     id = UUID.randomUUID(),
                                     recipientAmount = action.amount,
@@ -1365,7 +1365,7 @@ class Peer(
                     }
                     is PhoenixAndroidLegacyInfo -> {
                         logger.info { "received ${msg::class.simpleName} hasChannels=${msg.hasChannels}" }
-                        _eventsFlow.emit(PhoenixAndroidLegacyInfoEvent(msg))
+                        eventsFlow.emit(PhoenixAndroidLegacyInfoEvent(msg))
                     }
                     is OnionMessage -> {
                         logger.info { "received ${msg::class.simpleName}" }
@@ -1387,7 +1387,7 @@ class Peer(
                     }
                     is DNSAddressResponse -> {
                         logger.info { "bip353 dns address assigned: ${msg.address}" }
-                        _eventsFlow.emit(AddressAssigned(msg.address))
+                        eventsFlow.emit(AddressAssigned(msg.address))
                     }
                 }
             }
@@ -1689,10 +1689,10 @@ class Peer(
                 val currentTip = getCurrentBlockHeight()
                 when (val result = outgoingPaymentHandler.sendPayment(cmd, _channels, currentTip)) {
                     is OutgoingPaymentHandler.Progress -> {
-                        _eventsFlow.emit(PaymentProgress(result.request, result.fees))
+                        eventsFlow.emit(PaymentProgress(result.request, result.fees))
                         result.actions.forEach { input.send(it) }
                     }
-                    is OutgoingPaymentHandler.Failure -> _eventsFlow.emit(PaymentNotSent(result.request, result.failure))
+                    is OutgoingPaymentHandler.Failure -> eventsFlow.emit(PaymentNotSent(result.request, result.failure))
                 }
             }
             is PurgeExpiredPayments -> {
