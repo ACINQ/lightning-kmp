@@ -6,14 +6,13 @@ import fr.acinq.bitcoin.crypto.Pack
  * Poly1305 message authentication code, designed by D. J. Bernstein.
  *
  *
- * Poly1305 computes a 128-bit (16 bytes) authenticator, using a 128 bit nonce and a 256 bit key
- * consisting of a 128 bit key applied to an underlying cipher, and a 128 bit key (with 106
+ * Poly1305 computes a 128-bit (16 bytes) authenticator, using a 128 bit nonce and a 256-bit key
+ * consisting of a 128-bit key applied to an underlying cipher, and a 128-bit key (with 106
  * effective key bits) used in the authenticator.
  *
  *
  * The polynomial calculation in this implementation is adapted from the public domain [poly1305-donna-unrolled](https://github.com/floodyberry/poly1305-donna) C implementation
  * by Andrew M (@floodyberry).
- * @see Poly1305KeyGenerator
  */
 class Poly1305 {
     private val singleByte = ByteArray(1)
@@ -278,7 +277,7 @@ class Poly1305 {
     companion object {
         private const val BLOCK_SIZE = 16
         private fun mul32x32_64(i1: Int, i2: Int): Long {
-            return ((i1.toLong() and 0xFFFFFFFFL) * i2).toLong()
+            return ((i1.toLong() and 0xFFFFFFFFL) * i2)
         }
 
         /**
