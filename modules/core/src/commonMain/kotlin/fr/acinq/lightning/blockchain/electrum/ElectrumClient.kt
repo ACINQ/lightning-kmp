@@ -43,12 +43,12 @@ class ElectrumClient(
     private val json = Json { ignoreUnknownKeys = true }
 
     // connection status
-    final override val connectionStatus: StateFlow<ElectrumConnectionStatus>
-        field = MutableStateFlow<ElectrumConnectionStatus>(ElectrumConnectionStatus.Closed(null))
+    private val _connectionStatus = MutableStateFlow<ElectrumConnectionStatus>(ElectrumConnectionStatus.Closed(null))
+    override val connectionStatus: StateFlow<ElectrumConnectionStatus> get() = _connectionStatus.asStateFlow()
 
     // subscriptions notifications (headers, script_hashes, etc.)
-    final override val notifications: Flow<ElectrumSubscriptionResponse>
-        field = MutableSharedFlow<ElectrumSubscriptionResponse>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
+    private val _notifications = MutableSharedFlow<ElectrumSubscriptionResponse>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
+    override val notifications: Flow<ElectrumSubscriptionResponse> get() = _notifications.asSharedFlow()
 
     private sealed class Action {
         data class SendToServer(val request: Pair<ElectrumRequest, CompletableDeferred<ElectrumResponse>>) : Action()
@@ -73,7 +73,7 @@ class ElectrumClient(
     private var listenJob: ListenJob? = null
 
     suspend fun connect(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder, timeout: Duration = 15.seconds): Boolean {
-        if (connectionStatus.value is ElectrumConnectionStatus.Closed) {
+        if (_connectionStatus.value is ElectrumConnectionStatus.Closed) {
             listenJob?.cancel() // the job should already be cancelled, this is for extra safety
             val socket = openSocket(serverAddress, socketBuilder, timeout) ?: return false
             logger.info { "connected to electrumx instance" }
@@ -88,7 +88,7 @@ class ElectrumClient(
                     else -> TcpSocket.IOException.Unknown(ex.message, ex)
                 }
                 socket.close()
-                connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
+                _connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
                 false
             }
         } else {
@@ -100,13 +100,13 @@ class ElectrumClient(
     fun disconnect() {
         listenJob?.cancel()
         listenJob = null
-        connectionStatus.value = ElectrumConnectionStatus.Closed(null)
+        _connectionStatus.value = ElectrumConnectionStatus.Closed(null)
     }
 
     private suspend fun openSocket(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder, timeout: Duration): TcpSocket? {
         var socket: TcpSocket? = null
         return try {
-            connectionStatus.value = ElectrumConnectionStatus.Connecting
+            _connectionStatus.value = ElectrumConnectionStatus.Connecting
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             withTimeout(timeout) {
@@ -120,7 +120,7 @@ class ElectrumClient(
                 else -> TcpSocket.IOException.ConnectionRefused(ex)
             }
             socket?.close()
-            connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
+            _connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
             null
         }
     }
@@ -144,8 +144,8 @@ class ElectrumClient(
             socket.send(HeaderSubscription.asJsonRPCRequest(id = 0).encodeToByteArray(), flush = true)
             val header = parseJsonResponse(HeaderSubscription, handshakeFlow.first())
             require(header is HeaderSubscriptionResponse) { "invalid header subscription response $header" }
-            notifications.emit(header)
-            connectionStatus.value = ElectrumConnectionStatus.Connected(theirVersion, header.blockHeight, header.header)
+            _notifications.emit(header)
+            _connectionStatus.value = ElectrumConnectionStatus.Connected(theirVersion, header.blockHeight, header.header)
             logger.info { "server tip $header" }
         }
     }
@@ -169,7 +169,7 @@ class ElectrumClient(
                 is TcpSocket.IOException -> ex
                 else -> TcpSocket.IOException.Unknown(ex.message, ex)
             }
-            connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
+            _connectionStatus.value = ElectrumConnectionStatus.Closed(ioException)
         }) {
             launch(CoroutineName("keep-alive")) {
                 while (isActive) {
@@ -189,7 +189,7 @@ class ElectrumClient(
                             socket.send(msg.request.first.asJsonRPCRequest(requestId++).encodeToByteArray(), flush = true)
                         }
                         is Action.ProcessServerResponse -> when (msg.response) {
-                            is Either.Left -> notifications.emit(msg.response.value)
+                            is Either.Left -> _notifications.emit(msg.response.value)
                             is Either.Right -> msg.response.value.id?.let { id ->
                                 requestMap.remove(id)?.let { (request, replyTo) ->
                                     replyTo.complete(parseJsonResponse(request, msg.response.value))
