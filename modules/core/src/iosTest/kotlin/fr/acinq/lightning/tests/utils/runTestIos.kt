@@ -17,6 +17,6 @@ actual fun runSuspendBlocking(block: suspend CoroutineScope.() -> Unit) {
 
     while (result == null) NSRunLoop.mainRunLoop.runUntilDate(NSDate.dateWithTimeIntervalSinceNow(0.01))
 
-    result!!.getOrThrow()
+    result.getOrThrow()
 
 }
