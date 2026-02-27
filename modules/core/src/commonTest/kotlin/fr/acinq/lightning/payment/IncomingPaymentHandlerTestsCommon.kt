@@ -347,7 +347,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 associatedData = incomingPayment.paymentHash,
             ).packet
             assertTrue(trampolineOnion.payload.size() < 500)
-            val finalPayload = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolinePayload.amount, trampolinePayload.totalAmount, trampolinePayload.expiry, randomBytes32(), trampolineOnion)
+            val finalPayload = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolinePayload.amount, trampolinePayload.totalAmount, trampolinePayload.expiry, randomBytes32(), trampolineOnion, upgradeAccountability = true)
             makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, finalPayload)
         }
         val result = paymentHandler.process(willAddHtlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
@@ -399,7 +399,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
                 associatedData = incomingPayment.paymentHash,
             ).packet
             assertTrue(trampolineOnion.payload.size() < 500)
-            val finalPayload = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolinePayload.amount, trampolinePayload.totalAmount, trampolinePayload.expiry, randomBytes32(), trampolineOnion)
+            val finalPayload = PaymentOnion.FinalPayload.Standard.createTrampolinePayload(trampolinePayload.amount, trampolinePayload.totalAmount, trampolinePayload.expiry, randomBytes32(), trampolineOnion, upgradeAccountability = true)
             makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, finalPayload)
         }
         val result = paymentHandler.process(willAddHtlc, Features.empty, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates)
@@ -1950,7 +1950,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
             currentBlockHeight: Int = TestConstants.defaultBlockHeight
         ): PaymentOnion.FinalPayload.Standard {
             val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight.toLong())
-            return PaymentOnion.FinalPayload.Standard.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, null)
+            return PaymentOnion.FinalPayload.Standard.createMultiPartPayload(amount, totalAmount, expiry, paymentSecret, null, upgradeAccountability = true)
         }
 
         private fun makeBlindedPayload(
