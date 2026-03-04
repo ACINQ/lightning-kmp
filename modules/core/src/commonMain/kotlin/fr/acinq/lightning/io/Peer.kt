@@ -601,6 +601,21 @@ class Peer(
     }
 
     /**
+     * Returns the maximum amount that can be sent such that the remaining balance is 0 after sending.
+     */
+    fun maxSendableOverLightning(): MilliSatoshi? {
+        return channels.values
+            .filterIsInstance<Normal>()
+            .firstOrNull()
+            ?.let { channel ->
+                val trampolineFees = walletParams.trampolineFees.firstOrNull() ?: return null
+                val availableAmount = channel.commitments.availableBalanceForSend()
+                val maxAmount = trampolineFees.calculateReverseAmount(availableAmount)
+                return maxAmount
+            }
+    }
+
+    /**
      * Estimate the actual feerate to use (and corresponding fee to pay) in order to reach the target feerate
      * for a splice out, taking into account potential unconfirmed parent splices.
      */
