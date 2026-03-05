@@ -95,10 +95,11 @@
     JsonSerializers.ShutdownTlvShutdownNonceSerializer::class,
     JsonSerializers.ClosingCompleteTlvSerializer::class,
     JsonSerializers.ClosingSigTlvSerializer::class,
+    JsonSerializers.MyCurrentFundingLockedTlvSerializer::class,
     JsonSerializers.ChannelReestablishTlvSerializer::class,
     JsonSerializers.ChannelReestablishTlvNextLocalNoncesSerializer::class,
     JsonSerializers.ChannelReadyTlvSerializer::class,
-    JsonSerializers.CommitSigTlvBatchSerializer::class,
+    JsonSerializers.CommitSigTlvFundingTxSerializer::class,
     JsonSerializers.CommitSigTlvPartialSignatureWithNonceSerializer::class,
     JsonSerializers.CommitSigTlvSerializer::class,
     JsonSerializers.UUIDSerializer::class,
@@ -210,9 +211,10 @@ object JsonSerializers {
                 subclass(UpdateFee::class, UpdateFeeSerializer)
             }
             polymorphic(Tlv::class) {
+                subclass(ChannelReestablishTlv.MyCurrentFundingLocked::class, MyCurrentFundingLockedTlvSerializer)
                 subclass(ChannelReadyTlv.ShortChannelIdTlv::class, ChannelReadyTlvShortChannelIdTlvSerializer)
                 subclass(ChannelReadyTlv.NextLocalNonce::class, ChannelReadyTlvNextLocalNonceSerializer)
-                subclass(CommitSigTlv.Batch::class, CommitSigTlvBatchSerializer)
+                subclass(CommitSigTlv.FundingTx::class, CommitSigTlvFundingTxSerializer)
                 subclass(CommitSigTlv.PartialSignatureWithNonce::class, CommitSigTlvPartialSignatureWithNonceSerializer)
                 subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
                 subclass(ShutdownTlv.ShutdownNonce::class, ShutdownTlvShutdownNonceSerializer)
@@ -563,8 +565,8 @@ object JsonSerializers {
     @Serializer(forClass = ShutdownTlv.ShutdownNonce::class)
     object ShutdownTlvShutdownNonceSerializer
 
-    @Serializer(forClass = CommitSigTlv.Batch::class)
-    object CommitSigTlvBatchSerializer
+    @Serializer(forClass = CommitSigTlv.FundingTx::class)
+    object CommitSigTlvFundingTxSerializer
 
     @Serializer(forClass = CommitSigTlv.PartialSignatureWithNonce::class)
     object CommitSigTlvPartialSignatureWithNonceSerializer
@@ -580,6 +582,9 @@ object JsonSerializers {
 
     @Serializer(forClass = ChannelReadyTlv::class)
     object ChannelReadyTlvSerializer
+
+    @Serializer(forClass = ChannelReestablishTlv.MyCurrentFundingLocked::class)
+    object MyCurrentFundingLockedTlvSerializer
 
     @Serializer(forClass = ChannelReestablishTlv::class)
     object ChannelReestablishTlvSerializer

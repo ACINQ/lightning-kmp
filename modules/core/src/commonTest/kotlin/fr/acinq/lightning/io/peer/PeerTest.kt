@@ -361,10 +361,11 @@ class PeerTest : LightningTestSuite() {
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
         peer.send(MessageReceived(connectionId = 0, PeerStorageRetrieval(backup)))
+        // We remove TLVs which may affect channel_ready / splice_locked behavior.
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
-        peer.send(MessageReceived(connectionId = 0, aliceReestablish))
+        peer.send(MessageReceived(connectionId = 0, aliceReestablish.copy(tlvStream = TlvStream(aliceReestablish.tlvStream.records.filterNot { it is ChannelReestablishTlv.MyCurrentFundingLocked }.toSet()))))
 
-        // Wait until the channels are Syncing
+        // Wait until the channels are Syncing.
         val restoredChannel = peer.channelsFlow
             .first { it.size == 1 }
             .values
@@ -393,8 +394,9 @@ class PeerTest : LightningTestSuite() {
         // Simulate a reconnection with Alice.
         peer.send(MessageReceived(connectionId = 0, Init(features = alice0.staticParams.nodeParams.features)))
         peer.send(MessageReceived(connectionId = 0, PeerStorageRetrieval(backup)))
+        // We remove TLVs which may affect channel_ready / splice_locked behavior.
         val aliceReestablish = alice1.state.run { alice1.ctx.createChannelReestablish() }
-        peer.send(MessageReceived(connectionId = 0, aliceReestablish))
+        peer.send(MessageReceived(connectionId = 0, aliceReestablish.copy(tlvStream = TlvStream(aliceReestablish.tlvStream.records.filterNot { it is ChannelReestablishTlv.MyCurrentFundingLocked }.toSet()))))
 
         // Wait until the channels are Syncing
         val restoredChannel = peer.channelsFlow
