@@ -12,6 +12,7 @@ sealed class PaymentRequest {
     abstract val paymentHash: ByteVector32
     abstract val nodeId: PublicKey
     abstract val features: Features
+    abstract val accountable: Boolean
 
     abstract fun isExpired(currentTimestampSeconds: Long = currentTimestampSeconds()): Boolean
 
