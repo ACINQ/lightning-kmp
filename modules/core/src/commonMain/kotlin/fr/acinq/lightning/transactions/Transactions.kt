@@ -38,6 +38,7 @@ import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.lightning.transactions.Scripts.Taproot.NUMS_POINT
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
+import fr.acinq.secp256k1.Secp256k1
 
 /**
  * Created by PM on 15/12/2016.
@@ -181,7 +182,7 @@ object Transactions {
             return when (redeemInfo) {
                 is RedeemInfo.P2wsh -> {
                     val sigDER = tx.signInput(inputIndex, redeemInfo.redeemScript, sigHash, amountIn, SigVersion.SIGVERSION_WITNESS_V0, key)
-                    Crypto.der2compact(sigDER)
+                    Secp256k1.der2compact(sigDER.dropLast(1).toByteArray()).byteVector64()
                 }
                 is RedeemInfo.TaprootKeyPath -> {
                     tx.signInputTaprootKeyPath(key, inputIndex, spentOutputs, sigHash, redeemInfo.scriptTree_opt)
@@ -1391,7 +1392,7 @@ object Transactions {
      * This default sig takes 72B when encoded in DER (incl. 1B for the trailing sig hash), it is used for fee estimation
      * It is 72 bytes because our signatures are normalized (low-s) and will take up 72 bytes at most in DER format
      */
-    val PlaceHolderSig = ByteVector64(ByteArray(64) { 0xaa.toByte() })
+    val PlaceHolderSig = ByteVector64.fromValidHex("ef75b6a03c9b4b57ac1d94d09d8bd8798a9967d8d06ef1129a8436cdb1993c4b7872409ec42abb1174c5e29e32690ae8b6ede29fb1b07f1dbb1bbf92b63f26d2")
         .also { check(Scripts.der(it, SigHash.SIGHASH_ALL).size() == 72) { "Should be 72 bytes but is ${Scripts.der(it, SigHash.SIGHASH_ALL).size()} bytes" } }
 
 }

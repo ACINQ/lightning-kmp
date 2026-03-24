@@ -15,13 +15,14 @@ import fr.acinq.lightning.crypto.RemoteCommitmentKeys
 import fr.acinq.lightning.transactions.Scripts.htlcOffered
 import fr.acinq.lightning.transactions.Scripts.htlcReceived
 import fr.acinq.lightning.transactions.Scripts.toLocalDelayed
+import fr.acinq.secp256k1.Secp256k1
 
 /**
  * Created by PM on 02/12/2016.
  */
 object Scripts {
 
-    fun der(sig: ByteVector64, sigHash: Int): ByteVector = Crypto.compact2der(sig).concat(sigHash.toByte())
+    fun der(sig: ByteVector64, sigHash: Int): ByteVector = Secp256k1.compact2der(sig.toByteArray()).byteVector().concat(sigHash.toByte())
 
     fun sort(pubkeys: List<PublicKey>): List<PublicKey> = pubkeys.sortedWith { p1, p2 -> LexicographicalOrdering.compare(p1, p2) }
 

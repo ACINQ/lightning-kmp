@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.Either
+import fr.acinq.secp256k1.Secp256k1
 
 /**
  * new swap-in protocol based on musig2 and taproot: (user key + server key) OR (user refund key + delay)
@@ -112,12 +113,12 @@ data class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKe
     fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PrivateKey): ByteVector64 {
         require(userKey.publicKey() == userPublicKey) { "user private key does not match expected public key: are you using the refund key instead of the user key?" }
         val sigDER = fundingTx.signInput(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, userKey)
-        return Crypto.der2compact(sigDER)
+        return Secp256k1.der2compact(sigDER.dropLast(1).toByteArray()).byteVector64() // drop sighash byte
     }
 
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, serverKey: PrivateKey): ByteVector64 {
         val sigDER = fundingTx.signInput(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, serverKey)
-        return Crypto.der2compact(sigDER)
+        return Secp256k1.der2compact(sigDER.dropLast(1).toByteArray()).byteVector64() // drop sighash byte
     }
 
     companion object {
