@@ -641,9 +641,11 @@ object Deserialization {
         val script = Script.parse(redeemScript)
         val pubkey1 = PublicKey((script[1] as OP_PUSHDATA).data)
         val witness = commitTx.txIn.first().witness
+        // signature in transaction witness are in DER format, with a trailing sighash byte
+        fun toCompact(sig: ByteVector) = Secp256k1.der2compact(sig.dropRight(1).toByteArray()).byteVector64()
         return when {
-            remoteFundingPubKey == pubkey1 -> Secp256k1.der2compact(witness.stack[1].dropRight(1).toByteArray()).byteVector64()
-            else -> Secp256k1.der2compact(witness.stack[2].dropRight(1).toByteArray()).byteVector64()
+            remoteFundingPubKey == pubkey1 -> toCompact(witness.stack[1])
+            else -> toCompact(witness.stack[2])
         }
     }
 

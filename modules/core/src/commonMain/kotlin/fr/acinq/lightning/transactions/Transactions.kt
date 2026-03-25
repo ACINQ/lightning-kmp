@@ -181,8 +181,7 @@ object Transactions {
             val spentOutputs = buildSpentOutputs(extraUtxos)
             return when (redeemInfo) {
                 is RedeemInfo.P2wsh -> {
-                    val sigDER = tx.signInput(inputIndex, redeemInfo.redeemScript, sigHash, amountIn, SigVersion.SIGVERSION_WITNESS_V0, key)
-                    Secp256k1.der2compact(sigDER.dropLast(1).toByteArray()).byteVector64()
+                    tx.signInputCompact(inputIndex, redeemInfo.redeemScript, sigHash, amountIn, SigVersion.SIGVERSION_WITNESS_V0, key)
                 }
                 is RedeemInfo.TaprootKeyPath -> {
                     tx.signInputTaprootKeyPath(key, inputIndex, spentOutputs, sigHash, redeemInfo.scriptTree_opt)

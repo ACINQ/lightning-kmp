@@ -21,7 +21,7 @@ import fr.acinq.secp256k1.Secp256k1
  * Created by PM on 02/12/2016.
  */
 object Scripts {
-
+    // ECDSA signatures in transaction witnesses are in DER format plus a trailing sighash byte
     fun der(sig: ByteVector64, sigHash: Int): ByteVector = Secp256k1.compact2der(sig.toByteArray()).byteVector().concat(sigHash.toByte())
 
     fun sort(pubkeys: List<PublicKey>): List<PublicKey> = pubkeys.sortedWith { p1, p2 -> LexicographicalOrdering.compare(p1, p2) }
