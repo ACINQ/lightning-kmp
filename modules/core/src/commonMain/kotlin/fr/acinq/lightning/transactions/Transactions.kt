@@ -17,6 +17,7 @@
 package fr.acinq.lightning.transactions
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Transaction.Companion.encodeWitnessEcdsaSig
 import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.crypto.musig2.Musig2
@@ -1392,6 +1393,6 @@ object Transactions {
      * It is 72 bytes because our signatures are normalized (low-s) and will take up 72 bytes at most in DER format
      */
     val PlaceHolderSig = ByteVector64.fromValidHex("ef75b6a03c9b4b57ac1d94d09d8bd8798a9967d8d06ef1129a8436cdb1993c4b7872409ec42abb1174c5e29e32690ae8b6ede29fb1b07f1dbb1bbf92b63f26d2")
-        .also { check(Scripts.der(it, SigHash.SIGHASH_ALL).size() == 72) { "Should be 72 bytes but is ${Scripts.der(it, SigHash.SIGHASH_ALL).size()} bytes" } }
+        .also { check(encodeWitnessEcdsaSig(it, SigHash.SIGHASH_ALL).size == 72) { "Should be 72 bytes but is ${encodeWitnessEcdsaSig(it, SigHash.SIGHASH_ALL).size} bytes" } }
 
 }

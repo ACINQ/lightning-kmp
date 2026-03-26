@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.write
+import fr.acinq.bitcoin.Transaction.Companion.encodeWitnessEcdsaSig
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiry
@@ -504,7 +505,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val changeOutput = TxOut(150_000.sat, pay2wpkh(randomKey().publicKey()))
 
         fun createSignedWalletInput(): TxIn {
-            val witness = Script.witnessPay2wpkh(randomKey().publicKey(), Scripts.der(randomBytes64(), SigHash.SIGHASH_ALL))
+            val witness = Script.witnessPay2wpkh(randomKey().publicKey(), encodeWitnessEcdsaSig(randomBytes64(), SigHash.SIGHASH_ALL).byteVector())
             return TxIn(OutPoint(TxId(randomBytes32()), 3), ByteVector.empty, 0, witness)
         }
 
