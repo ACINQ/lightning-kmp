@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.bitcoin.SigHash.SIGHASH_ANYONECANPAY
 import fr.acinq.bitcoin.SigHash.SIGHASH_DEFAULT
 import fr.acinq.bitcoin.SigHash.SIGHASH_SINGLE
+import fr.acinq.bitcoin.Transaction.Companion.encodeWitnessEcdsaSig
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
@@ -15,14 +16,12 @@ import fr.acinq.lightning.crypto.RemoteCommitmentKeys
 import fr.acinq.lightning.transactions.Scripts.htlcOffered
 import fr.acinq.lightning.transactions.Scripts.htlcReceived
 import fr.acinq.lightning.transactions.Scripts.toLocalDelayed
+import fr.acinq.secp256k1.Secp256k1
 
 /**
  * Created by PM on 02/12/2016.
  */
 object Scripts {
-
-    fun der(sig: ByteVector64, sigHash: Int): ByteVector = Crypto.compact2der(sig).concat(sigHash.toByte())
-
     fun sort(pubkeys: List<PublicKey>): List<PublicKey> = pubkeys.sortedWith { p1, p2 -> LexicographicalOrdering.compare(p1, p2) }
 
     private fun htlcRemoteSighash(commitmentFormat: Transactions.CommitmentFormat): Int = when (commitmentFormat) {
@@ -39,8 +38,8 @@ object Scripts {
      * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
      */
     fun witness2of2(sig1: ByteVector64, sig2: ByteVector64, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness {
-        val encodedSig1 = der(sig1, SIGHASH_ALL)
-        val encodedSig2 = der(sig2, SIGHASH_ALL)
+        val encodedSig1 = encodeWitnessEcdsaSig(sig1, SIGHASH_ALL).byteVector()
+        val encodedSig2 = encodeWitnessEcdsaSig(sig2, SIGHASH_ALL).byteVector()
         val redeemScript = ByteVector(Script.write(multiSig2of2(pubkey1, pubkey2)))
         return when {
             LexicographicalOrdering.isLessThan(pubkey1.value, pubkey2.value) -> ScriptWitness(listOf(ByteVector.empty, encodedSig1, encodedSig2, redeemScript))
@@ -123,20 +122,20 @@ object Scripts {
      * This witness script spends a [toLocalDelayed] output using a local sig after a delay
      */
     fun witnessToRemoteDelayedAfterDelay(localSig: ByteVector64, toRemoteDelayedScript: ByteVector) =
-        ScriptWitness(listOf(der(localSig, SIGHASH_ALL), toRemoteDelayedScript))
+        ScriptWitness(listOf(encodeWitnessEcdsaSig(localSig, SIGHASH_ALL).byteVector(), toRemoteDelayedScript))
 
     /**
      * This witness script spends a [toLocalDelayed] output using a local sig after a delay
      */
     fun witnessToLocalDelayedAfterDelay(localSig: ByteVector64, toLocalDelayedScript: ByteVector) =
-        ScriptWitness(listOf(der(localSig, SIGHASH_ALL), ByteVector.empty, toLocalDelayedScript))
+        ScriptWitness(listOf(encodeWitnessEcdsaSig(localSig, SIGHASH_ALL).byteVector(), ByteVector.empty, toLocalDelayedScript))
 
     /**
      * This witness script spends (steals) a [toLocalDelayed] output using a revocation key as a punishment
      * for having published a revoked transaction
      */
     fun witnessToLocalDelayedWithRevocationSig(revocationSig: ByteVector64, toLocalScript: ByteVector) =
-        ScriptWitness(listOf(der(revocationSig, SIGHASH_ALL), ByteVector(byteArrayOf(1)), toLocalScript))
+        ScriptWitness(listOf(encodeWitnessEcdsaSig(revocationSig, SIGHASH_ALL).byteVector(), ByteVector(byteArrayOf(1)), toLocalScript))
 
     fun htlcOffered(keys: CommitmentPublicKeys, paymentHash: ByteVector32): List<ScriptElt> = listOf(
         // @formatter:off
@@ -164,7 +163,7 @@ object Scripts {
      * remote signature is created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
      */
     fun witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, preimage: ByteVector32, htlcOfferedScript: ByteVector) =
-        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SIGHASH_SINGLE or SIGHASH_ANYONECANPAY), der(localSig, SIGHASH_ALL), preimage, htlcOfferedScript))
+        ScriptWitness(listOf(ByteVector.empty, encodeWitnessEcdsaSig(remoteSig, SIGHASH_SINGLE or SIGHASH_ANYONECANPAY).byteVector(), encodeWitnessEcdsaSig(localSig, SIGHASH_ALL).byteVector(), preimage, htlcOfferedScript))
 
     /** Extract payment preimages from a 2nd-stage HTLC Success transaction's witness script. */
     fun extractPreimagesFromHtlcSuccess(tx: Transaction): Set<ByteVector32> {
@@ -185,7 +184,7 @@ object Scripts {
      * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
      */
     fun witnessClaimHtlcSuccessFromCommitTx(localSig: ByteVector64, preimage: ByteVector32, htlcOffered: ByteVector) =
-        ScriptWitness(listOf(der(localSig, SIGHASH_ALL), preimage, htlcOffered))
+        ScriptWitness(listOf(encodeWitnessEcdsaSig(localSig, SIGHASH_ALL).byteVector(), preimage, htlcOffered))
 
     /** Extract payment preimages from a claim-htlc transaction. */
     fun extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set<ByteVector32> {
@@ -228,21 +227,21 @@ object Scripts {
      * remote signature is created with SIGHASH_SINGLE || SIGHASH_ANYONECANPAY
      */
     fun witnessHtlcTimeout(localSig: ByteVector64, remoteSig: ByteVector64, htlcOfferedScript: ByteVector) =
-        ScriptWitness(listOf(ByteVector.empty, der(remoteSig, SIGHASH_SINGLE or SIGHASH_ANYONECANPAY), der(localSig, SIGHASH_ALL), ByteVector.empty, htlcOfferedScript))
+        ScriptWitness(listOf(ByteVector.empty, encodeWitnessEcdsaSig(remoteSig, SIGHASH_SINGLE or SIGHASH_ANYONECANPAY).byteVector(), encodeWitnessEcdsaSig(localSig, SIGHASH_ALL).byteVector(), ByteVector.empty, htlcOfferedScript))
 
     /**
      * If remote publishes its commit tx where there was a local->remote htlc, then local uses this script to
      * claim its funds after timeout (consumes htlcReceived script from commit tx)
      */
     fun witnessClaimHtlcTimeoutFromCommitTx(localSig: ByteVector64, htlcReceivedScript: ByteVector) =
-        ScriptWitness(listOf(der(localSig, SIGHASH_ALL), ByteVector.empty, htlcReceivedScript))
+        ScriptWitness(listOf(encodeWitnessEcdsaSig(localSig, SIGHASH_ALL).byteVector(), ByteVector.empty, htlcReceivedScript))
 
     /**
      * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
      * for having published a revoked transaction
      */
     fun witnessHtlcWithRevocationSig(commitKeys: RemoteCommitmentKeys, revocationSig: ByteVector64, htlcScript: ByteVector) =
-        ScriptWitness(listOf(der(revocationSig, SIGHASH_ALL), commitKeys.revocationPublicKey.value, htlcScript))
+        ScriptWitness(listOf(encodeWitnessEcdsaSig(revocationSig, SIGHASH_ALL).byteVector(), commitKeys.revocationPublicKey.value, htlcScript))
 
     /**
      * Specific scripts for taproot channels

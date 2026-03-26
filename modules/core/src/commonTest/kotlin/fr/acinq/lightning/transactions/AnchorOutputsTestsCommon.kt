@@ -18,6 +18,8 @@ import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.UpdateAddHtlc
+import fr.acinq.secp256k1.Hex
+import fr.acinq.secp256k1.Secp256k1
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -139,10 +141,11 @@ class AnchorOutputsTestsCommon {
         val signedTx = commitTx.aggregateSigs(local_funding_pubkey, remote_funding_pubkey, localSig, remoteSig)
         assertEquals(Transaction.read(testCase.ExpectedCommitmentTxHex), signedTx)
         val txs = testCase.HtlcDescs.associate { Transaction.read(it.ResolutionTxHex).txid to Transaction.read(it.ResolutionTxHex) }
-        val remoteHtlcSigs = testCase.HtlcDescs.associate { Transaction.read(it.ResolutionTxHex).txid to ByteVector(it.RemoteSigHex) }
+        // test vectors signatures are encoded in DER format
+        val remoteHtlcSigs = testCase.HtlcDescs.associate { Transaction.read(it.ResolutionTxHex).txid to Secp256k1.der2compact(Hex.decode(it.RemoteSigHex)).byteVector64() }
         assertTrue { remoteHtlcSigs.keys.containsAll(htlcTxs.map { it.tx.txid }) }
         htlcTxs.forEach { htlcTx ->
-            val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[htlcTx.tx.txid]!!.toByteArray())
+            val remoteHtlcSig = remoteHtlcSigs[htlcTx.tx.txid]!!
             val signed = when (htlcTx) {
                 is Transactions.HtlcSuccessTx -> {
                     val preimage = preimages.find { it.sha256() == htlcTx.paymentHash }
@@ -188,11 +191,11 @@ class AnchorOutputsTestsCommon {
         assertEquals(testCase.ExpectedCommitmentTx, signedTx)
 
         val txs = testCase.HtlcDescs.associate { it.ResolutionTx.txid to it.ResolutionTx }
-        val remoteHtlcSigs = testCase.HtlcDescs.associate { it.ResolutionTx.txid to ByteVector(it.RemoteSigHex) }
+        val remoteHtlcSigs = testCase.HtlcDescs.associate { it.ResolutionTx.txid to Secp256k1.der2compact(Hex.decode(it.RemoteSigHex)).byteVector64() }
         val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, outputs, Transactions.CommitmentFormat.AnchorOutputs)
         assertTrue { remoteHtlcSigs.keys.containsAll(htlcTxs.map { it.tx.txid }) }
         htlcTxs.forEach { htlcTx ->
-            val remoteHtlcSig = Crypto.der2compact(remoteHtlcSigs[htlcTx.tx.txid]!!.toByteArray())
+            val remoteHtlcSig = remoteHtlcSigs[htlcTx.tx.txid]!!
             val signed = when (htlcTx) {
                 is Transactions.HtlcSuccessTx -> {
                     val preimage = preimages.find { it.sha256() == htlcTx.paymentHash }
