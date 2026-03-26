@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
 import fr.acinq.bitcoin.utils.Either
-import fr.acinq.secp256k1.Secp256k1
 
 /**
  * new swap-in protocol based on musig2 and taproot: (user key + server key) OR (user refund key + delay)
@@ -117,8 +116,7 @@ data class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKe
     }
 
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, serverKey: PrivateKey): ByteVector64 {
-        val sig = fundingTx.signInputCompact(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, serverKey)
-        return sig
+        return fundingTx.signInputCompact(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, serverKey)
     }
 
     companion object {

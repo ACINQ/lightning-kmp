@@ -39,7 +39,6 @@ import fr.acinq.lightning.transactions.CommitmentOutput.OutHtlc
 import fr.acinq.lightning.transactions.Scripts.Taproot.NUMS_POINT
 import fr.acinq.lightning.utils.*
 import fr.acinq.lightning.wire.UpdateAddHtlc
-import fr.acinq.secp256k1.Secp256k1
 
 /**
  * Created by PM on 15/12/2016.
