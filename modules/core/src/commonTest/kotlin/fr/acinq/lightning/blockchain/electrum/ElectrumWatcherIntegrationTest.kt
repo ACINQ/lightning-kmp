@@ -1,6 +1,7 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Bitcoin.addressToPublicKeyScript
 import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -43,7 +44,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, loggerFactory)
 
-        val (address, _) = bitcoincli.getNewAddress()
+        val address = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
         val listener = watcher.openWatchNotificationsFlow()
@@ -70,7 +71,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, loggerFactory)
 
-        val (address, _) = bitcoincli.getNewAddress()
+        val address = bitcoincli.getNewAddress()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
         bitcoincli.generateBlocks(5)
@@ -98,33 +99,23 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, loggerFactory)
 
-        val (address, privateKey) = bitcoincli.getNewAddress()
+        val address = bitcoincli.getNewAddress()
+        val addressScript = Script.write(addressToPublicKeyScript(Chain.Regtest.chainHash, address).right!!).byteVector()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
         // find the output for the address we generated and create a tx that spends it
         val pos = tx.txOut.indexOfFirst {
-            it.publicKeyScript == Script.write(Script.pay2wpkh(privateKey.publicKey())).byteVector()
+            it.publicKeyScript == addressScript
         }
         assertTrue(pos != -1)
 
         val tmp = Transaction(
             version = 2,
             txIn = listOf(TxIn(OutPoint(tx, pos.toLong()), signatureScript = emptyList(), sequence = TxIn.SEQUENCE_FINAL)),
-            txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = Script.pay2wpkh(privateKey.publicKey()))),
+            txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = addressScript)),
             lockTime = 0
         )
-
-        val sig = Transaction.signInput(
-            tmp,
-            0,
-            Script.pay2pkh(privateKey.publicKey()),
-            SIGHASH_ALL,
-            tx.txOut[pos].amount,
-            SigVersion.SIGVERSION_WITNESS_V0,
-            privateKey
-        ).byteVector()
-
-        val spendingTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
+        val spendingTx = bitcoincli.signTransaction(tmp)
         Transaction.correctlySpends(spendingTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val listener = watcher.openWatchNotificationsFlow()
@@ -155,33 +146,23 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val client = ElectrumClient(this, loggerFactory)
         val watcher = ElectrumWatcher(client, this, loggerFactory)
 
-        val (address, privateKey) = bitcoincli.getNewAddress()
+        val address = bitcoincli.getNewAddress()
+        val addressScript = Script.write(addressToPublicKeyScript(Chain.Regtest.chainHash, address).right!!).byteVector()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
         // find the output for the address we generated and create a tx that spends it
         val pos = tx.txOut.indexOfFirst {
-            it.publicKeyScript == Script.write(Script.pay2wpkh(privateKey.publicKey())).byteVector()
+            it.publicKeyScript == addressScript
         }
         assertTrue(pos != -1)
 
         val tmp = Transaction(
             version = 2,
             txIn = listOf(TxIn(OutPoint(tx, pos.toLong()), signatureScript = emptyList(), sequence = TxIn.SEQUENCE_FINAL)),
-            txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = Script.pay2wpkh(privateKey.publicKey()))),
+            txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = addressScript)),
             lockTime = 0
         )
-
-        val sig = Transaction.signInput(
-            tmp,
-            0,
-            Script.pay2pkh(privateKey.publicKey()),
-            SIGHASH_ALL,
-            tx.txOut[pos].amount,
-            SigVersion.SIGVERSION_WITNESS_V0,
-            privateKey
-        ).byteVector()
-
-        val spendingTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
+        val spendingTx = bitcoincli.signTransaction(tmp)
         Transaction.correctlySpends(spendingTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
         val listener = watcher.openWatchNotificationsFlow()
@@ -214,12 +195,13 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, loggerFactory)
 
-        val (address, privateKey) = bitcoincli.getNewAddress()
+        val address = bitcoincli.getNewAddress()
+        val addressScript = Script.write(addressToPublicKeyScript(Chain.Regtest.chainHash, address).right!!).byteVector()
         val tx = bitcoincli.sendToAddress(address, 1.0)
 
         // find the output for the address we generated and create a tx that spends it
         val pos = tx.txOut.indexOfFirst {
-            it.publicKeyScript == Script.write(Script.pay2wpkh(privateKey.publicKey())).byteVector()
+            it.publicKeyScript == addressScript
         }
         assertTrue(pos != -1)
 
@@ -227,20 +209,10 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             val tmp = Transaction(
                 version = 2,
                 txIn = listOf(TxIn(OutPoint(tx, pos.toLong()), signatureScript = emptyList(), sequence = TxIn.SEQUENCE_FINAL)),
-                txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = Script.pay2wpkh(privateKey.publicKey()))),
+                txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = addressScript)),
                 lockTime = 0
             )
-
-            val sig = Transaction.signInput(
-                tmp,
-                0,
-                Script.pay2pkh(privateKey.publicKey()),
-                SIGHASH_ALL,
-                tx.txOut[pos].amount,
-                SigVersion.SIGVERSION_WITNESS_V0,
-                privateKey
-            ).byteVector()
-            val signedTx = tmp.updateWitness(0, ScriptWitness(listOf(sig, privateKey.publicKey().value)))
+            val signedTx = bitcoincli.signTransaction(tmp)
             Transaction.correctlySpends(signedTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             signedTx
         }
@@ -300,14 +272,15 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         val initialBlockCount = bitcoincli.getBlockCount() // 150
         awaitForBlockCount(0)
 
-        val (_, privateKey) = bitcoincli.getNewAddress()
+        val address = bitcoincli.getNewAddress()
+        val addressScript = Script.write(addressToPublicKeyScript(Chain.Regtest.chainHash, address).right!!).byteVector()
 
         // tx1 has an absolute delay but no relative delay
         val fundTx = bitcoincli.fundTransaction(
             Transaction(
                 version = 2,
                 txIn = listOf(),
-                txOut = listOf(TxOut(150000.sat, Script.pay2wpkh(privateKey.publicKey()))),
+                txOut = listOf(TxOut(150000.sat, addressScript)),
                 lockTime = (initialBlockCount + 5).toLong()
             ), true, 250.sat
         )
@@ -326,13 +299,13 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         checkIfExistsInMempool(tx1)
 
         // tx2 has a relative delay but no absolute delay
-        val tx2 = bitcoincli.createSpendP2WPKH(
-            parentTx = tx1,
-            privateKey = privateKey,
-            to = privateKey.publicKey(),
-            fee = 10000.sat,
-            sequence = 2,
-            lockTime = 0
+        val tx2 = bitcoincli.signTransaction(
+            Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(tx1, tx1.txOut.indexOfFirst { it.publicKeyScript == addressScript }.toLong()), sequence = 2)),
+                txOut = listOf(TxOut(150000.sat - 10000.sat, addressToPublicKeyScript(Chain.Regtest.chainHash, address).right!!)),
+                lockTime = 0
+            )
         )
 
         watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx1, 1, WatchConfirmed.ChannelFundingDepthOk))
@@ -350,13 +323,13 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         checkIfExistsInMempool(tx2)
 
         // tx3 has both relative and absolute delays
-        val tx3 = bitcoincli.createSpendP2WPKH(
-            parentTx = tx2,
-            privateKey = privateKey,
-            to = privateKey.publicKey(),
-            10000.sat,
-            sequence = 1,
-            lockTime = (bitcoincli.getBlockCount() + 5).toLong()
+        val tx3 = bitcoincli.signTransaction(
+            Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(tx2, tx2.txOut.indexOfFirst { it.publicKeyScript == addressScript }.toLong()), sequence = 1)),
+                txOut = listOf(TxOut(150000.sat - 10000.sat - 10000.sat, addressToPublicKeyScript(Chain.Regtest.chainHash, address).right!!)),
+                lockTime = (bitcoincli.getBlockCount() + 5).toLong()
+            )
         )
 
         watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx2, 1, WatchConfirmed.ChannelFundingDepthOk))

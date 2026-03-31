@@ -235,7 +235,7 @@ class JsonRPCResponseDeserializer(val json: Json) : KSerializer<JsonRPCResponse>
         val jsonObject = (decoder as? JsonDecoder)?.decodeJsonElement() as? JsonObject ?: throw SerializationException("Expected JsonObject")
         val error = jsonObject["error"]
         return if (error != null && error is JsonPrimitive && error.isString) {
-            JsonRPCResponse(id = (jsonObject["id"] as? JsonPrimitive)?.intOrNull ?: 0, error = JsonRPCError(code = 0, error.content))
+            JsonRPCResponse(id = (jsonObject["id"] as? JsonPrimitive)?.intOrNull ?: 0, jsonrpc = "2.0", error = JsonRPCError(code = 0, error.content))
         } else {
             json.decodeFromJsonElement(JsonRPCResponse.serializer(), jsonObject)
         }
