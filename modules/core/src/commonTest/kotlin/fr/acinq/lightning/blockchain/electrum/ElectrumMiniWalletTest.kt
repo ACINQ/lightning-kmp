@@ -2,6 +2,7 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.lightning.SwapInParams
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
@@ -9,9 +10,8 @@ import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.drop
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.*
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -375,12 +375,105 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
         client.stop()
     }
 
+    /**
+     * mock-up client that uses data returned by real testnet3 electrum servers for the last 2 tests (and which is valid only for the seed used in these tests)
+     * testnet3 servers are unreliable and caused CI to fail, using
+     */
+    private val myClient = object : IElectrumClient {
+        private val _notifications = MutableSharedFlow<ElectrumSubscriptionResponse>(replay = 0, extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.SUSPEND)
+        override val notifications: Flow<ElectrumSubscriptionResponse> get() = _notifications.asSharedFlow()
+
+        private val _connectionStatus = MutableStateFlow<ElectrumConnectionStatus>(ElectrumConnectionStatus.Connected(
+            version = ServerVersionResponse("test client", "1.5"),
+            height = 4896105,
+            header = BlockHeader(version=536870912, hashPreviousBlock= BlockHash("cce736cf28346ad0a8f3be5ae6f4237c452e57f3ddd19cf3beac520100000000"), hashMerkleRoot= ByteVector32("9e5a1031cb1882c028d5a33ab4f69a999e046772445426851e4b67536f47cbbf"), time=1774542563, bits=486604799, nonce=3612030529)
+        ))
+        override val connectionStatus: StateFlow<ElectrumConnectionStatus> get() = _connectionStatus.asStateFlow()
+
+        override suspend fun getTx(txId: TxId): Transaction? {
+            val map = mapOf(
+                TxId("b80732530b4dee674cef70f8cced56f4054e9fcbc93fd4a991ee21610ab0d944") to Transaction.read("020000000001016220615638f0bf92547ed12ffcdd76770b78c383eb1cb26e9c359b44926196770000000000fdffffff0200bfd7020000000022002014b08e946a07e142fe0560fcfab833b8191658ad375356ba75c6d17ba939a6ba1027000000000000225120073de725bcb32769e273276b7bc651c81e6ebaec92417f347aab47336137513d040047304402204e5f13e2162e54980001abd07ea2d4eb2b09ed1f1b17a976ab8305df38faabc002204a4913860c480fa43e88fc173b1614843dd938db6c67495a033ada2bda8d64b501473044022019f8294c46c2fe094a5102910bb8ac8fc66fc00fc53ab8aa397dda82b788ec79022072fb86d24b25a2a8df53e464ceb3637ec346efb26b77e6f146480f59b9a4f8970147522102341099e2740144b51e92cc7cd40df1ab58340e92ed431b8021c0c018e25432f821031d9ced8d828c234174740824b8adf55b0d42255003c84f12abd5fa0338ee5ede52ae3dac4600"),
+                TxId("95b51ef3fad8788bb01f12c3aba2ae292a379a5323509b09568b9d129f44ed0e") to Transaction.read("0200000000010144d9b00a6121ee91a9d43fc9cb9f4e05f456edccf870ef4c67ee4d0b533207b80000000000fdffffff02f82a000000000000225120073de725bcb32769e273276b7bc651c81e6ebaec92417f347aab47336137513d4593d70200000000220020b09e4146fc3fc79cbd2f7154b65f9e78d272436754f6cb688e047563f1e2476c0400483045022100f788b4da889371df4c9aa3dd058cf643f7f167a7f12ffc5ec8cfd284d1332422022005cac09b8d2bb71496dd9772d6c274bee8c4dea107021168bba6d8aa43e21d3f0147304402205efaa3760647e2cf093968e6d69339f09443755e2abfaaf881f6a2dbc5fbd1e402202432f01236814fa473d58bf0bec172de36db1f6dac6fe99b1fda24371b728baa01475221036e0e9d5555a8b59c523335ff273a67f1309f423339d78a71fa06aa31d31395d521038028e2de359e9af37f6a5f488dfb4b750a98816c46471e231c886fd3b6e8f1f752ae3dac4600"),
+                TxId("15a0c277b971a0d6127639f8f83e1253a5e6c8b5d82b2a9fcafdd9ba2076b08b") to Transaction.read("020000000001010eed449f129d8b56099b5023539a372a29aea2abc3121fb08b78d8faf31eb5950100000000fdffffff02a263d7020000000022002082d4c2a879c33394a6f2a20afa617c549bec533e9195a7ccacc934793cda9d9ee02e00000000000022512031bb6c16b94cce1e1e42492dc851c6db88f5dd69a8385db991976812c66b6ee2040047304402204893495b75600bdf79a9820835ce504c1b99e807bf1f0da1b4fa91c1539a311502206448f09e4e505eb970af450ff65060f7bbd653eae8de55e79b03778a67d66f6c014730440220176c7761be9b1a61b70304a2d981b062fe1225be0b2f3fea257be21ec1bf7c7e02200b37fe6af57fc73139594918ed65095aede806678d0a780cee78fdc4a31b3895014752210350d8824915cd7e8610022e24efefa77656cdefab79f0faddcee3bba7b51cbd0621039d3af88950c389a9ba0ccb9b7b3a9bf9a8a4fa9f152a90fc30b254a9736a8c4852ae3dac4600")
+            )
+            return map[txId]
+        }
+
+        override suspend fun getHeader(blockHeight: Int): BlockHeader? {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun getHeaders(startHeight: Int, count: Int): List<BlockHeader> {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun getMerkle(txId: TxId, blockHeight: Int, contextOpt: Transaction?): GetMerkleResponse? {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun getScriptHashHistory(scriptHash: ByteVector32): List<TransactionHistoryItem> {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun getScriptHashUnspents(scriptHash: ByteVector32): List<UnspentItem> {
+            val map = mapOf<ByteVector32, List<UnspentItem>>(
+                ByteVector32("ecc39a8fde5bb83b874322ec90ddb6a801f8a3c995e1c6cee43fce09bedce51b") to listOf(
+                    UnspentItem(
+                        txid = TxId("b80732530b4dee674cef70f8cced56f4054e9fcbc93fd4a991ee21610ab0d944"),
+                        outputIndex = 1,
+                        value = 10000,
+                        blockHeight = 4631616
+                    ), UnspentItem(txid = TxId("95b51ef3fad8788bb01f12c3aba2ae292a379a5323509b09568b9d129f44ed0e"), outputIndex = 0, value = 11000, blockHeight = 4631616)
+                ),
+                ByteVector32("3bf2234b2d4ed1d73125059b3894633984838631672c1457672712a131e2daf0") to listOf(
+                    UnspentItem(
+                        txid = TxId("15a0c277b971a0d6127639f8f83e1253a5e6c8b5d82b2a9fcafdd9ba2076b08b"),
+                        outputIndex = 1,
+                        value = 12000,
+                        blockHeight = 4631616
+                    )
+                ),
+                ByteVector32("ecc39a8fde5bb83b874322ec90ddb6a801f8a3c995e1c6cee43fce09bedce51b") to listOf(
+                    UnspentItem(
+                        txid = TxId("b80732530b4dee674cef70f8cced56f4054e9fcbc93fd4a991ee21610ab0d944"),
+                        outputIndex = 1,
+                        value = 10000,
+                        blockHeight = 4631616
+                    ), UnspentItem(txid = TxId("95b51ef3fad8788bb01f12c3aba2ae292a379a5323509b09568b9d129f44ed0e"), outputIndex = 0, value = 11000, blockHeight = 4631616)
+                ),
+
+                )
+            return map[scriptHash]!!
+        }
+
+        override suspend fun broadcastTransaction(tx: Transaction): TxId {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun estimateFees(confirmations: Int): FeeratePerKw? {
+            TODO("Not yet implemented")
+        }
+
+        override suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse {
+            val map = mapOf(
+                ByteVector32("ecc39a8fde5bb83b874322ec90ddb6a801f8a3c995e1c6cee43fce09bedce51b") to ScriptHashSubscriptionResponse(scriptHash = scriptHash, status = "ce12f8bd5ee8d5245e2e6f2353df3df5aef5ebcf33e4fb70d68c33414c671d21"),
+                ByteVector32("ed0a456a7a5105f80506aed405b5688bcdb035446f9ca17788e89df471f198a5") to ScriptHashSubscriptionResponse(scriptHash = scriptHash, status = null),
+                ByteVector32("3bf2234b2d4ed1d73125059b3894633984838631672c1457672712a131e2daf0") to ScriptHashSubscriptionResponse(scriptHash = scriptHash, status = "f58bd3b3bc9c5095e5bc7b00ef984bd69bdbb906e23d132c91568d19c6ca6421"),
+                ByteVector32("cd0387a875136c754253c19eb66308770a328cb6fb7acfc8eadf0e46c76e6e6e") to ScriptHashSubscriptionResponse(scriptHash = scriptHash, status = null)
+            )
+            return map[scriptHash]!!
+        }
+
+        override suspend fun startHeaderSubscription(): HeaderSubscriptionResponse {
+            TODO("Not yet implemented")
+        }
+    }
+
     @OptIn(FlowPreview::class)
     @Test
     fun `derived addresses with gaps`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToTestnet3Server()
         val chain = Chain.Testnet3
-        val wallet = ElectrumMiniWallet(chain.chainHash, client, this, logger)
+        val wallet = ElectrumMiniWallet(chain.chainHash, myClient, this, logger)
 
         val mnemonics = "bullet umbrella fringe token whip negative menu drill solid keep vacuum prepare".split(" ")
         val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), chain, TestConstants.aliceSwapInServerXpub)
@@ -400,9 +493,8 @@ class ElectrumMiniWalletTest : LightningTestSuite() {
     @OptIn(FlowPreview::class)
     @Test
     fun `derived addresses with gaps and no look-ahead`() = runSuspendTest(timeout = 15.seconds) {
-        val client = connectToTestnet3Server()
         val chain = Chain.Testnet3
-        val wallet = ElectrumMiniWallet(chain.chainHash, client, this, logger, lookAhead = 1u)
+        val wallet = ElectrumMiniWallet(chain.chainHash, myClient, this, logger, lookAhead = 1u)
 
         val mnemonics = "bullet umbrella fringe token whip negative menu drill solid keep vacuum prepare".split(" ")
         val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), chain, TestConstants.aliceSwapInServerXpub)
