@@ -303,7 +303,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             Transaction(
                 version = 2,
                 txIn = listOf(TxIn(OutPoint(tx1, tx1.txOut.indexOfFirst { it.publicKeyScript == addressScript }.toLong()), sequence = 2)),
-                txOut = listOf(TxOut(150000.sat - 10000.sat, addressToPublicKeyScript(Chain.Regtest.chainHash, address).right!!)),
+                txOut = listOf(TxOut(150000.sat - 10000.sat, addressScript)),
                 lockTime = 0
             )
         )
@@ -327,7 +327,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
             Transaction(
                 version = 2,
                 txIn = listOf(TxIn(OutPoint(tx2, tx2.txOut.indexOfFirst { it.publicKeyScript == addressScript }.toLong()), sequence = 1)),
-                txOut = listOf(TxOut(150000.sat - 10000.sat - 10000.sat, addressToPublicKeyScript(Chain.Regtest.chainHash, address).right!!)),
+                txOut = listOf(TxOut(150000.sat - 10000.sat - 10000.sat, addressScript)),
                 lockTime = (bitcoincli.getBlockCount() + 5).toLong()
             )
         )
