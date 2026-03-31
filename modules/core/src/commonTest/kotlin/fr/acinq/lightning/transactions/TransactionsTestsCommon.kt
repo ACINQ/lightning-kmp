@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.Script.pay2wpkh
 import fr.acinq.bitcoin.Script.write
+import fr.acinq.bitcoin.Transaction.Companion.encodeWitnessEcdsaSig
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.CltvExpiry
@@ -475,7 +476,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
     fun `swap-in input weight`() {
         val pubkey = randomKey().publicKey()
         // DER-encoded ECDSA signatures usually take up to 72 bytes.
-        val sig = ByteVector64.fromValidHex("90b658d172a51f1b3f1a2becd30942397f5df97da8cd2c026854607e955ad815ccfd87d366e348acc32aaf15ff45263aebbb7ecc913a0e5999133f447aee828c")
+        val sig = ByteVector64.fromValidHex("ef75b6a03c9b4b57ac1d94d09d8bd8798a9967d8d06ef1129a8436cdb1993c4b7872409ec42abb1174c5e29e32690ae8b6ede29fb1b07f1dbb1bbf92b63f26d2")
         val tx = Transaction(2, listOf(TxIn(OutPoint(TxId(ByteVector32.Zeroes), 2), 0)), listOf(TxOut(50_000.sat, pay2wpkh(pubkey))), 0)
         val swapInProtocol = SwapInProtocolLegacy(pubkey, pubkey, 144)
         val witness = swapInProtocol.witness(sig, sig)
@@ -504,7 +505,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
         val changeOutput = TxOut(150_000.sat, pay2wpkh(randomKey().publicKey()))
 
         fun createSignedWalletInput(): TxIn {
-            val witness = Script.witnessPay2wpkh(randomKey().publicKey(), Scripts.der(randomBytes64(), SigHash.SIGHASH_ALL))
+            val witness = Script.witnessPay2wpkh(randomKey().publicKey(), encodeWitnessEcdsaSig(randomBytes64(), SigHash.SIGHASH_ALL).byteVector())
             return TxIn(OutPoint(TxId(randomBytes32()), 3), ByteVector.empty, 0, witness)
         }
 

@@ -1,6 +1,7 @@
 package fr.acinq.lightning.transactions
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Transaction.Companion.encodeWitnessEcdsaSig
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.crypto.musig2.Musig2
 import fr.acinq.bitcoin.crypto.musig2.SecretNonce
@@ -102,22 +103,20 @@ data class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKe
     fun address(chain: Chain): String = Bitcoin.addressFromPublicKeyScript(chain.chainHash, pubkeyScript).right!!
 
     fun witness(userSig: ByteVector64, serverSig: ByteVector64): ScriptWitness {
-        return ScriptWitness(listOf(Scripts.der(serverSig, SigHash.SIGHASH_ALL), Scripts.der(userSig, SigHash.SIGHASH_ALL), Script.write(redeemScript).byteVector()))
+        return ScriptWitness(listOf(encodeWitnessEcdsaSig(serverSig, SigHash.SIGHASH_ALL).byteVector(), encodeWitnessEcdsaSig(userSig, SigHash.SIGHASH_ALL).byteVector(), Script.write(redeemScript).byteVector()))
     }
 
     fun witnessRefund(userSig: ByteVector64): ScriptWitness {
-        return ScriptWitness(listOf(ByteVector.empty, Scripts.der(userSig, SigHash.SIGHASH_ALL), Script.write(redeemScript).byteVector()))
+        return ScriptWitness(listOf(ByteVector.empty, encodeWitnessEcdsaSig(userSig, SigHash.SIGHASH_ALL).byteVector(), Script.write(redeemScript).byteVector()))
     }
 
     fun signSwapInputUser(fundingTx: Transaction, index: Int, parentTxOut: TxOut, userKey: PrivateKey): ByteVector64 {
         require(userKey.publicKey() == userPublicKey) { "user private key does not match expected public key: are you using the refund key instead of the user key?" }
-        val sigDER = fundingTx.signInput(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, userKey)
-        return Crypto.der2compact(sigDER)
+        return fundingTx.signInputCompact(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, userKey)
     }
 
     fun signSwapInputServer(fundingTx: Transaction, index: Int, parentTxOut: TxOut, serverKey: PrivateKey): ByteVector64 {
-        val sigDER = fundingTx.signInput(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, serverKey)
-        return Crypto.der2compact(sigDER)
+        return fundingTx.signInputCompact(index, redeemScript, SigHash.SIGHASH_ALL, parentTxOut.amount, SigVersion.SIGVERSION_WITNESS_V0, serverKey)
     }
 
     companion object {
