@@ -23,7 +23,7 @@ function btc_create {
         -p 18444:18444 \
         -p 29000:29000 \
         -p 29001:29001 \
-        ruimarinho/bitcoin-core:0.20.1 \
+        bitcoin/bitcoin:29.1 \
         -printtoconsole \
         -regtest=1 \
         -server=1 \
@@ -38,6 +38,7 @@ function btc_create {
 
     docker start bitcoind
     sleep 2
+    docker exec bitcoind bitcoin-cli -regtest -rpcuser=foo -rpcpassword=bar -named createwallet wallet_name=descwallet descriptors=true load_on_startup=true
     $basedir/gen-blocks.sh 150
     docker stop -t 2 bitcoind
 }

@@ -21,7 +21,7 @@ object BitcoinJsonRPCClient {
     private const val ssl: Boolean = false
 
     private val scheme = if (ssl) "https" else "http"
-    private val serviceUri = "$scheme://$host:$port/wallet/" // wallet/ specifies to use the default bitcoind wallet, named ""
+    private val serviceUri = "$scheme://$host:$port/"
 
     private val httpClient = HttpClient {
         install(ContentNegotiation) {

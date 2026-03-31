@@ -14,10 +14,9 @@ object BitcoindService {
     suspend fun getBlockCount(): Int = client.sendRequest<GetBlockCountResponse>(GetBlockCount).blockcount
     suspend fun getRawMempool(): List<String> = client.sendRequest<GetRawMempoolResponse>(GetRawMempool).txids
 
-    suspend fun getNewAddress(): Pair<String, PrivateKey> {
+    suspend fun getNewAddress(): String {
         val response: GetNewAddressResponse = client.sendRequest(GetNewAddress)
-        val privateKey = getPrivateKey(response.address)
-        return response.address to privateKey
+        return response.address
     }
 
     suspend fun getPrivateKey(address: String): PrivateKey {
@@ -32,7 +31,7 @@ object BitcoindService {
     }
 
     suspend fun generateBlocks(blockCount: Int) {
-        val (address, _) = getNewAddress()
+        val address = getNewAddress()
         val response: GenerateToAddressResponse = client.sendRequest(GenerateToAddress(blockCount, address))
         check(blockCount == response.blocks.size)
     }

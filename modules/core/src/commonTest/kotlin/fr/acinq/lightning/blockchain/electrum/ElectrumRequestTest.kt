@@ -80,7 +80,7 @@ class ElectrumRequestTest : LightningTestSuite() {
             appendLine()
         }
         val response = json.decodeFromString(ElectrumResponseDeserializer, jsonRpc)
-        assertEquals(Either.Right(JsonRPCResponse(null, JsonNull, JsonRPCError(-32700, "messages must be encoded in UTF-8"))), response)
+        assertEquals(Either.Right(JsonRPCResponse("2.0", null, JsonNull, JsonRPCError(-32700, "messages must be encoded in UTF-8"))), response)
     }
 
     @Test
@@ -98,6 +98,6 @@ class ElectrumRequestTest : LightningTestSuite() {
             appendLine()
         }
         val response = json.decodeFromString(ElectrumResponseDeserializer, jsonRpc)
-        assertEquals(Either.Right(JsonRPCResponse(4, JsonNull, JsonRPCError(0, """sendrawtransaction RPC error: {"code":-27,"message":"Transaction already in block chain"}"""))), response)
+        assertEquals(Either.Right(JsonRPCResponse("2.0", 4, JsonNull, JsonRPCError(0, """sendrawtransaction RPC error: {"code":-27,"message":"Transaction already in block chain"}"""))), response)
     }
 }
