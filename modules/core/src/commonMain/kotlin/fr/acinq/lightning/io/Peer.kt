@@ -1251,8 +1251,11 @@ class Peer(
                         }
                     }
                     is Ping -> {
-                        val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
-                        peerConnection?.send(pong)
+                        // BOLT1: reply only if requested pong length is acceptable, otherwise silently ignore
+                        if (msg.pongLength <= 65532) {
+                            val pong = Pong(ByteVector(ByteArray(msg.pongLength)))
+                            peerConnection?.send(pong)
+                        }
                     }
                     is Pong -> {
                         logger.debug { "received pong" }
