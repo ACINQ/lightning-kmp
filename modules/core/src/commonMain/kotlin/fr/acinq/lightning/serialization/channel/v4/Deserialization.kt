@@ -286,7 +286,7 @@ object Deserialization {
             closeCommand,
             localCloseeNonce = null,
             remoteCloseeNonce = null,
-            localCloserNonces = null
+            localClosingComplete = null
         )
     }
 
@@ -306,7 +306,7 @@ object Deserialization {
         closeCommand = readNullable { readCloseCommand() },
         localCloseeNonce = null,
         remoteCloseeNonce = null,
-        localCloserNonces = null
+        localClosingComplete = null
     )
 
     private fun Input.readClosing(): Closing = Closing(

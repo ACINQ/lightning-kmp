@@ -217,6 +217,9 @@ object JsonSerializers {
                 subclass(UpdateAddHtlcTlv.PathKey::class, UpdateAddHtlcTlvPathKeySerializer)
                 subclass(ShutdownTlv.ShutdownNonce::class, ShutdownTlvShutdownNonceSerializer)
                 subclass(ChannelReestablishTlv.NextLocalNonces::class, ChannelReestablishTlvNextLocalNoncesSerializer)
+                subclass(ClosingCompleteTlv.CloserAndCloseeOutputsPartialSignature::class, ClosingCompleteTlvCloserAndCloseeOutputsPartialSignatureSerializer)
+                subclass(ClosingCompleteTlv.CloserOutputOnlyPartialSignature::class, ClosingCompleteTlvCloserOutputOnlyPartialSignatureSerializer)
+                subclass(ClosingCompleteTlv.CloseeOutputOnlyPartialSignature::class, ClosingCompleteTlvCloseeOutputOnlyPartialSignatureSerializer)
             }
             contextual(Bolt11InvoiceSerializer)
             contextual(OfferSerializer)
@@ -574,6 +577,15 @@ object JsonSerializers {
 
     @Serializer(forClass = ClosingCompleteTlv::class)
     object ClosingCompleteTlvSerializer
+
+    @Serializer(forClass = ClosingCompleteTlv.CloserAndCloseeOutputsPartialSignature::class)
+    object ClosingCompleteTlvCloserAndCloseeOutputsPartialSignatureSerializer
+
+    @Serializer(forClass = ClosingCompleteTlv.CloserOutputOnlyPartialSignature::class)
+    object ClosingCompleteTlvCloserOutputOnlyPartialSignatureSerializer
+
+    @Serializer(forClass = ClosingCompleteTlv.CloseeOutputOnlyPartialSignature::class)
+    object ClosingCompleteTlvCloseeOutputOnlyPartialSignatureSerializer
 
     @Serializer(forClass = ClosingSigTlv::class)
     object ClosingSigTlvSerializer

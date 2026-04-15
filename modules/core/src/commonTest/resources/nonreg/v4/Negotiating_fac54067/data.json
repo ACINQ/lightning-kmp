@@ -220,5 +220,5 @@
     },
     "localCloseeNonce": null,
     "remoteCloseeNonce": null,
-    "localCloserNonces": null
+    "localClosingComplete": null
 }

@@ -289,7 +289,7 @@ object Helpers {
             feerate: FeeratePerKw,
             lockTime: Long,
             remoteNonce: IndividualNonce?
-        ): Either<ChannelException, Triple<Transactions.ClosingTxs, ClosingComplete, Transactions.CloserNonces>> {
+        ): Either<ChannelException, Pair<Transactions.ClosingTxs, ClosingComplete>> {
             val commitInput = commitment.commitInput(channelKeys)
             // We must convert the feerate to a fee: we must build dummy transactions to compute their weight.
             val closingFee = run {
@@ -343,7 +343,7 @@ object Helpers {
                 }
             }
             val closingComplete = ClosingComplete(commitment.channelId, localScriptPubkey, remoteScriptPubkey, closingFee.fee, lockTime, tlvs)
-            return Either.Right(Triple(closingTxs, closingComplete, localNonces))
+            return Either.Right(Pair(closingTxs, closingComplete))
         }
 
         /**
@@ -389,6 +389,9 @@ object Helpers {
                         else -> {
                             val (closingTx, remoteSig, sigToTlv) = preferred
                             val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
+                            if (!closingTx.checkRemotePartialSignature(localFundingKey.publicKey(), commitment.remoteFundingPubkey, remoteSig, localNonce.publicNonce)) {
+                                return Either.Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
+                            }
                             val localSig = closingTx.partialSign(localFundingKey, commitment.remoteFundingPubkey, mapOf(), localNonce, listOf(localNonce.publicNonce, remoteSig.nonce)).right
                             val signedTx = localSig?.let { closingTx.aggregateSigs(localFundingKey.publicKey(), commitment.remoteFundingPubkey, it, remoteSig, mapOf()).right }
                             if (localSig == null || signedTx == null) {
@@ -451,7 +454,7 @@ object Helpers {
             commitment: FullCommitment,
             closingTxs: Transactions.ClosingTxs,
             closingSig: ClosingSig,
-            localNonces: Transactions.CloserNonces?,
+            localCosingComplete: ClosingComplete?,
             remoteNonce: IndividualNonce?
         ): Either<ChannelException, Transactions.ClosingTx> {
             val closingTxsWithSig = listOfNotNull(
@@ -479,16 +482,18 @@ object Helpers {
                             }
                         }
                         is ChannelSpendSignature.PartialSignatureWithNonce -> {
-                            val localNonce = when {
-                                localNonces == null -> return Either.Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
-                                closingTx.tx.txOut.size == 2 -> localNonces.localAndRemote
-                                closingTx.toLocalOutput != null -> localNonces.localOnly
-                                else -> localNonces.remoteOnly
+                            val localSig = when {
+                                localCosingComplete == null -> null
+                                closingTx.tx.txOut.size == 2 -> localCosingComplete.closerAndCloseeOutputsPartialSig
+                                closingTx.toLocalOutput != null -> localCosingComplete.closerOutputOnlyPartialSig
+                                else -> localCosingComplete.closeeOutputOnlyPartialSig
                             }
-                            val signedClosingTx = closingTx.partialSign(localFundingKey, commitment.remoteFundingPubkey, mapOf(), localNonce, listOf(localNonce.publicNonce, remoteSig.nonce))
-                                .flatMap { closingTx.aggregateSigs(localFundingKey.publicKey(), commitment.remoteFundingPubkey, it, remoteSig, mapOf()) }
-                                .map { closingTx.copy(tx = it) }
+                            if (localSig == null) return Either.Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
+
+                            val signedClosingTx = closingTx.aggregateSigs(localFundingKey.publicKey(), commitment.remoteFundingPubkey, localSig, remoteSig, mapOf())
+                                .map { closingTx.copy(tx = it)  }
                                 .right ?: return Either.Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
+
                             if (!signedClosingTx.validate(mapOf())) {
                                 Either.Left(InvalidCloseSignature(commitment.channelId, signedClosingTx.tx.txid))
                             } else {
