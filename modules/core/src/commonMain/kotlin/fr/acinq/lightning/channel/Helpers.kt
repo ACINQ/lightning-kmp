@@ -4,7 +4,6 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
-import fr.acinq.bitcoin.utils.flatMap
 import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.MilliSatoshi
@@ -313,7 +312,6 @@ object Helpers {
                 return Either.Left(CannotGenerateClosingTx(commitment.channelId))
             }
             val localFundingKey = channelKeys.fundingKey(commitment.fundingTxIndex)
-            val localNonces = Transactions.CloserNonces.generate(localFundingKey.publicKey(), commitment.remoteFundingPubkey, commitment.fundingTxId)
             val tlvs = when (commitment.commitmentFormat) {
                 Transactions.CommitmentFormat.AnchorOutputs -> TlvStream(
                     setOfNotNull(
@@ -328,15 +326,16 @@ object Helpers {
                         // If we cannot create our partial signature for one of our closing txs, we just skip it.
                         // It will only happen if our peer sent an invalid nonce, in which case we cannot do anything anyway
                         // apart from eventually force-closing.
-                        fun localSig(tx: Transactions.ClosingTx, localNonce: Transactions.LocalNonce): ChannelSpendSignature.PartialSignatureWithNonce? {
+                        fun localSig(tx: Transactions.ClosingTx): ChannelSpendSignature.PartialSignatureWithNonce? {
+                            val localNonce = NonceGenerator.signingNonce(localFundingKey.publicKey(), commitment.remoteFundingPubkey, commitment.fundingTxId)
                             return tx.partialSign(localFundingKey, commitment.remoteFundingPubkey, mapOf(), localNonce, listOf(localNonce.publicNonce, remoteNonce)).right
                         }
 
                         TlvStream(
                             setOfNotNull(
-                                closingTxs.localAndRemote?.let { tx -> localSig(tx, localNonces.localAndRemote)?.let { ClosingCompleteTlv.CloserAndCloseeOutputsPartialSignature(it) } },
-                                closingTxs.localOnly?.let { tx -> localSig(tx, localNonces.localOnly)?.let { ClosingCompleteTlv.CloserOutputOnlyPartialSignature(it) } },
-                                closingTxs.remoteOnly?.let { tx -> localSig(tx, localNonces.remoteOnly)?.let { ClosingCompleteTlv.CloseeOutputOnlyPartialSignature(it) } }
+                                closingTxs.localAndRemote?.let { tx -> localSig(tx)?.let { ClosingCompleteTlv.CloserAndCloseeOutputsPartialSignature(it) } },
+                                closingTxs.localOnly?.let { tx -> localSig(tx)?.let { ClosingCompleteTlv.CloserOutputOnlyPartialSignature(it) } },
+                                closingTxs.remoteOnly?.let { tx -> localSig(tx)?.let { ClosingCompleteTlv.CloseeOutputOnlyPartialSignature(it) } }
                             )
                         )
                     }
@@ -454,7 +453,7 @@ object Helpers {
             commitment: FullCommitment,
             closingTxs: Transactions.ClosingTxs,
             closingSig: ClosingSig,
-            localCosingComplete: ClosingComplete?,
+            localClosingComplete: ClosingComplete?,
             remoteNonce: IndividualNonce?
         ): Either<ChannelException, Transactions.ClosingTx> {
             val closingTxsWithSig = listOfNotNull(
@@ -483,10 +482,10 @@ object Helpers {
                         }
                         is ChannelSpendSignature.PartialSignatureWithNonce -> {
                             val localSig = when {
-                                localCosingComplete == null -> null
-                                closingTx.tx.txOut.size == 2 -> localCosingComplete.closerAndCloseeOutputsPartialSig
-                                closingTx.toLocalOutput != null -> localCosingComplete.closerOutputOnlyPartialSig
-                                else -> localCosingComplete.closeeOutputOnlyPartialSig
+                                localClosingComplete == null -> null
+                                closingTx.tx.txOut.size == 2 -> localClosingComplete.closerAndCloseeOutputsPartialSig
+                                closingTx.toLocalOutput != null -> localClosingComplete.closerOutputOnlyPartialSig
+                                else -> localClosingComplete.closeeOutputOnlyPartialSig
                             }
                             if (localSig == null) return Either.Left(InvalidCloseSignature(commitment.channelId, closingTx.tx.txid))
 

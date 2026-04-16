@@ -26,7 +26,6 @@
     JsonSerializers.IndividualNonceSerializer::class,
     JsonSerializers.PartialSignatureWithNonceSerializer::class,
     JsonSerializers.LocalNonceSerializer::class,
-    JsonSerializers.CloserNoncesSerializer::class,
     JsonSerializers.TxIdSerializer::class,
     JsonSerializers.KeyPathSerializer::class,
     JsonSerializers.SatoshiSerializer::class,
@@ -380,9 +379,6 @@ object JsonSerializers {
         },
         delegateSerializer = RemoteFundingStatusSurrogate.serializer()
     )
-
-    @Serializer(forClass = Transactions.CloserNonces::class)
-    object CloserNoncesSerializer
 
     @Serializer(forClass = Transactions.ClosingTx::class)
     object ClosingTxSerializer
