@@ -257,7 +257,7 @@ data class Normal(
                                         closeCommand,
                                         localCloseeNonce,
                                         remoteShutdown.closeeNonce,
-                                        localCloserNonces = null
+                                        localClosingComplete = null
                                     )
                                 }
                             } else {

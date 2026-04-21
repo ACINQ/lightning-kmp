@@ -1300,20 +1300,6 @@ object Transactions {
         data class PaidByThem(val fee: Satoshi) : ClosingTxFee()
     }
 
-    /**
-     * When sending [fr.acinq.lightning.wire.ClosingComplete], we use a different nonce for each closing transaction we create.
-     * We generate nonces for all variants of the closing transaction for simplicity, even though we never use them all.
-     */
-    data class CloserNonces(val localAndRemote: LocalNonce, val localOnly: LocalNonce, val remoteOnly: LocalNonce) {
-        companion object {
-            fun generate(localFundingKey: PublicKey, remoteFundingKey: PublicKey, fundingTxId: TxId): CloserNonces = CloserNonces(
-                NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
-                NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
-                NonceGenerator.signingNonce(localFundingKey, remoteFundingKey, fundingTxId),
-            )
-        }
-    }
-
     /** Each closing attempt can result in multiple potential closing transactions, depending on which outputs are included. */
     data class ClosingTxs(val localAndRemote: ClosingTx?, val localOnly: ClosingTx?, val remoteOnly: ClosingTx?) {
         val preferred: ClosingTx? = localAndRemote ?: localOnly ?: remoteOnly

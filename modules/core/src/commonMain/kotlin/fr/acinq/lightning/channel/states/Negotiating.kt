@@ -26,7 +26,7 @@ data class Negotiating(
     val closeCommand: ChannelCommand.Close.MutualClose?,
     val localCloseeNonce: Transactions.LocalNonce?,
     val remoteCloseeNonce: IndividualNonce?,
-    val localCloserNonces: Transactions.CloserNonces?,
+    val localClosingComplete: ClosingComplete?,
 ) : ChannelStateWithCommitments() {
     override val remoteNextCommitNonces: Map<TxId, IndividualNonce> = mapOf()
 
@@ -80,7 +80,7 @@ data class Negotiating(
                     }
                 }
                 is ClosingSig -> {
-                    when (val result = Helpers.Closing.receiveClosingSig(channelKeys(), commitments.latest, proposedClosingTxs.last(), cmd.message, localCloserNonces, remoteCloseeNonce)) {
+                    when (val result = Helpers.Closing.receiveClosingSig(channelKeys(), commitments.latest, proposedClosingTxs.last(), cmd.message, localClosingComplete, remoteCloseeNonce)) {
                         is Either.Left -> {
                             logger.warning { "invalid closing_sig: ${result.value.message}" }
                             Pair(this@Negotiating.copy(remoteCloseeNonce = cmd.message.nextCloseeNonce), listOf(ChannelAction.Message.Send(Warning(channelId, result.value.message))))
@@ -156,7 +156,7 @@ data class Negotiating(
                             handleCommandError(cmd, result.value)
                         }
                         is Either.Right -> {
-                            val (closingTxs, closingComplete, localCloserNonces) = result.value
+                            val (closingTxs, closingComplete) = result.value
                             logger.debug { "signing local mutual close transactions: $closingTxs" }
                             // If we never received our peer's closing_sig, the previous command was not completed, so we must complete now.
                             // If it was already completed because we received closing_sig, this will be a no-op.
@@ -165,7 +165,7 @@ data class Negotiating(
                                 closeCommand = cmd,
                                 localScript = closingComplete.closerScriptPubKey,
                                 proposedClosingTxs = proposedClosingTxs + closingTxs,
-                                localCloserNonces = localCloserNonces
+                                localClosingComplete = closingComplete
                             )
                             val actions = buildList {
                                 add(ChannelAction.Storage.StoreState(nextState))
@@ -180,7 +180,7 @@ data class Negotiating(
             is ChannelCommand.Funding -> unhandled(cmd)
             is ChannelCommand.Closing -> unhandled(cmd)
             is ChannelCommand.Connected -> unhandled(cmd)
-            is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating.copy(localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)), listOf())
+            is ChannelCommand.Disconnected -> Pair(Offline(this@Negotiating.copy(localCloseeNonce = null, remoteCloseeNonce = null, localClosingComplete = null)), listOf())
         }
     }
 

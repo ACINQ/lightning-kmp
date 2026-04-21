@@ -165,7 +165,7 @@ data class LNChannel<out S : ChannelState>(
                 else -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null, spliceStatus = SpliceStatus.None)
             }
             is ShuttingDown -> state.copy(remoteNextCommitNonces = mapOf(), localCloseeNonce = null)
-            is Negotiating -> state.copy(localCloseeNonce = null, remoteCloseeNonce = null, localCloserNonces = null)
+            is Negotiating -> state.copy(localCloseeNonce = null, remoteCloseeNonce = null, localClosingComplete = null)
             else -> state
         }
 

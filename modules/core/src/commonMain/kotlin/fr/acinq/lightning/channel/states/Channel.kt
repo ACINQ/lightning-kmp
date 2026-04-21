@@ -484,7 +484,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                     cmd,
                     localCloseeNonce,
                     remoteCloseeNonce,
-                    localCloserNonces = null
+                    localClosingComplete = null
                 )
                 val actions1 = listOf(ChannelAction.Storage.StoreState(nextState))
                 Pair(nextState, actions + actions1)
@@ -504,13 +504,13 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                             cmd,
                             localCloseeNonce,
                             remoteCloseeNonce,
-                            localCloserNonces = null
+                            localClosingComplete = null
                         )
                         val actions1 = listOf(ChannelAction.Storage.StoreState(nextState))
                         Pair(nextState, actions + actions1)
                     }
                     is Either.Right -> {
-                        val (closingTxs, closingComplete, localCloserNonces) = closingResult.value
+                        val (closingTxs, closingComplete) = closingResult.value
                         val nextState =
                             Negotiating(
                                 commitments,
@@ -522,7 +522,7 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
                                 cmd,
                                 localCloseeNonce,
                                 remoteCloseeNonce,
-                                localCloserNonces
+                                closingComplete
                             )
                         val actions1 = listOf(
                             ChannelAction.Storage.StoreState(nextState),

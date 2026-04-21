@@ -131,7 +131,7 @@ object Deserialization {
         publishedClosingTxs = readCollection { readClosingTx() }.toList(),
         waitingSinceBlock = readNumber(),
         closeCommand = readNullable { readCloseCommand() },
-        localCloserNonces = null,
+        localClosingComplete = null,
         remoteCloseeNonce = null,
         localCloseeNonce = null
     )
