@@ -343,30 +343,39 @@ data class Commitment(
     // In that case the current commit tx fee is higher than the initiator fee buffer and will dominate the balance restrictions.
 
     fun availableBalanceForSend(params: ChannelParams, changes: CommitmentChanges): MilliSatoshi {
-        // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
+        // We need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation.
         val remoteCommit1 = nextRemoteCommit ?: remoteCommit
         val reduced = CommitmentSpec.reduce(remoteCommit1.spec, changes.remoteChanges.acked, changes.localChanges.proposed)
         val balanceNoFees = (reduced.toRemote - localChannelReserve(params).toMilliSatoshi()).coerceAtLeast(0.msat)
         return if (params.localParams.paysCommitTxFees) {
             // The initiator always pays the on-chain fees, so we must subtract that from the amount we can send.
             val commitFees = commitTxFeeMsat(remoteCommitParams.dustLimit, reduced, commitmentFormat)
-            // the initiator needs to keep a "initiator fee buffer" (see explanation above)
+            // The initiator needs to keep a "initiator fee buffer" (see explanation above).
             val initiatorFeeBuffer = commitTxFeeMsat(remoteCommitParams.dustLimit, reduced.copy(feerate = reduced.feerate * 2), commitmentFormat) + htlcOutputFee(reduced.feerate * 2, commitmentFormat)
             val amountToReserve = commitFees.coerceAtLeast(initiatorFeeBuffer)
             if (balanceNoFees - amountToReserve < offeredHtlcTrimThreshold(remoteCommitParams.dustLimit, reduced, commitmentFormat).toMilliSatoshi()) {
-                // htlc will be trimmed
+                // The htlc will be trimmed.
                 (balanceNoFees - amountToReserve).coerceAtLeast(0.msat)
             } else {
-                // htlc will have an output in the commitment tx, so there will be additional fees.
+                // The htlc will have an output in the commitment tx, so there will be additional fees.
                 val commitFees1 = commitFees + htlcOutputFee(reduced.feerate, commitmentFormat)
-                // we take the additional fees for that htlc output into account in the fee buffer at a x2 feerate increase
+                // We take the additional fees for that htlc output into account in the fee buffer at a x2 feerate increase.
                 val initiatorFeeBuffer1 = initiatorFeeBuffer + htlcOutputFee(reduced.feerate * 2, commitmentFormat)
                 val amountToReserve1 = commitFees1.coerceAtLeast(initiatorFeeBuffer1)
                 (balanceNoFees - amountToReserve1).coerceAtLeast(0.msat)
             }
         } else {
-            // The non-initiator doesn't pay on-chain fees.
-            balanceNoFees
+            // The non-initiator doesn't pay on-chain fees, but we must still ensure the initiator (remote)
+            // can afford the commit tx fees and channel reserve when a new HTLC is added: otherwise sendAdd
+            // will fail with RemoteCannotAffordFeesForNewHtlc. We assume the worst case (an untrimmed HTLC,
+            // which adds htlcOutputFee to the commit fees).
+            val commitFees = commitTxFeeMsat(remoteCommitParams.dustLimit, reduced, commitmentFormat)
+            val nextHtlcFee = htlcOutputFee(reduced.feerate, commitmentFormat)
+            if (reduced.toLocal - remoteChannelReserve(params).toMilliSatoshi() - commitFees - nextHtlcFee < 0.msat) {
+                0.msat
+            } else {
+                balanceNoFees
+            }
         }
     }
 
@@ -374,21 +383,29 @@ data class Commitment(
         val reduced = CommitmentSpec.reduce(localCommit.spec, changes.localChanges.acked, changes.remoteChanges.proposed)
         val balanceNoFees = (reduced.toRemote - remoteChannelReserve(params).toMilliSatoshi()).coerceAtLeast(0.msat)
         return if (params.localParams.paysCommitTxFees) {
-            // The non-initiator doesn't pay on-chain fees so we don't take those into account when receiving.
-            balanceNoFees
+            // The non-initiator (sender) doesn't pay on-chain fees, but we (the initiator) must still afford
+            // the commit tx fees and channel reserve once a new HTLC is added: otherwise receiveAdd will
+            // fail with CannotAffordFees. We assume the worst case (an untrimmed HTLC).
+            val commitFees = commitTxFeeMsat(localCommitParams.dustLimit, reduced, commitmentFormat)
+            val nextHtlcFee = htlcOutputFee(reduced.feerate, commitmentFormat)
+            if (reduced.toLocal - localChannelReserve(params).toMilliSatoshi() - commitFees - nextHtlcFee < 0.msat) {
+                0.msat
+            } else {
+                balanceNoFees
+            }
         } else {
             // The initiator always pays the on-chain fees, so we must subtract that from the amount we can receive.
             val commitFees = commitTxFeeMsat(localCommitParams.dustLimit, reduced, commitmentFormat)
-            // we expected the initiator to keep a "initiator fee buffer" (see explanation above)
+            // We expected the initiator to keep a "initiator fee buffer" (see explanation above).
             val initiatorFeeBuffer = commitTxFeeMsat(localCommitParams.dustLimit, reduced.copy(feerate = reduced.feerate * 2), commitmentFormat) + htlcOutputFee(reduced.feerate * 2, commitmentFormat)
             val amountToReserve = commitFees.coerceAtLeast(initiatorFeeBuffer)
             if (balanceNoFees - amountToReserve < receivedHtlcTrimThreshold(localCommitParams.dustLimit, reduced, commitmentFormat).toMilliSatoshi()) {
-                // htlc will be trimmed
+                // The htlc will be trimmed.
                 (balanceNoFees - amountToReserve).coerceAtLeast(0.msat)
             } else {
-                // htlc will have an output in the commitment tx, so there will be additional fees.
+                // The htlc will have an output in the commitment tx, so there will be additional fees.
                 val commitFees1 = commitFees + htlcOutputFee(reduced.feerate, commitmentFormat)
-                // we take the additional fees for that htlc output into account in the fee buffer at a x2 feerate increase
+                // We take the additional fees for that htlc output into account in the fee buffer at a x2 feerate increase.
                 val initiatorFeeBuffer1 = initiatorFeeBuffer + htlcOutputFee(reduced.feerate * 2, commitmentFormat)
                 val amountToReserve1 = commitFees1.coerceAtLeast(initiatorFeeBuffer1)
                 (balanceNoFees - amountToReserve1).coerceAtLeast(0.msat)
