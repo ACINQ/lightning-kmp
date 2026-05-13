@@ -35,11 +35,12 @@
                         "zero_reserve_channels": "Optional",
                         "wake_up_notification_client": "Optional",
                         "trampoline_payment_experimental": "Optional",
-                        "splice_experimental": "Optional",
                         "on_the_fly_funding": "Optional",
                         "funding_fee_credit": "Optional"
                     },
-                    "unknown": []
+                    "unknown": [
+                        155
+                    ]
                 }
             },
             "remoteParams": {
@@ -66,10 +67,11 @@
                         "option_simple_close": "Mandatory",
                         "wake_up_notification_provider": "Optional",
                         "trampoline_payment_experimental": "Optional",
-                        "splice_experimental": "Optional",
                         "on_the_fly_funding": "Optional"
                     },
-                    "unknown": []
+                    "unknown": [
+                        155
+                    ]
                 }
             },
             "channelFlags": {

@@ -935,11 +935,14 @@ data class Normal(
         return Pair(nextState, actions)
     }
 
-    /** If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction. */
-    fun getUnsignedFundingTxId(): TxId? = when {
-        spliceStatus is SpliceStatus.WaitingForSigs -> spliceStatus.session.fundingTx.txId
-        commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx && commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction -> commitments.latest.localFundingStatus.txId
-        else -> null
+    /**
+     * If we haven't completed the signing steps of an interactive-tx session, we will ask our peer to retransmit signatures for the corresponding transaction.
+     * The second parameter should be set to true when commit_sig also needs to be retransmitted.
+     */
+    fun getUnsignedFundingTxId(): Pair<TxId?, Boolean> = when {
+        spliceStatus is SpliceStatus.WaitingForSigs -> Pair(spliceStatus.session.fundingTx.txId, spliceStatus.session.retransmitRemoteCommitSig)
+        commitments.latest.localFundingStatus is LocalFundingStatus.UnconfirmedFundingTx && commitments.latest.localFundingStatus.sharedTx is PartiallySignedSharedTransaction -> Pair(commitments.latest.localFundingStatus.txId, false)
+        else -> Pair(null, false)
     }
 
     /** Returns true if the [shortChannelId] matches one of our commitments or our alias. */

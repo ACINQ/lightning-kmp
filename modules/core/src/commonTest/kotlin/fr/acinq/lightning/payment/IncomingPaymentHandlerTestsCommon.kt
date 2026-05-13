@@ -1898,7 +1898,7 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
         val defaultPreimage = randomBytes32()
         val defaultPaymentHash = Crypto.sha256(defaultPreimage).toByteVector32()
         val defaultAmount = 150_000_000.msat
-        val feeCreditFeatures = Features(Feature.ExperimentalSplice to FeatureSupport.Optional, Feature.OnTheFlyFunding to FeatureSupport.Optional, Feature.FundingFeeCredit to FeatureSupport.Optional)
+        val feeCreditFeatures = Features(Feature.OnTheFlyFunding to FeatureSupport.Optional, Feature.FundingFeeCredit to FeatureSupport.Optional)
 
         fun LightningIncomingPayment.Part.resetTimestamp() = when (this) {
             is LightningIncomingPayment.Part.Htlc -> copy(receivedAt = 0)

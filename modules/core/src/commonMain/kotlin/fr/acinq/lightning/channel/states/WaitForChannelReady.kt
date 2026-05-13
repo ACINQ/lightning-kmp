@@ -62,6 +62,7 @@ data class WaitForChannelReady(
                     Pair(this@WaitForChannelReady, listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidRbfTxConfirmed(channelId, commitments.latest.fundingTxId).message))))
                 }
                 is ChannelReady -> {
+                    val fundingTxId = commitments.latest.fundingTxId
                     // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
                     val initialChannelUpdate = Announcements.makeChannelUpdate(
                         staticParams.nodeParams.chainHash,
@@ -77,10 +78,14 @@ data class WaitForChannelReady(
                     )
                     val remoteNextCommitNonces1 = when (val nextCommitNonce = cmd.message.nextLocalNonce) {
                         null -> remoteNextCommitNonces
-                        else -> remoteNextCommitNonces + mapOf(commitments.latest.fundingTxId to nextCommitNonce)
+                        else -> remoteNextCommitNonces + mapOf(fundingTxId to nextCommitNonce)
+                    }
+                    val commitments1 = when (val commitments1 = commitments.run { updateRemoteFundingStatus(fundingTxId) }) {
+                        is Either.Left -> commitments1.value
+                        is Either.Right -> commitments1.value.first
                     }
                     val nextState = Normal(
-                        commitments,
+                        commitments1,
                         remoteNextCommitNonces1,
                         shortChannelId,
                         initialChannelUpdate,
@@ -93,7 +98,7 @@ data class WaitForChannelReady(
                     )
                     val actions = listOf(
                         ChannelAction.Storage.StoreState(nextState),
-                        ChannelAction.Storage.SetLocked(commitments.latest.fundingTxId),
+                        ChannelAction.Storage.SetLocked(fundingTxId),
                         ChannelAction.EmitEvent(ChannelEvents.Confirmed(nextState)),
                     )
                     Pair(nextState, actions)

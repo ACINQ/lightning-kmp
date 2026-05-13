@@ -68,6 +68,7 @@ interface LightningMessage {
                 TxAbort.type -> TxAbort.read(stream)
                 CommitSig.type -> CommitSig.read(stream)
                 RevokeAndAck.type -> RevokeAndAck.read(stream)
+                StartBatch.type -> StartBatch.read(stream)
                 UpdateAddHtlc.type -> UpdateAddHtlc.read(stream)
                 UpdateFailHtlc.type -> UpdateFailHtlc.read(stream)
                 UpdateFailMalformedHtlc.type -> UpdateFailMalformedHtlc.read(stream)
@@ -1003,7 +1004,7 @@ data class SpliceInit(
     }
 
     companion object : LightningMessageReader<SpliceInit> {
-        const val type: Long = 37000
+        const val type: Long = 80
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
@@ -1055,7 +1056,7 @@ data class SpliceAck(
     }
 
     companion object : LightningMessageReader<SpliceAck> {
-        const val type: Long = 37002
+        const val type: Long = 81
 
         @Suppress("UNCHECKED_CAST")
         private val readers = mapOf(
@@ -1088,13 +1089,42 @@ data class SpliceLocked(
     }
 
     companion object : LightningMessageReader<SpliceLocked> {
-        const val type: Long = 37004
+        const val type: Long = 77
 
         private val readers = emptyMap<Long, TlvValueReader<ChannelTlv>>()
 
         override fun read(input: Input): SpliceLocked = SpliceLocked(
             channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
             fundingTxId = TxId(LightningCodecs.txHash(input)),
+            tlvStream = TlvStreamSerializer(false, readers).read(input)
+        )
+    }
+}
+
+/** This message is used to indicate that the next [batchSize] messages form a single logical message. */
+data class StartBatch(override val channelId: ByteVector32, val batchSize: Int, val tlvStream: TlvStream<StartBatchTlv>) : ChannelMessage, HasChannelId {
+    // We only support batches of [CommitSig] messages.
+    constructor(channelId: ByteVector32, batchSize: Int) : this(channelId, batchSize, TlvStream(StartBatchTlv.MessageType(132)))
+
+    override val type: Long get() = StartBatch.type
+
+    override fun write(out: Output) {
+        LightningCodecs.writeBytes(channelId, out)
+        LightningCodecs.writeU16(batchSize, out)
+        TlvStreamSerializer(false, readers).write(tlvStream, out)
+    }
+
+    companion object : LightningMessageReader<StartBatch> {
+        const val type: Long = 127
+
+        @Suppress("UNCHECKED_CAST")
+        val readers: Map<Long, TlvValueReader<StartBatchTlv>> = mapOf(
+            StartBatchTlv.MessageType.tag to StartBatchTlv.MessageType as TlvValueReader<StartBatchTlv>
+        )
+
+        override fun read(input: Input): StartBatch = StartBatch(
+            channelId = ByteVector32(LightningCodecs.bytes(input, 32)),
+            batchSize = LightningCodecs.u16(input),
             tlvStream = TlvStreamSerializer(false, readers).read(input)
         )
     }
@@ -1263,7 +1293,7 @@ data class CommitSig(
     val tlvStream: TlvStream<CommitSigTlv> = TlvStream.empty()
 ) : CommitSigs() {
 
-    constructor(channelId: ByteVector32, signature: ChannelSpendSignature, htlcSignatures: List<ByteVector64>, batchSize: Int) : this(
+    constructor(channelId: ByteVector32, fundingTxId: TxId, signature: ChannelSpendSignature, htlcSignatures: List<ByteVector64>) : this(
         channelId,
         when (signature) {
             is ChannelSpendSignature.IndividualSignature -> signature
@@ -1272,7 +1302,7 @@ data class CommitSig(
         htlcSignatures,
         TlvStream(
             setOfNotNull(
-                if (batchSize > 1) CommitSigTlv.Batch(batchSize) else null,
+                CommitSigTlv.FundingTx(fundingTxId),
                 when (signature) {
                     is ChannelSpendSignature.PartialSignatureWithNonce -> CommitSigTlv.PartialSignatureWithNonce(signature)
                     is ChannelSpendSignature.IndividualSignature -> null
@@ -1285,7 +1315,7 @@ data class CommitSig(
 
     val partialSignature: ChannelSpendSignature.PartialSignatureWithNonce? = tlvStream.get<CommitSigTlv.PartialSignatureWithNonce>()?.psig
     val sigOrPartialSig: ChannelSpendSignature = partialSignature ?: signature
-    val batchSize: Int = tlvStream.get<CommitSigTlv.Batch>()?.size ?: 1
+    val fundingTxId: TxId? = tlvStream.get<CommitSigTlv.FundingTx>()?.txId
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
@@ -1300,8 +1330,8 @@ data class CommitSig(
 
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
+            CommitSigTlv.FundingTx.tag to CommitSigTlv.FundingTx.Companion as TlvValueReader<CommitSigTlv>,
             CommitSigTlv.PartialSignatureWithNonce.tag to CommitSigTlv.PartialSignatureWithNonce.Companion as TlvValueReader<CommitSigTlv>,
-            CommitSigTlv.Batch.tag to CommitSigTlv.Batch.Companion as TlvValueReader<CommitSigTlv>,
         )
 
         override fun read(input: Input): CommitSig {
@@ -1420,6 +1450,8 @@ data class ChannelReestablish(
         myCurrentPerCommitmentPoint: PublicKey,
         nextCommitNonces: List<Pair<TxId, IndividualNonce>>,
         nextFundingTxId: TxId? = null,
+        retransmitCommitSig: Boolean = false,
+        currentFundingLocked: TxId? = null,
         currentCommitNonce: IndividualNonce? = null
     ) : this(
         channelId = channelId,
@@ -1429,8 +1461,9 @@ data class ChannelReestablish(
         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint,
         tlvStream = TlvStream(
             setOfNotNull(
+                nextFundingTxId?.let { ChannelReestablishTlv.NextFunding(it, retransmitCommitSig) },
+                currentFundingLocked?.let { ChannelReestablishTlv.MyCurrentFundingLocked(it, retransmitAnnSigs = false) },
                 if (nextCommitNonces.isNotEmpty()) ChannelReestablishTlv.NextLocalNonces(nextCommitNonces) else null,
-                nextFundingTxId?.let { ChannelReestablishTlv.NextFunding(it) },
                 currentCommitNonce?.let { ChannelReestablishTlv.CurrentCommitNonce(it) },
             )
         )
@@ -1439,6 +1472,8 @@ data class ChannelReestablish(
     override val type: Long get() = ChannelReestablish.type
 
     val nextFundingTxId: TxId? = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.txId
+    val retransmitInteractiveTxCommitSig: Boolean = tlvStream.get<ChannelReestablishTlv.NextFunding>()?.retransmitCommitSig ?: false
+    val myCurrentFundingLocked: TxId? = tlvStream.get<ChannelReestablishTlv.MyCurrentFundingLocked>()?.txId
     val nextCommitNonces: Map<TxId, IndividualNonce> = tlvStream.get<ChannelReestablishTlv.NextLocalNonces>()?.nonces?.toMap() ?: mapOf()
     val currentCommitNonce: IndividualNonce? = tlvStream.get<ChannelReestablishTlv.CurrentCommitNonce>()?.nonce
 
@@ -1457,6 +1492,7 @@ data class ChannelReestablish(
         @Suppress("UNCHECKED_CAST")
         val readers = mapOf(
             ChannelReestablishTlv.NextFunding.tag to ChannelReestablishTlv.NextFunding.Companion as TlvValueReader<ChannelReestablishTlv>,
+            ChannelReestablishTlv.MyCurrentFundingLocked.tag to ChannelReestablishTlv.MyCurrentFundingLocked.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.NextLocalNonces.tag to ChannelReestablishTlv.NextLocalNonces.Companion as TlvValueReader<ChannelReestablishTlv>,
             ChannelReestablishTlv.CurrentCommitNonce.tag to ChannelReestablishTlv.CurrentCommitNonce.Companion as TlvValueReader<ChannelReestablishTlv>,
         )
@@ -1961,7 +1997,7 @@ data class WillFailMalformedHtlc(val id: ByteVector32, val paymentHash: ByteVect
 }
 
 /**
- * This message is sent in response to an [OpenDualFundedChannel] or [SpliceInit] message containing an invalid [LiquidityAds.RequestFunds].
+ * This message is sent in response to an [OpenDualFundedChannel] or [SpliceInit] message containing an invalid [LiquidityAds.RequestFunding].
  * The receiver must consider the funding attempt failed when receiving this message.
  */
 data class CancelOnTheFlyFunding(override val channelId: ByteVector32, val paymentHashes: List<ByteVector32>, val reason: ByteVector) : OnTheFlyFundingMessage, HasChannelId {
