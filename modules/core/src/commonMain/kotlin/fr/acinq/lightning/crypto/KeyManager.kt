@@ -267,7 +267,7 @@ data class SwapInOnChainKeys(
 
     // this is the public version of the above descriptor. It can be used to monitor a user's swap-in transaction
     // README: it cannot be used to derive private keys, but it can be used to derive swap-in addresses
-    val publicDescriptor = SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, DeterministicWallet.publicKey(userRefundExtendedPrivateKey))
+    val publicDescriptor = SwapInProtocol.publicDescriptor(chain, userPublicKey, remoteServerPublicKey, refundDelay, userRefundExtendedPrivateKey.extendedPublicKey)
 
     /**
      * @param addressIndex address index
