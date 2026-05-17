@@ -423,8 +423,8 @@ class TransactionsTestsCommon : LightningTestSuite() {
 
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val seed = MnemonicCode.toSeed(mnemonics, "")
-        val masterPrivateKey = DeterministicWallet.derivePrivateKey(DeterministicWallet.generate(seed), "/51'/0'/0'").copy(path = KeyPath.empty)
-        val userRefundPrivateKey = DeterministicWallet.derivePrivateKey(masterPrivateKey, "0").privateKey
+        val masterPrivateKey = DeterministicWallet.generate(seed).derivePrivateKey("/51'/0'/0'").copy(path = KeyPath.empty)
+        val userRefundPrivateKey = masterPrivateKey.derivePrivateKey("0").privateKey
         val swapInProtocol = SwapInProtocol(userPrivateKey.publicKey(), serverPrivateKey.publicKey(), userRefundPrivateKey.publicKey(), refundDelay)
 
         val swapInTx = Transaction(
