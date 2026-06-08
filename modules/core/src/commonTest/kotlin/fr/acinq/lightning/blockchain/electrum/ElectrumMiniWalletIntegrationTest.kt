@@ -27,7 +27,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 
-class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
+class ElectrumMiniWalletItegrationTest : LightningTestSuite() {
 
     private val logger = loggerFactory.newLogger(this::class)
     private val bitcoincli = BitcoindService
@@ -54,7 +54,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     @Test
     fun `derived addresses with gaps`() = runSuspendTest(timeout = 15.seconds) {
         val chain = Chain.Regtest
-        val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
+        val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 50001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val wallet = ElectrumMiniWallet(chain.chainHash, client, this, logger)
 
         wallet.addAddressGenerator(generator = { index -> keyManager.swapInOnChainWallet.getSwapInProtocol(index).address(chain) })
@@ -74,7 +74,7 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     @Test
     fun `derived addresses with gaps and no look-ahead`() = runSuspendTest(timeout = 15.seconds) {
         val chain = Chain.Regtest
-        val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
+        val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 50001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val wallet = ElectrumMiniWallet(chain.chainHash, client, this, logger, lookAhead = 1u)
         wallet.addAddressGenerator(generator = { index -> keyManager.swapInOnChainWallet.getSwapInProtocol(index).address(chain) })
 

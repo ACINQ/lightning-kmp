@@ -342,22 +342,7 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
         is GetHeaders -> {
             val jsonObject = rpcResponse.result.jsonObject
             val max = jsonObject.getValue("max").jsonPrimitive.int
-            val hex = jsonObject.getValue("hex").jsonPrimitive.content
-
-            val blockHeaders = buildList {
-                val input = ByteArrayInput(Hex.decode(hex))
-                require(input.availableBytes % 80 == 0)
-
-                val headerSize = 80
-                var progress = 0
-                val inputSize = input.availableBytes
-                while (progress < inputSize) {
-                    val header = input.readNBytes(headerSize)!!
-                    add(BlockHeader.read(header))
-                    progress += headerSize
-                }
-            }
-
+            val blockHeaders = jsonObject.getValue("headers").jsonArray.map { BlockHeader.read(it.jsonPrimitive.content) }
             GetHeadersResponse(request.start_height, blockHeaders, max)
         }
 
