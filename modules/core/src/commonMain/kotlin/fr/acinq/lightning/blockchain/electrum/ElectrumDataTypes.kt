@@ -73,12 +73,15 @@ sealed interface ElectrumResponse : ElectrumMessage
 
 data class ServerVersion(
     private val clientName: String = ElectrumClient.ELECTRUM_CLIENT_NAME,
-    private val protocolVersion: String = ElectrumClient.ELECTRUM_PROTOCOL_VERSION
-) : ElectrumRequest(clientName, protocolVersion) {
+    private val protocolMinVersion: String = ElectrumClient.ELECTRUM_PROTOCOL_MIN_VERSION,
+    private val protocolMaxVersion: String = ElectrumClient.ELECTRUM_PROTOCOL_MAX_VERSION,
+) : ElectrumRequest(clientName, if (protocolMinVersion == protocolMaxVersion) protocolMinVersion else arrayOf(protocolMinVersion, protocolMaxVersion)) {
     override val method: String = "server.version"
 }
 
-data class ServerVersionResponse(val clientName: String, val protocolVersion: String) : ElectrumResponse
+data class ServerVersionResponse(val clientName: String, val protocolMinVersion: String, val protocolMaxVersion: String) : ElectrumResponse {
+    constructor(clientName: String, protocolVersion: String) : this(clientName, protocolVersion, protocolVersion)
+}
 
 data object Ping : ElectrumRequest() {
     override val method: String = "server.ping"
@@ -91,7 +94,14 @@ data class GetScriptHashHistory(val scriptHash: ByteVector32) : ElectrumRequest(
 }
 
 data class TransactionHistoryItem(val blockHeight: Int, val txid: TxId)
+
 data class GetScriptHashHistoryResponse(val scriptHash: ByteVector32, val history: List<TransactionHistoryItem>) : ElectrumResponse
+
+data class GetScriptPubkeyHistory(val scriptPubkey: ByteVector) : ElectrumRequest(scriptPubkey) {
+    override val method: String = "blockchain.scriptpubkey.get_history"
+}
+
+data class GetScriptPubkeyHistoryResponse(val scriptPubkey: ByteVector, val history: List<TransactionHistoryItem>) : ElectrumResponse
 
 data class ScriptHashListUnspent(val scriptHash: ByteVector32) : ElectrumRequest(scriptHash) {
     override val method: String = "blockchain.scripthash.listunspent"
@@ -102,6 +112,12 @@ data class UnspentItem(val txid: TxId, val outputIndex: Int, val value: Long, va
 }
 
 data class ScriptHashListUnspentResponse(val scriptHash: ByteVector32, val unspents: List<UnspentItem>) : ElectrumResponse
+
+data class ScriptPubkeyListUnspent(val scriptPubkey: ByteVector) : ElectrumRequest(scriptPubkey) {
+    override val method: String = "blockchain.scriptpubkey.listunspent"
+}
+
+data class ScriptPubkeyListUnspentResponse(val scriptPubkey: ByteVector, val unspents: List<UnspentItem>) : ElectrumResponse
 
 data class BroadcastTransaction(val tx: Transaction) : ElectrumRequest(tx) {
     override val method: String = "blockchain.transaction.broadcast"
@@ -170,11 +186,22 @@ data class ScriptHashSubscription(val scriptHash: ByteVector32) : ElectrumReques
 // of confirmations)
 data class ScriptHashSubscriptionResponse(val scriptHash: ByteVector32, val status: String?) : ElectrumSubscriptionResponse
 
+data class ScriptPubkeySubscription(val scriptPubkey: ByteVector) : ElectrumRequest(scriptPubkey) {
+    override val method: String = "blockchain.scriptpubkey.subscribe"
+    val scriptHash: ByteVector32 = ElectrumClient.computeScriptHash(scriptPubkey)
+}
+
+data class ScriptPubkeySubscriptionResponse(val scriptPubkey: ByteVector, val status: String?) : ElectrumSubscriptionResponse {
+    val scriptHash: ByteVector32 = ElectrumClient.computeScriptHash(scriptPubkey)
+}
+
 data object HeaderSubscription : ElectrumRequest() {
     override val method: String = "blockchain.headers.subscribe"
 }
 
 data class HeaderSubscriptionResponse(val blockHeight: Int, val header: BlockHeader) : ElectrumSubscriptionResponse
+
+data object PingNotification : ElectrumSubscriptionResponse // added in protocol 1.7
 
 /**
  * Other Electrum responses
@@ -200,6 +227,7 @@ object ElectrumResponseDeserializer : DeserializationStrategy<Either<ElectrumSub
         val jsonObject = input.decodeJsonElement() as? JsonObject
             ?: throw SerializationException("Expected JsonObject")
 
+        println("deserialize $jsonObject")
         return when (val method = jsonObject["method"]) {
             is JsonPrimitive -> {
                 val params = jsonObject["params"]?.jsonArray.orEmpty().takeIf { it.isNotEmpty() }
@@ -218,7 +246,20 @@ object ElectrumResponseDeserializer : DeserializationStrategy<Either<ElectrumSub
                         Either.Left(ScriptHashSubscriptionResponse(ByteVector32.fromValidHex(scriptHash), status))
                     }
 
-                    else -> throw SerializationException("JSON-RPC Method ${method.content} is not supported")
+                    "blockchain.scriptpubkey.subscribe" -> {
+                        println("blockchain.scriptpubkey.subscribe received $params")
+                        val scriptHash = params[0].jsonPrimitive.content
+                        val status = params[1].jsonPrimitive.contentOrNull
+                        Either.Left(ScriptPubkeySubscriptionResponse(ByteVector32.fromValidHex(scriptHash), status))
+                    }
+
+                    "server.ping" -> {
+                        Either.Left(PingNotification)
+                    }
+
+                    else -> {
+                        throw SerializationException("JSON-RPC Method ${method.content} is not supported")
+                    }
                 }
             }
 
@@ -261,10 +302,14 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
     else when (request) {
         is ServerVersion -> {
             val resultArray = rpcResponse.result.jsonArray
-            ServerVersionResponse(resultArray[0].toString(), resultArray[1].toString())
+            when (resultArray[1]) {
+                is JsonArray -> ServerVersionResponse(resultArray[0].toString(), resultArray[1].jsonArray[0].toString(), resultArray[1].jsonArray[1].toString())
+                else -> ServerVersionResponse(resultArray[0].toString(), resultArray[1].toString(), resultArray[1].toString())
+            }
         }
 
         Ping -> PingResponse
+
         is GetScriptHashHistory -> {
             val jsonArray = rpcResponse.result.jsonArray
             val items = jsonArray.map {
@@ -274,6 +319,17 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
                 TransactionHistoryItem(height, txId)
             }
             GetScriptHashHistoryResponse(request.scriptHash, items)
+        }
+
+        is GetScriptPubkeyHistory -> {
+            val jsonArray = rpcResponse.result.jsonArray
+            val items = jsonArray.map {
+                val height = it.jsonObject.getValue("height").jsonPrimitive.int
+                // Electrum calls this field tx_hash but actually returns the tx_id.
+                val txId = TxId(it.jsonObject.getValue("tx_hash").jsonPrimitive.content)
+                TransactionHistoryItem(height, txId)
+            }
+            GetScriptPubkeyHistoryResponse(request.scriptPubkey, items)
         }
 
         is ScriptHashListUnspent -> {
@@ -287,6 +343,19 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
                 UnspentItem(txId, txPos, value, height)
             }
             ScriptHashListUnspentResponse(request.scriptHash, items)
+        }
+
+        is ScriptPubkeyListUnspent -> {
+            val jsonArray = rpcResponse.result.jsonArray
+            val items = jsonArray.map {
+                // Electrum calls this field tx_hash but actually returns the tx_id.
+                val txId = TxId(it.jsonObject.getValue("tx_hash").jsonPrimitive.content)
+                val txPos = it.jsonObject.getValue("tx_pos").jsonPrimitive.int
+                val value = it.jsonObject.getValue("value").jsonPrimitive.long
+                val height = it.jsonObject.getValue("height").jsonPrimitive.long
+                UnspentItem(txId, txPos, value, height)
+            }
+            ScriptPubkeyListUnspentResponse(request.scriptPubkey, items)
         }
 
         is GetTransactionIdFromPosition -> {
@@ -313,6 +382,14 @@ internal fun parseJsonResponse(request: ElectrumRequest, rpcResponse: JsonRPCRes
                 else -> null
             }
             ScriptHashSubscriptionResponse(request.scriptHash, status)
+        }
+
+        is ScriptPubkeySubscription -> {
+            val status = when (rpcResponse.result) {
+                is JsonPrimitive -> rpcResponse.result.jsonPrimitive.contentOrNull
+                else -> null
+            }
+            ScriptPubkeySubscriptionResponse(request.scriptPubkey, status)
         }
 
         is BroadcastTransaction -> {

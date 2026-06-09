@@ -7,6 +7,7 @@ import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.io.send
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.logging.debug
+import fr.acinq.lightning.logging.error
 import fr.acinq.lightning.logging.info
 import fr.acinq.lightning.logging.warning
 import fr.acinq.lightning.utils.*
@@ -281,15 +282,33 @@ class ElectrumClient(
 
     override suspend fun getMerkle(txId: TxId, blockHeight: Int, contextOpt: Transaction?): GetMerkleResponse? = rpcCall<GetMerkleResponse>(GetMerkle(txId, blockHeight, contextOpt)).right
 
-    override suspend fun getScriptHashHistory(scriptHash: ByteVector32): List<TransactionHistoryItem> = rpcCall<GetScriptHashHistoryResponse>(GetScriptHashHistory(scriptHash)).right?.history ?: listOf()
+    override suspend fun getScriptHashHistory(scriptHash: ByteVector32): List<TransactionHistoryItem> = rpcCall<GetScriptHashHistoryResponse>(GetScriptHashHistory(scriptHash)).fold({
+        logger.error { "received script hash history failed with: $it" }
+        listOf()
+    }, {
+        it.history
+    })
+
+    override suspend fun getScriptPubkeyHistory(scriptPubkey: ByteVector): List<TransactionHistoryItem> {
+        return rpcCall<GetScriptPubkeyHistoryResponse>(GetScriptPubkeyHistory(scriptPubkey)).fold({
+            println("getScriptPubkeyHistory failed with $it")
+            listOf()
+        }, {
+            it.history
+        })
+    }
 
     override suspend fun getScriptHashUnspents(scriptHash: ByteVector32): List<UnspentItem> = rpcCall<ScriptHashListUnspentResponse>(ScriptHashListUnspent(scriptHash)).right?.unspents ?: listOf()
+
+    override suspend fun getScriptPubkeyUnspents(scriptPubkey: ByteVector): List<UnspentItem> = rpcCall<ScriptPubkeyListUnspentResponse>(ScriptPubkeyListUnspent(scriptPubkey)).right?.unspents ?: listOf()
 
     override suspend fun broadcastTransaction(tx: Transaction): TxId = rpcCall<BroadcastTransactionResponse>(BroadcastTransaction(tx)).right?.tx?.txid ?: tx.txid
 
     override suspend fun estimateFees(confirmations: Int): FeeratePerKw? = rpcCall<EstimateFeeResponse>(EstimateFees(confirmations)).right?.feerate
 
-    override suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse = rpcCallMustSucceed(ScriptHashSubscription(scriptHash)) as ScriptHashSubscriptionResponse
+    override suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse? = rpcCall<ScriptHashSubscriptionResponse>(ScriptHashSubscription(scriptHash)).right
+
+    override suspend fun startScriptPubkeySubscription(scriptPubkey: ByteVector): ScriptPubkeySubscriptionResponse? = rpcCall<ScriptPubkeySubscriptionResponse>(ScriptPubkeySubscription(scriptPubkey)).right
 
     override suspend fun startHeaderSubscription(): HeaderSubscriptionResponse = rpcCallMustSucceed(HeaderSubscription) as HeaderSubscriptionResponse
 
@@ -302,8 +321,9 @@ class ElectrumClient(
 
     companion object {
         const val ELECTRUM_CLIENT_NAME = "3.3.6"
-        const val ELECTRUM_PROTOCOL_VERSION = "1.6"
-        val version = ServerVersion()
+        const val ELECTRUM_PROTOCOL_MIN_VERSION = "1.4"
+        const val ELECTRUM_PROTOCOL_MAX_VERSION = "1.7"
+        val version = ServerVersion(ELECTRUM_CLIENT_NAME, ELECTRUM_PROTOCOL_MIN_VERSION, ELECTRUM_PROTOCOL_MAX_VERSION)
         internal fun computeScriptHash(publicKeyScript: ByteVector): ByteVector32 = Crypto.sha256(publicKeyScript).toByteVector32().reversed()
     }
 }

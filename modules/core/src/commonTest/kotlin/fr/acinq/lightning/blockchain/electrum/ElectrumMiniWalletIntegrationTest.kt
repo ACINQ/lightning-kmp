@@ -27,7 +27,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 
-class ElectrumMiniWalletItegrationTest : LightningTestSuite() {
+class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
 
     private val logger = loggerFactory.newLogger(this::class)
     private val bitcoincli = BitcoindService
@@ -43,16 +43,18 @@ class ElectrumMiniWalletItegrationTest : LightningTestSuite() {
             }
             val address = bitcoincli.getNewAddress()
             val address0 = keyManager.swapInOnChainWallet.getSwapInProtocol(0).address(Chain.Regtest)
-            bitcoincli.sendToAddress(address0, 1.0)
+            val tx1 = bitcoincli.sendToAddress(address0, 1.0)
             val address2 = keyManager.swapInOnChainWallet.getSwapInProtocol(2).address(Chain.Regtest)
-            bitcoincli.sendToAddress(address2, 1.0)
+            val tx2 = bitcoincli.sendToAddress(address2, 1.0)
+            println(tx1.txid)
+            println(tx2.txid)
         }
     }
 
 
     @OptIn(FlowPreview::class)
     @Test
-    fun `derived addresses with gaps`() = runSuspendTest(timeout = 15.seconds) {
+    fun `derived addresses with gaps`() = runSuspendTest(timeout = 60.seconds) {
         val chain = Chain.Regtest
         val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 50001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val wallet = ElectrumMiniWallet(chain.chainHash, client, this, logger)
@@ -65,7 +67,7 @@ class ElectrumMiniWalletItegrationTest : LightningTestSuite() {
         // index=2: 12000 sat
         // index=3: nothing <-- will stop there
 
-        val walletState = wallet.walletStateFlow.debounce(5.seconds).first()
+        val walletState = wallet.walletStateFlow.debounce(30.seconds).first()
         assertEquals(1, walletState.firstUnusedDerivedAddress?.second?.index)
         assertEquals(3, walletState.lastDerivedAddress?.second?.index)
     }

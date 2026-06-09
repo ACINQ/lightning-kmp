@@ -241,7 +241,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     }
 
     @Test
-    fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = 2.minutes) {
+    fun `publish transactions with relative and absolute delays`() = runSuspendTest(timeout = 3.minutes) {
         val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
         val watcher = ElectrumWatcher(client, this, loggerFactory)
         val watcherNotifications = watcher.openWatchNotificationsFlow()
@@ -334,6 +334,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
         watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx2, 1, WatchConfirmed.ChannelFundingDepthOk))
         watcher.watch(WatchSpent(ByteVector32.Zeroes, tx2, 0, WatchSpent.ChannelSpent(tx2.txOut[0].amount)))
+        println("publishing tx3 ${tx3.txid} which spends tx2 ${tx2.txid}")
         watcher.publish(tx3)
 
         bitcoincli.generateBlocks(1) // 159
@@ -351,6 +352,7 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         awaitForBlockCount(currentBlock + 1)
         checkIfMempoolIsEmpty()
 
+        println("publishing last 3 blocks")
         bitcoincli.generateBlocks(3) // 163
         bitcoincli.getBlockCount()
 

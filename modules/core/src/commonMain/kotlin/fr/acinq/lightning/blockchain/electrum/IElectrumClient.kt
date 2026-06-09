@@ -1,11 +1,13 @@
 package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
 import fr.acinq.lightning.blockchain.Feerates
 import fr.acinq.lightning.blockchain.IClient
+import fr.acinq.lightning.blockchain.electrum.ElectrumClient.Companion.computeScriptHash
 import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import kotlinx.coroutines.flow.Flow
@@ -31,9 +33,12 @@ interface IElectrumClient : IClient {
     /** Return the transaction history for a given script, or an empty list if the script is unknown. */
     suspend fun getScriptHashHistory(scriptHash: ByteVector32): List<TransactionHistoryItem>
 
+    suspend fun getScriptPubkeyHistory(scriptPubkey: ByteVector): List<TransactionHistoryItem>
+
     /** Return the utxos matching a given script, or an empty list if the script is unknown. */
     suspend fun getScriptHashUnspents(scriptHash: ByteVector32): List<UnspentItem>
 
+    suspend fun getScriptPubkeyUnspents(scriptPubkey: ByteVector): List<UnspentItem>
     /**
      * Try broadcasting a transaction: we cannot know whether the remote server really broadcast the transaction,
      * so we always consider it to be a success. The client should regularly retry transactions that don't confirm.
@@ -46,7 +51,9 @@ interface IElectrumClient : IClient {
     /******************** Subscriptions ********************/
 
     /** Subscribe to changes to a given script. */
-    suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse
+    suspend fun startScriptHashSubscription(scriptHash: ByteVector32): ScriptHashSubscriptionResponse?
+
+    suspend fun startScriptPubkeySubscription(scriptPubkey: ByteVector): ScriptPubkeySubscriptionResponse?
 
     /** Subscribe to headers for new blocks found. */
     suspend fun startHeaderSubscription(): HeaderSubscriptionResponse
@@ -58,8 +65,11 @@ interface IElectrumClient : IClient {
         return when (val status = connectionStatus.value) {
             is ElectrumConnectionStatus.Connected -> {
                 val currentBlockHeight = status.height
-                val scriptHash = ElectrumClient.computeScriptHash(tx.txOut.first().publicKeyScript)
-                val scriptHashHistory = getScriptHashHistory(scriptHash)
+                val scriptPubkey = tx.txOut.first().publicKeyScript
+                val scriptHashHistory = when (status.version.protocolMaxVersion) {
+                    "1.7" -> getScriptPubkeyHistory(scriptPubkey)
+                    else -> getScriptHashHistory(computeScriptHash(scriptPubkey))
+                }
                 val item = scriptHashHistory.find { it.txid == tx.txid }
                 item?.let { if (item.blockHeight > 0) currentBlockHeight - item.blockHeight + 1 else 0 }
             }

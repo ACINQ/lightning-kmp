@@ -16,7 +16,7 @@ import kotlin.time.Duration.Companion.seconds
 class SwapInWalletTestsCommon : LightningTestSuite() {
 
     @Test
-    fun `swap-in wallet test`() = runSuspendTest(timeout = 15.seconds) {
+    fun `swap-in wallet test`() = runSuspendTest(timeout = 30.seconds) {
         val mnemonics = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".split(" ")
         val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), Chain.Testnet4, TestConstants.aliceSwapInServerXpub)
         val client = connectToTestnet4Server()

@@ -3,15 +3,11 @@ package fr.acinq.lightning.utils
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.bitcoin.TxId
-import fr.acinq.secp256k1.Hex
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.buildClassSerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * JSON-RPC request
@@ -21,72 +17,22 @@ data class JsonRPCRequest(
     val jsonrpc: String = "2.0",
     val id: Int,
     val method: String,
-    val params: List<JsonRPCParam> = emptyList()
+    val params: List<JsonElement> = emptyList()
 )
 
-fun List<Any>.asJsonRPCParameters(): List<JsonRPCParam> = map {
+fun List<Any>.asJsonRPCParameters(): List<JsonElement> = map {
     when (it) {
-        is Int -> it.asParam()
-        is Double -> it.asParam()
-        is String -> it.asParam()
-        is Boolean -> when {
-            it -> 1
-            else -> 0
-        }.asParam()
-        is ByteVector -> it.toHex().asParam()
-        is TxId -> it.value.toHex().asParam()
-        is Transaction -> Hex.encode(Transaction.write(it)).asParam()
+        is Int -> JsonPrimitive(it)
+        is Double -> JsonPrimitive(it)
+        is String -> JsonPrimitive(it)
+        is Boolean -> JsonPrimitive(it)
+        is ByteVector -> JsonPrimitive(it.toHex())
+        is TxId -> JsonPrimitive(it.value.toHex())
+        is Transaction -> JsonPrimitive(it.toString())
+        is Array<*> -> JsonArray(it.map { JsonPrimitive(it.toString()) })
         else -> error("Unsupported type ${it::class} as JSON-RPC parameter")
     }
 }
-
-@Serializable
-sealed class JsonRPCParam
-
-@Serializable(with = JsonRPCInt.Serializer::class)
-data class JsonRPCInt(val value: Int) : JsonRPCParam() {
-    object Serializer : KSerializer<JsonRPCInt> {
-        override val descriptor: SerialDescriptor = buildClassSerialDescriptor("IntParam")
-
-        override fun serialize(encoder: Encoder, value: JsonRPCInt) {
-            encoder.encodeInt(value.value)
-        }
-
-        override fun deserialize(decoder: Decoder): JsonRPCInt = JsonRPCInt(decoder.decodeInt())
-    }
-}
-
-fun Int.asParam(): JsonRPCParam = JsonRPCInt(this)
-
-@Serializable(with = JsonRPCDouble.Serializer::class)
-data class JsonRPCDouble(val value: Double) : JsonRPCParam() {
-    object Serializer : KSerializer<JsonRPCDouble> {
-        override val descriptor: SerialDescriptor = buildClassSerialDescriptor("DoubleParam")
-
-        override fun serialize(encoder: Encoder, value: JsonRPCDouble) {
-            encoder.encodeDouble(value.value)
-        }
-
-        override fun deserialize(decoder: Decoder): JsonRPCDouble = JsonRPCDouble(decoder.decodeDouble())
-    }
-}
-
-fun Double.asParam(): JsonRPCParam = JsonRPCDouble(this)
-
-@Serializable(JsonRPCString.Serializer::class)
-data class JsonRPCString(val value: String) : JsonRPCParam() {
-    object Serializer : KSerializer<JsonRPCString> {
-        override val descriptor: SerialDescriptor = buildClassSerialDescriptor("StringParam")
-
-        override fun serialize(encoder: Encoder, value: JsonRPCString) {
-            encoder.encodeString(value.value)
-        }
-
-        override fun deserialize(decoder: Decoder): JsonRPCString = JsonRPCString(decoder.decodeString())
-    }
-}
-
-fun String.asParam(): JsonRPCParam = JsonRPCString(this)
 
 /**
  * JSON-RPC result / error

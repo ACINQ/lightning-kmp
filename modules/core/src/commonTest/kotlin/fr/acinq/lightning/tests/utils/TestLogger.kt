@@ -35,7 +35,7 @@ val testLoggerFactory: LoggerFactory by lazy {
     LoggerFactory(
         loggerConfigInit(
             logWriters = arrayOf(StderrWriter(NoTagFormatter)),
-            minSeverity = Severity.Info
+            minSeverity = Severity.Debug
         )
     )
 }

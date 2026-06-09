@@ -121,7 +121,7 @@ val List<WalletState.Utxo>.balance get() = this.map { it.amount }.sum()
 
 private sealed interface WalletCommand {
     companion object {
-        data object ElectrumConnected : WalletCommand
+        data class ElectrumConnected(val connected: ElectrumConnectionStatus.Connected) : WalletCommand
         data class ElectrumNotification(val msg: ElectrumResponse) : WalletCommand
         data class AddAddress(val bitcoinAddress: String) : WalletCommand
         data class AddAddressGenerator(val generator: AddressGenerator) : WalletCommand
@@ -153,6 +153,8 @@ class ElectrumMiniWallet(
 
     // all currently watched script hashes and their corresponding bitcoin address
     private var scriptHashes: Map<ByteVector32, String> = emptyMap()
+
+    private var scriptPubkeys: Map<ByteVector32, ByteVector> = emptyMap()
 
     // the mailbox of this "actor"
     private val mailbox: Channel<WalletCommand> = Channel(Channel.BUFFERED)
@@ -208,15 +210,51 @@ class ElectrumMiniWallet(
             }
         }
 
+        suspend fun WalletState.processSubscriptionResponse(msg: ScriptPubkeySubscriptionResponse): WalletState {
+            val bitcoinAddress = Bitcoin.addressFromPublicKeyScript(chainHash, msg.scriptPubkey.toByteArray()).right
+            val addressMeta = bitcoinAddress?.let { addressMetas[it] }
+            return when {
+                bitcoinAddress == null || addressMeta == null -> {
+                    // this will happen because multiple wallets may be sharing the same Electrum connection (e.g. swap-in and final wallet)
+                    logger.info { "received subscription response for scriptpubkey ${msg.scriptPubkey} that does not match any address" }
+                    this
+                }
+
+                msg.status == null -> {
+                    logger.info { "address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} utxos=(unused)" }
+                    this.copy(addresses = this.addresses + (bitcoinAddress to WalletState.AddressState(addressMeta, alreadyUsed = false, utxos = listOf())))
+                }
+
+                else -> {
+                    val unspents = client.getScriptPubkeyUnspents(msg.scriptPubkey)
+                    val previouslysKnownTxs = (this.addresses[bitcoinAddress]?.utxos ?: emptyList()).associate { it.txId to it.previousTx }
+                    val utxos = unspents
+                        .mapNotNull { item -> (previouslysKnownTxs[item.txid] ?: client.getTx(item.txid))?.let { item to it } } // only retrieve txs from electrum if necessary and ignore the utxo if the parent tx cannot be retrieved
+                        .map { (item, previousTx) -> WalletState.Utxo(item.txid, item.outputIndex, item.blockHeight, previousTx, addressMeta) }
+                    val nextAddressState = WalletState.AddressState(addressMeta, alreadyUsed = true, utxos)
+                    val nextWalletState = this.copy(addresses = this.addresses + (bitcoinAddress to nextAddressState))
+                    logger.info { "address=$bitcoinAddress index=${addressMeta.indexOrNull ?: "n/a"} utxos=${unspents.size} amount=${unspents.sumOf { it.value }.sat}" }
+                    unspents.forEach { logger.debug { "utxo=${it.outPoint.txid}:${it.outPoint.index} amount=${it.value} sat" } }
+                    return nextWalletState
+                }
+            }
+        }
+
         /**
          * Attempts to subscribe to changes affecting a given bitcoin address.
          * Depending on the status of the electrum connection, the subscription may or may not be sent to a server.
          * It is the responsibility of the caller to resubscribe on reconnection.
          */
-        suspend fun WalletState.subscribe(scriptHash: ByteVector32, bitcoinAddress: String): WalletState {
+        suspend fun WalletState.subscribe(scriptPubkey: ByteVector, bitcoinAddress: String): WalletState {
+            val scriptHash = ElectrumClient.computeScriptHash(scriptPubkey)
             val response = client.startScriptHashSubscription(scriptHash)
-            logger.debug { "subscribed to address=$bitcoinAddress scriptHash=$scriptHash" }
-            return processSubscriptionResponse(response)
+            if (response != null) {
+                logger.debug { "subscribed to address=$bitcoinAddress scriptPubkey=$scriptPubkey scriptHash=$scriptHash" }
+                return processSubscriptionResponse(response)
+            }
+            val response1 = client.startScriptPubkeySubscription(scriptPubkey)!!
+            logger.debug { "subscribed to address=$bitcoinAddress scriptPubkey=$scriptPubkey scriptHash=$scriptHash" }
+            return processSubscriptionResponse(response1)
         }
 
         fun computeScriptHash(bitcoinAddress: String): ByteVector32? {
@@ -226,12 +264,15 @@ class ElectrumMiniWallet(
         }
 
         suspend fun WalletState.addAddress(bitcoinAddress: String, meta: WalletState.AddressMeta): WalletState {
-            return computeScriptHash(bitcoinAddress)?.let { scriptHash ->
+            val scriptPubKey = Bitcoin.addressToPublicKeyScript(chainHash, bitcoinAddress).map { Script.write(it).byteVector() }.right
+            return scriptPubKey?.let { scriptPubkey ->
+                val scriptHash = ElectrumClient.computeScriptHash(scriptPubkey)
                 if (!scriptHashes.containsKey(scriptHash)) {
                     logger.debug { "adding new address=${bitcoinAddress} index=${meta.indexOrNull ?: "n/a"}" }
                     scriptHashes = scriptHashes + (scriptHash to bitcoinAddress)
+                    scriptPubkeys = scriptPubkeys + (scriptHash to scriptPubkey)
                     addressMetas = addressMetas + (bitcoinAddress to meta)
-                    subscribe(scriptHash, bitcoinAddress)
+                    subscribe(scriptPubkey, bitcoinAddress)
                 } else this
             } ?: this
         }
@@ -255,7 +296,7 @@ class ElectrumMiniWallet(
         job = launch {
             launch {
                 // listen to connection events
-                client.connectionStatus.filterIsInstance<ElectrumConnectionStatus.Connected>().collect { mailbox.send(WalletCommand.Companion.ElectrumConnected) }
+                client.connectionStatus.filterIsInstance<ElectrumConnectionStatus.Connected>().collect { mailbox.send(WalletCommand.Companion.ElectrumConnected(it)) }
             }
             launch {
                 // listen to subscriptions events
@@ -269,7 +310,8 @@ class ElectrumMiniWallet(
                             val walletState1 = scriptHashes
                                 .toList()
                                 .fold(_walletStateFlow.value) { walletState, (scriptHash, address) ->
-                                    walletState.subscribe(scriptHash, address)
+                                    val scriptPubKey = scriptPubkeys[scriptHash]!!
+                                    walletState.subscribe(scriptPubKey, address)
                                 }
                             val walletState2 = addressGenerator?.let { gen -> walletState1.maybeGenerateNext(gen) } ?: walletState1
                             _walletStateFlow.value = walletState2
