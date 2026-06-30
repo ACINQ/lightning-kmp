@@ -23,9 +23,24 @@ kotlin {
         }
     }
 
-    linuxX64()
+    val rustlsDir = layout.projectDirectory.dir("rustls-ffi")
+    val rustlsInclude = rustlsDir.dir("include").asFile.absolutePath
 
-    linuxArm64()
+    linuxX64 {
+        compilations["main"].cinterops.create("rustls") {
+            defFile(project.file("src/nativeInterop/cinterop/rustls.def"))
+            includeDirs(rustlsInclude)
+            compilerOpts("-I$rustlsInclude")
+        }
+    }
+
+    linuxArm64 {
+        compilations["main"].cinterops.create("rustls") {
+            defFile(project.file("src/nativeInterop/cinterop/rustls.def"))
+            includeDirs(rustlsInclude)
+            compilerOpts("-I$rustlsInclude")
+        }
+    }
 
     if (currentOs.isMacOsX) {
         macosX64()
@@ -282,7 +297,7 @@ tasks.withType<AbstractTestTask> {
 // Those tests use TLS sockets which are not supported on Linux and MacOS
 tasks
     .filterIsInstance<KotlinNativeTest>()
-    .filter { it.name == "macosX64Test" || it.name == "macosArm64Test" || it.name == "linuxX64Test" }
+    .filter { it.name == "macosX64Test" || it.name == "macosArm64Test" }
     .map {
         it.filter.excludeTestsMatching("*IntegrationTest")
         it.filter.excludeTestsMatching("*ElectrumClientTest")
