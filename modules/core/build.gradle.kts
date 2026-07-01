@@ -43,10 +43,22 @@ kotlin {
     }
 
     if (currentOs.isMacOsX) {
-        macosX64()
+        macosX64 {
+            compilations["main"].cinterops.create("rustls") {
+                defFile(project.file("src/nativeInterop/cinterop/rustls.def"))
+                includeDirs(rustlsInclude)
+                compilerOpts("-I$rustlsInclude")
+            }
+        }
 
-        macosArm64()
-
+        macosArm64 {
+            compilations["main"].cinterops.create("rustls") {
+                defFile(project.file("src/nativeInterop/cinterop/rustls.def"))
+                includeDirs(rustlsInclude)
+                compilerOpts("-I$rustlsInclude")
+            }
+        }
+        
         fun DefaultCInteropSettings.configureFor(platform: String) {
             val interopTask = tasks[interopProcessingTaskName]
             interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
@@ -293,17 +305,6 @@ tasks.withType<AbstractTestTask> {
         filter.excludeTestsMatching("*IntegrationTest")
     }
 }
-
-// Those tests use TLS sockets which are not supported on Linux and MacOS
-tasks
-    .filterIsInstance<KotlinNativeTest>()
-    .filter { it.name == "macosX64Test" || it.name == "macosArm64Test" }
-    .map {
-        it.filter.excludeTestsMatching("*IntegrationTest")
-        it.filter.excludeTestsMatching("*ElectrumClientTest")
-        it.filter.excludeTestsMatching("*ElectrumMiniWalletTest")
-        it.filter.excludeTestsMatching("*SwapInWalletTestsCommon")
-    }
 
 // Those tests do not work with the ios simulator
 tasks

@@ -1,9 +1,18 @@
 headers = rustls.h
 headerFilter = rustls.h
+
 staticLibraries.linux_x64 = librustls.a
 libraryPaths.linux_x64 = rustls-ffi/lib/linuxX64
+
 staticLibraries.linux_arm64 = librustls.a
 libraryPaths.linux_arm64 = rustls-ffi/lib/linuxArm64
+
+staticLibraries.macos_x64 = librustls.a
+libraryPaths.macos_x64 = rustls-ffi/lib/macosX64
+
+staticLibraries.macos_arm64 = librustls.a
+libraryPaths.macos_arm64 = rustls-ffi/lib/macosArm64
+
 package = rustls.cinterop
 
 # Include / link flags are injected from build.gradle.kts (cinterops { ... }) so the
