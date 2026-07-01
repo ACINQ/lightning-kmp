@@ -13,7 +13,7 @@ import swift.phoenix_crypto.NativeSocket
 import swift.phoenix_crypto.NativeSocketError
 import swift.phoenix_crypto.NativeSocketTLS
 
-class IosTcpSocket @OptIn(ExperimentalForeignApi::class) constructor(private val socket: NativeSocket) : TcpSocket {
+class AppleTcpSocket @OptIn(ExperimentalForeignApi::class) constructor(private val socket: NativeSocket) : TcpSocket {
 
     @OptIn(ExperimentalForeignApi::class)
     override suspend fun send(
@@ -128,7 +128,7 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
             port = port.toUShort(),
             tls = tls.toNativeSocketTLS(),
             success = { socket ->
-                continuation.resume(IosTcpSocket(socket!!))
+                continuation.resume(AppleTcpSocket(socket!!))
             },
             failure = { error ->
                 continuation.resumeWithException(error!!.toIOException())

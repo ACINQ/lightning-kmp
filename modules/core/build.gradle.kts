@@ -28,16 +28,24 @@ kotlin {
     linuxArm64()
 
     if (currentOs.isMacOsX) {
-        macosX64()
-
-        macosArm64()
-
         fun DefaultCInteropSettings.configureFor(platform: String) {
             val interopTask = tasks[interopProcessingTaskName]
             interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
             val libPath = "$rootDir/modules/ios-crypto/build/Release-${platform.lowercase()}"
             extraOpts("-libraryPath", libPath)
             includeDirs.headerFilterOnly("$libPath/include")
+        }
+
+        macosX64 {
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                configureFor("Macosx")
+            }
+        }
+
+        macosArm64 {
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                configureFor("Macosx")
+            }
         }
 
         iosX64 { // ios simulator on intel devices
@@ -279,10 +287,10 @@ tasks.withType<AbstractTestTask> {
     }
 }
 
-// Those tests use TLS sockets which are not supported on Linux and MacOS
+// Those tests use TLS sockets which are not supported on Linux
 tasks
     .filterIsInstance<KotlinNativeTest>()
-    .filter { it.name == "macosX64Test" || it.name == "macosArm64Test" || it.name == "linuxX64Test" }
+    .filter { it.name == "linuxX64Test" }
     .map {
         it.filter.excludeTestsMatching("*IntegrationTest")
         it.filter.excludeTestsMatching("*ElectrumClientTest")
