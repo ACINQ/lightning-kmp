@@ -1,6 +1,6 @@
 package fr.acinq.lightning.io
 
-import fr.acinq.lightning.io.rustls.KtorTlsTcpSocket
+import fr.acinq.lightning.io.rustls.RustTlsTcpSocket
 import fr.acinq.lightning.io.rustls.RustlsClientConfig
 import fr.acinq.lightning.logging.LoggerFactory
 import io.ktor.network.selector.SelectorManager
@@ -38,7 +38,7 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> RustlsClientConfig.build(pinnedPublicKey = decodePinnedPublicKey(tls.pubKey))
                         }
                         val conn = config.newConnection(host)
-                        val tls = KtorTlsTcpSocket(conn, socket)
+                        val tls = RustTlsTcpSocket(conn, socket)
                         tls.handshake()
                         tls
                     }

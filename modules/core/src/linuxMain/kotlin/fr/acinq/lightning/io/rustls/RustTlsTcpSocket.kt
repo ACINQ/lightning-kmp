@@ -1,8 +1,6 @@
 package fr.acinq.lightning.io.rustls
 
-import io.ktor.network.selector.SelectorManager
 import io.ktor.network.sockets.Socket
-import io.ktor.network.sockets.aSocket
 import io.ktor.network.sockets.openReadChannel
 import io.ktor.network.sockets.openWriteChannel
 import io.ktor.utils.io.ByteReadChannel
@@ -100,7 +98,7 @@ private val readTlsCallback = staticCFunction {
  * Not safe for concurrent use; drive it from a single coroutine.
  */
 @OptIn(ExperimentalForeignApi::class)
-class KtorTlsTcpSocket (
+class RustTlsTcpSocket(
     private val conn: CPointer<rustls_connection>,
     private val socket: Socket,
 ) : AutoCloseable, TcpSocket {
