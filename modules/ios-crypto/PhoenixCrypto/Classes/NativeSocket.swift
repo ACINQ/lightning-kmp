@@ -16,6 +16,17 @@ enum DecodePubKeyError: Error {
 	case dataToSecKey
 }
 
+/// Serial queue on which all completion callbacks are invoked.
+///
+/// Callbacks must NOT be dispatched to DispatchQueue.main: a process that doesn't run its main
+/// run loop (e.g. a command-line binary blocking its main thread in runBlocking) never drains
+/// the main queue, so the callbacks would never fire. The Kotlin side only resumes coroutine
+/// continuations, which may be called from any thread.
+///
+/// A *serial* queue is required: the closures below rely on it to serialize access to their
+/// shared mutable state (completionCalled, _newClientConnection, _proxyConnection, ...).
+fileprivate let callbackQueue = DispatchQueue(label: "fr.acinq.lightning.NativeSocket")
+
 @objc
 public class NativeSocket: NSObject {
 	
@@ -61,7 +72,7 @@ public class NativeSocket: NSObject {
 		var completionCalled = false
 		
 		let finish = {(result: Result<NWConnection, NWError>) in
-			DispatchQueue.main.async {
+			callbackQueue.async {
 				
 				guard !completionCalled else { return }
 				completionCalled = true
@@ -137,7 +148,7 @@ public class NativeSocket: NSObject {
 			contentContext: .defaultMessage,
 			isComplete: true,
 			completion: .contentProcessed({(error: NWError?) in
-				DispatchQueue.main.async {
+				callbackQueue.async {
 					if let error = error {
 						completion(error.toNativeSocketError())
 					} else {
@@ -155,7 +166,7 @@ public class NativeSocket: NSObject {
 	) -> Void {
 		
 		let finish = {(result: Result<Data, NWError>) in
-			DispatchQueue.main.async {
+			callbackQueue.async {
 				switch result {
 				case .success(let data):
 					success(data)
@@ -192,7 +203,7 @@ public class NativeSocket: NSObject {
 	) -> Void {
 		
 		let finish = {(result: Result<Data, NWError>) in
-			DispatchQueue.main.async {
+			callbackQueue.async {
 				switch result {
 				case .success(let data):
 					success(data)
@@ -291,7 +302,7 @@ public class NativeSocket: NSObject {
 		var completionCalled = false
 		
 		let finish = {(result: Result<NativeSocket, NWError>) in
-			DispatchQueue.main.async {
+			callbackQueue.async {
 				
 				guard !completionCalled else { return }
 				completionCalled = true
@@ -313,7 +324,7 @@ public class NativeSocket: NSObject {
 		var _proxyConnection: NWConnection? = nil
 		
 		let finishSubTask = {(newClientConnection: NWConnection?, proxyConnection: NWConnection?) in
-			DispatchQueue.main.async {
+			callbackQueue.async {
 				
 				if let newClientConnection = newClientConnection {
 					log.debug("finishSubTask: newClientConnection")
