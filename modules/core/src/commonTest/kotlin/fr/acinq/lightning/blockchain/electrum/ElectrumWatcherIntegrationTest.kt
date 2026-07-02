@@ -2,7 +2,6 @@ package fr.acinq.lightning.blockchain.electrum
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Bitcoin.addressToPublicKeyScript
-import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
 import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
@@ -11,14 +10,12 @@ import fr.acinq.lightning.blockchain.WatchSpentTriggered
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.tests.bitcoind.BitcoindService
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.tests.utils.runSuspendBlocking
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -30,11 +27,9 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
     private val bitcoincli = BitcoindService
 
     init {
-        runSuspendBlocking {
-            withTimeout(10.seconds) {
-                while (runTrying { bitcoincli.getNetworkInfo() }.isFailure) {
-                    delay(0.5.seconds)
-                }
+        runSuspendTest(timeout = 10.seconds) {
+            while (runTrying { bitcoincli.getNetworkInfo() }.isFailure) {
+                delay(0.5.seconds)
             }
         }
     }
