@@ -30,3 +30,8 @@ gradle-app.setting
 target/
 project/target
 
+.claude
+claude-root
+claude.Dockerfile
+claude.yml
+

@@ -28,10 +28,6 @@ kotlin {
     linuxArm64()
 
     if (currentOs.isMacOsX) {
-        macosX64()
-
-        macosArm64()
-
         fun DefaultCInteropSettings.configureFor(platform: String) {
             val interopTask = tasks[interopProcessingTaskName]
             interopTask.dependsOn(":lightning-kmp-ios-crypto:buildCrypto$platform")
@@ -40,19 +36,31 @@ kotlin {
             includeDirs.headerFilterOnly("$libPath/include")
         }
 
-        iosX64 { // ios simulator on intel devices
+        macosX64 {
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                configureFor("Macosx")
+            }
+        }
+
+        macosArm64 {
+            compilations["main"].cinterops.create("PhoenixCrypto") {
+                configureFor("Macosx")
+            }
+        }
+
+        iosX64 { // ios simulator on intel macs
             compilations["main"].cinterops.create("PhoenixCrypto") {
                 configureFor("Iphonesimulator")
             }
         }
 
-        iosArm64 { // actual ios devices
+        iosArm64 { // ios devices
             compilations["main"].cinterops.create("PhoenixCrypto") {
                 configureFor("Iphoneos")
             }
         }
 
-        iosSimulatorArm64 { // actual ios devices
+        iosSimulatorArm64 { // ios simulator on apple silicon macs
             compilations["main"].cinterops.create("PhoenixCrypto") {
                 configureFor("Iphonesimulator")
             }
@@ -104,12 +112,7 @@ kotlin {
         }
 
         if (currentOs.isMacOsX) {
-            iosMain {
-                dependencies {
-                    api("io.ktor:ktor-client-ios:${libs.versions.ktor.get()}")
-                }
-            }
-            macosMain {
+            appleMain {
                 dependencies {
                     api("io.ktor:ktor-client-darwin:${libs.versions.ktor.get()}")
                 }
@@ -279,10 +282,10 @@ tasks.withType<AbstractTestTask> {
     }
 }
 
-// Those tests use TLS sockets which are not supported on Linux and MacOS
+// Those tests use TLS sockets which are not supported on Linux
 tasks
     .filterIsInstance<KotlinNativeTest>()
-    .filter { it.name == "macosX64Test" || it.name == "macosArm64Test" || it.name == "linuxX64Test" }
+    .filter { it.name == "linuxX64Test" }
     .map {
         it.filter.excludeTestsMatching("*IntegrationTest")
         it.filter.excludeTestsMatching("*ElectrumClientTest")
