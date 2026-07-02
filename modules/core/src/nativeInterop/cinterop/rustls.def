@@ -1,0 +1,68 @@
+headers = rustls.h
+headerFilter = rustls.h
+staticLibraries.linux_x64 = librustls.a
+libraryPaths.linux_x64 = rustls-ffi/lib/linuxX64
+staticLibraries.linux_arm64 = librustls.a
+libraryPaths.linux_arm64 = rustls-ffi/lib/linuxArm64
+package = rustls.cinterop
+
+# Include / link flags are injected from build.gradle.kts (cinterops { ... }) so the
+# paths stay relative to the project. We only keep the parts that never change here.
+
+---
+
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include "rustls.h"
+
+/*
+ * rustls_client_connection_new keeps using the server_name pointer after it
+ * returns (the resulting connection reads it again during the handshake, e.g.
+ * for certificate name validation and the session-resumption cache). Kotlin/
+ * Native frees the temporary C string produced for a @CString argument as soon
+ * as the call returns, which left rustls reading freed memory (garbage server
+ * name -> NotValidForName, then a crash hashing it into the session cache).
+ *
+ * This shim hands rustls a heap-duplicated copy that lives for the process,
+ * sidestepping that lifetime mismatch. The duplicate is intentionally leaked
+ * (one small allocation per connection).
+ */
+static inline rustls_result wrapper_client_connection_new(const struct rustls_client_config *config,
+                                                          const char *server_name,
+                                                          struct rustls_connection **conn_out) {
+  const char *copy = strdup(server_name);
+  return rustls_client_connection_new(config, copy, conn_out);
+}
+
+/*
+ * Staging buffer shared between Kotlin and the rustls read_tls / write_tls callbacks.
+ *
+ * rustls drives all network I/O through callbacks, but Ktor's socket I/O is
+ * suspending and cannot be called from a (non-capturing) staticCFunction. So the
+ * callbacks never touch the network: they only memcpy between rustls' internal
+ * buffers and this struct. The actual suspending socket reads/writes happen in
+ * Kotlin, before/after invoking read_tls/write_tls.
+ *
+ *  - write_tls callback (rustls -> us): append up to (cap - len) bytes at buf+len.
+ *  - read_tls  callback (us -> rustls): hand out up to (len - pos) bytes from buf+pos.
+ */
+typedef struct rustls_bridge_io {
+  uint8_t *buf;   /* pinned backing storage (a Kotlin ByteArray) */
+  size_t   cap;   /* capacity of buf                              */
+  size_t   len;   /* bytes currently valid in buf                 */
+  size_t   pos;   /* read cursor (read_tls direction only)        */
+} rustls_bridge_io;
+
+/*
+ * The expected SubjectPublicKeyInfo (DER) for public-key pinning.
+ *
+ * A pointer to one of these is handed to rustls as the connection userdata
+ * (rustls_connection_set_userdata) so the custom certificate verifier callback
+ * can compare the server certificate's public key against it. The backing bytes
+ * are owned by Kotlin (allocated on nativeHeap for the config's lifetime).
+ */
+typedef struct rustls_pinned_key {
+  const uint8_t *data;  /* DER-encoded SubjectPublicKeyInfo */
+  size_t         len;
+} rustls_pinned_key;
