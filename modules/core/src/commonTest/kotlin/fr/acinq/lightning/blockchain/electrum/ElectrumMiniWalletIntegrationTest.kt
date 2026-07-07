@@ -1,29 +1,21 @@
 package fr.acinq.lightning.blockchain.electrum
 
-import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.Chain
+import fr.acinq.bitcoin.MnemonicCode
 import fr.acinq.bitcoin.utils.runTrying
-import fr.acinq.lightning.SwapInParams
-import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.crypto.LocalKeyManager
 import fr.acinq.lightning.io.TcpSocket
-import fr.acinq.lightning.io.TcpSocket.Builder.Companion.invoke
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.bitcoind.BitcoindService
 import fr.acinq.lightning.tests.utils.LightningTestSuite
-import fr.acinq.lightning.tests.utils.readEnvironmentVariable
-import fr.acinq.lightning.tests.utils.runSuspendBlocking
 import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.ServerAddress
-import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlin.test.Test
-import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 
@@ -35,12 +27,12 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     private val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), Chain.Regtest, TestConstants.aliceSwapInServerXpub)
 
     init {
-        runSuspendBlocking {
-            withTimeout(10.seconds) {
-                while (runTrying { bitcoincli.getNetworkInfo() }.isFailure) {
-                    delay(0.5.seconds)
-                }
+        runSuspendTest(timeout = 10.seconds) {
+            while (runTrying { bitcoincli.getNetworkInfo() }.isFailure) {
+                delay(0.5.seconds)
             }
+        }
+        runSuspendTest {
             val address = bitcoincli.getNewAddress()
             val address0 = keyManager.swapInOnChainWallet.getSwapInProtocol(0).address(Chain.Regtest)
             bitcoincli.sendToAddress(address0, 1.0)
