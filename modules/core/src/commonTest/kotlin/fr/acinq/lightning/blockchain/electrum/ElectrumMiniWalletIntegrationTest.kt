@@ -15,7 +15,6 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
@@ -28,12 +27,12 @@ class ElectrumMiniWalletIntegrationTest : LightningTestSuite() {
     private val keyManager = LocalKeyManager(MnemonicCode.toSeed(mnemonics, "").toByteVector(), Chain.Regtest, TestConstants.aliceSwapInServerXpub)
 
     init {
-        runSuspendTest {
-            withTimeout(10.seconds) {
-                while (runTrying { bitcoincli.getNetworkInfo() }.isFailure) {
-                    delay(0.5.seconds)
-                }
+        runSuspendTest(timeout = 10.seconds) {
+            while (runTrying { bitcoincli.getNetworkInfo() }.isFailure) {
+                delay(0.5.seconds)
             }
+        }
+        runSuspendTest {
             val address = bitcoincli.getNewAddress()
             val address0 = keyManager.swapInOnChainWallet.getSwapInProtocol(0).address(Chain.Regtest)
             bitcoincli.sendToAddress(address0, 1.0)
