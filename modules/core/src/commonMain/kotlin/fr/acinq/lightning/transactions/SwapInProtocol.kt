@@ -136,7 +136,7 @@ data class SwapInProtocolLegacy(val userPublicKey: PublicKey, val serverPublicKe
             // we need to provide the fingerprint of the master xpub and the hardened derivation path.
             // This lets wallets that have access to the master xpriv derive the corresponding private and public keys.
             val masterFingerprint = ByteVector(Crypto.hash160(masterPublicKey.publickeybytes).take(4).toByteArray())
-            val encodedChildKey = DeterministicWallet.encode(userExtendedPublicKey, testnet = chain != Chain.Mainnet)
+            val encodedChildKey = userExtendedPublicKey.encode(testnet = chain != Chain.Mainnet)
             val userKey = "[${masterFingerprint.toHex()}/${userExtendedPublicKey.path.asString('h').removePrefix("m/")}]$encodedChildKey"
             return "wsh(and_v(v:pk($userKey),or_d(pk(${remoteServerPublicKey.toHex()}),older($refundDelay))))"
         }

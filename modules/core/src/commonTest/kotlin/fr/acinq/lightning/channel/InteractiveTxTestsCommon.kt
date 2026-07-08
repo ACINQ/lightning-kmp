@@ -95,39 +95,6 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         assertEquals(signedTxB.localSigs.swapInServerSigs.size, 2)
         assertEquals(signedTxB.localSigs.swapInServerPartialSigs.size, 3)
 
-        // Alice detects invalid signatures from Bob.
-        val sigsInvalidTxId = signedTxB.localSigs.copy(txId = TxId(randomBytes32()))
-        assertNull(sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidTxId))
-
-        val sigsMissingUserSigs = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInUserSigs }.toSet()))
-        assertNull(sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingUserSigs))
-
-        val sigsMissingUserPartialSigs = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInUserPartialSigs }.toSet()))
-        assertNull(sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingUserPartialSigs))
-
-        val sigsMissingServerSigs = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInServerSigs }.toSet()))
-        assertNull(sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingServerSigs))
-
-        val sigsMissingServerPartialSigs = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInServerPartialSigs }.toSet()))
-        assertNull(sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingServerPartialSigs))
-
-        val invalidUserSigs = signedTxB.localSigs.swapInUserSigs.map { randomBytes64() }
-        val sigsInvalidUserSig = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInUserSigs }.toSet() + TxSignaturesTlv.SwapInUserSigs(invalidUserSigs)))
-        assertNull(sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidUserSig))
-
-        val invalidPartialUserSigs = signedTxB.localSigs.swapInUserPartialSigs.map { TxSignaturesTlv.PartialSignature(randomBytes32(), it.localNonce, it.remoteNonce) }
-        val sigsInvalidUserPartialSig =
-            signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInUserPartialSigs }.toSet() + TxSignaturesTlv.SwapInUserPartialSigs(invalidPartialUserSigs)))
-        assertNull(sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidUserPartialSig))
-
-        val invalidServerSigs = signedTxB.localSigs.swapInServerSigs.map { randomBytes64() }
-        val sigsInvalidServerSig = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInServerSigs }.toSet() + TxSignaturesTlv.SwapInServerSigs(invalidServerSigs)))
-        assertNull(sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidServerSig))
-
-        val invalidPartialServerSigs = signedTxB.localSigs.swapInServerPartialSigs.map { TxSignaturesTlv.PartialSignature(randomBytes32(), it.localNonce, it.remoteNonce) }
-        val sigsInvalidServerPartialSig = signedTxB.localSigs.copy(tlvs = TlvStream(TxSignaturesTlv.SwapInUserPartialSigs(signedTxB.localSigs.swapInUserPartialSigs), TxSignaturesTlv.SwapInServerPartialSigs(invalidPartialServerSigs)))
-        assertNull(sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidServerPartialSig))
-
         // The resulting transaction is valid and has the right feerate.
         val signedTxA = sharedTxA.sharedTx.sign(alice7, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, signedTxB.localSigs)
         assertNotNull(signedTxA)
@@ -144,6 +111,150 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         Transaction.correctlySpends(signedTx, (sharedTxA.sharedTx.localInputs + sharedTxB.sharedTx.localInputs).map { it.previousTx }, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         val feerate = Transactions.fee2rate(signedTxA.tx.fees, signedTx.weight())
         assertTrue(targetFeerate <= feerate && feerate <= targetFeerate * 1.25, "unexpected feerate (target=$targetFeerate actual=$feerate)")
+    }
+
+
+    @Test
+    fun `Alice detects invalid signatures from Bob`() {
+        val targetFeerate = FeeratePerKw(5000.sat)
+        val fundingA = 120_000.sat
+        val utxosA = listOf(50_000.sat, 35_000.sat, 60_000.sat)
+        val legacyUtxosA = listOf(10_000.sat, 60_000.sat)
+        val fundingB = 100_000.sat
+        val utxosB = listOf(30_000.sat, 100_000.sat)
+        val legacyUtxosB = listOf(25_000.sat, 50_000.sat)
+        val f = createFixture(fundingA, utxosA, legacyUtxosA, fundingB, utxosB, legacyUtxosB, targetFeerate, 660.sat, 42)
+        assertEquals(f.fundingParamsA.fundingPubkeyScript(f.channelKeysA), f.fundingParamsB.fundingPubkeyScript(f.channelKeysB))
+        assertEquals(f.fundingParamsA.fundingAmount, fundingA + fundingB)
+        assertEquals(f.fundingParamsA.fundingAmount, fundingA + fundingB)
+
+        val alice0 = InteractiveTxSession(f.nodeIdB, f.channelKeysA, f.keyManagerA.swapInOnChainWallet, f.fundingParamsA, 0, 0.msat, 0.msat, emptySet(), f.fundingContributionsA)
+        val bob0 = InteractiveTxSession(f.nodeIdA, f.channelKeysB, f.keyManagerB.swapInOnChainWallet, f.fundingParamsB, 0, 0.msat, 0.msat, emptySet(), f.fundingContributionsB)
+
+        data class Setup(val alice: InteractiveTxSession, val sharedTxA: InteractiveTxSessionAction.SignSharedTx, val signedTxB: PartiallySignedSharedTransaction)
+
+        // we need to re-create new interactive tx sessions for each test, because they include secret musig2 nonces that can only be used once.
+        // re-using the same sessions would seem to work (signing the shared tx would fail) but for the wrong reasons (secret nonce already used instead of invalid signatures)
+        fun setup(): Setup {
+            // 3 swap-in inputs, 2 legacy swap-in inputs, and 2 outputs from Alice
+            // 2 swap-in inputs, 2 legacy swap-in inputs, and 1 output from Bob
+
+            // Alice --- tx_add_input --> Bob
+            val (alice1, inputA1) = sendMessage<TxAddInput>(alice0)
+            assertEquals(0xfffffffdU, inputA1.sequence)
+            // Alice <-- tx_add_input --- Bob
+            val (bob1, inputB1) = receiveMessage<TxAddInput>(bob0, inputA1)
+            // Alice --- tx_add_input --> Bob
+            val (alice2, inputA2) = receiveMessage<TxAddInput>(alice1, inputB1)
+            // Alice <-- tx_add_input --- Bob
+            val (bob2, inputB2) = receiveMessage<TxAddInput>(bob1, inputA2)
+            // Alice --- tx_add_input --> Bob
+            val (alice3, inputA3) = receiveMessage<TxAddInput>(alice2, inputB2)
+            // Alice <-- tx_add_input --- Bob
+            val (bob3, inputB3) = receiveMessage<TxAddInput>(bob2, inputA3)
+            // Alice --- tx_add_input --> Bob
+            val (alice4, inputA4) = receiveMessage<TxAddInput>(alice3, inputB3)
+            // Alice <-- tx_add_input --- Bob
+            val (bob4, inputB4) = receiveMessage<TxAddInput>(bob3, inputA4)
+            // Alice --- tx_add_input --> Bob
+            val (alice5, inputA5) = receiveMessage<TxAddInput>(alice4, inputB4)
+            // Alice <-- tx_add_output --- Bob
+            val (bob5, outputB1) = receiveMessage<TxAddOutput>(bob4, inputA5)
+            // Alice --- tx_add_output --> Bob
+            val (alice6, outputA1) = receiveMessage<TxAddOutput>(alice5, outputB1)
+            // Alice <-- tx_complete --- Bob
+            val (bob6, txCompleteB1) = receiveMessage<TxComplete>(bob5, outputA1)
+            // Alice --- tx_add_output --> Bob
+            val (alice7, outputA2) = receiveMessage<TxAddOutput>(alice6, txCompleteB1)
+            // Alice <-- tx_complete --- Bob
+            val (bob7, txCompleteB2) = receiveMessage<TxComplete>(bob6, outputA2)
+
+            // Alice is responsible for adding the shared output.
+            assertNotEquals(outputA1.pubkeyScript, outputA2.pubkeyScript)
+            assertEquals(listOf(outputA1, outputA2).count { it.pubkeyScript == f.fundingParamsA.fundingPubkeyScript(f.channelKeysA) && it.amount == fundingA + fundingB }, 1)
+
+            val sharedTxA = receiveFinalMessage(alice7, txCompleteB2).second
+            assertNotNull(sharedTxA.txComplete)
+
+            val (bob8, sharedTxB) = receiveFinalMessage(bob7, sharedTxA.txComplete)
+            assertNull(sharedTxB.txComplete)
+
+            assertEquals(sharedTxA.sharedTx.localAmountIn, 215_000_000.msat)
+            assertEquals(sharedTxA.sharedTx.remoteAmountIn, 205_000_000.msat)
+            assertEquals(sharedTxA.sharedTx.totalAmountIn, 420_000.sat)
+            assertEquals(sharedTxA.sharedTx.fees, 15_965.sat)
+            assertTrue(sharedTxB.sharedTx.localFees < sharedTxA.sharedTx.localFees)
+
+            val signedTxB = sharedTxB.sharedTx.sign(bob8, f.keyManagerB, f.fundingParamsB, f.nodeIdA).right!!
+
+            return Setup(alice7, sharedTxA, signedTxB)
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val sigsInvalidTxId = signedTxB.localSigs.copy(txId = TxId(randomBytes32()))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidTxId))
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val sigsMissingUserSigs = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInUserSigs }.toSet()))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingUserSigs))
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val sigsMissingUserPartialSigs = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInUserPartialSigs }.toSet()))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingUserPartialSigs))
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val sigsMissingServerSigs = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInServerSigs }.toSet()))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingServerSigs))
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val sigsMissingServerPartialSigs = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInServerPartialSigs }.toSet()))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsMissingServerPartialSigs))
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val invalidUserSigs = signedTxB.localSigs.swapInUserSigs.map { randomBytes64() }
+            val sigsInvalidUserSig = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInUserSigs }.toSet() + TxSignaturesTlv.SwapInUserSigs(invalidUserSigs)))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidUserSig))
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val invalidUserSigs = signedTxB.localSigs.swapInUserSigs.map { randomBytes64() }
+            val sigsInvalidUserSig = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInUserSigs }.toSet() + TxSignaturesTlv.SwapInUserSigs(invalidUserSigs)))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidUserSig))
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val invalidPartialUserSigs = signedTxB.localSigs.swapInUserPartialSigs.map { TxSignaturesTlv.PartialSignature(randomBytes32(), it.localNonce, it.remoteNonce) }
+            val sigsInvalidUserPartialSig =
+                signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInUserPartialSigs }.toSet() + TxSignaturesTlv.SwapInUserPartialSigs(invalidPartialUserSigs)))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidUserPartialSig))
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val invalidServerSigs = signedTxB.localSigs.swapInServerSigs.map { randomBytes64() }
+            val sigsInvalidServerSig = signedTxB.localSigs.copy(tlvs = TlvStream(signedTxB.localSigs.tlvs.records.filterNot { it is TxSignaturesTlv.SwapInServerSigs }.toSet() + TxSignaturesTlv.SwapInServerSigs(invalidServerSigs)))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidServerSig))
+        }
+
+        run {
+            val (alice, sharedTxA, signedTxB) = setup()
+            val invalidPartialServerSigs = signedTxB.localSigs.swapInServerPartialSigs.map { TxSignaturesTlv.PartialSignature(randomBytes32(), it.localNonce, it.remoteNonce) }
+            val sigsInvalidServerPartialSig = signedTxB.localSigs.copy(tlvs = TlvStream(TxSignaturesTlv.SwapInUserPartialSigs(signedTxB.localSigs.swapInUserPartialSigs), TxSignaturesTlv.SwapInServerPartialSigs(invalidPartialServerSigs)))
+            assertNull(sharedTxA.sharedTx.sign(alice, f.keyManagerA, f.fundingParamsA, f.nodeIdB).right?.addRemoteSigs(f.channelKeysA, f.fundingParamsA, sigsInvalidServerPartialSig))
+        }
     }
 
     @Test
