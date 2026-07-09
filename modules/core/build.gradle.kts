@@ -221,12 +221,11 @@ publishing {
 afterEvaluate {
     val targets = when {
         currentOs.isLinux -> listOf()
-        else -> listOf("linuxX64")
+        else -> listOf("linuxX64", "linuxArm64")
     }.mapNotNull { kotlin.targets.findByName(it) as? KotlinNativeTarget }
 
     configure(targets) {
         compilations.all {
-            cinterops.all { tasks[interopProcessingTaskName].enabled = false }
             compileTaskProvider.get().enabled = false
             tasks[processResourcesTaskName].enabled = false
         }

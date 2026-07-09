@@ -121,8 +121,8 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
                     if (serverKey == pinnedKey) {
                         logger.info { "successfully checked server's certificate against pinned pubkey" }
                     } else {
-                        logger.warning { "server's certificate does not match pinned pubkey, fallback to default check" }
-                        throw TcpSocket.IOException.ConnectionClosed(CertificateException("certificate does not match pinned key"))
+                        logger.warning { "server's certificate does not match pinned pubkey" }
+                        throw TcpSocket.IOException.ConnectionClosed(CertificateException("certificate does not match pinned pubkey"))
                     }
                 }
 
@@ -141,11 +141,11 @@ class JvmTcpSocket(val socket: Socket) : TcpSocket {
         fun buildTlsConfigFor(host: String, tls: TcpSocket.TLS.ENABLED, logger: Logger) = when (tls) {
             is TcpSocket.TLS.TRUSTED_CERTIFICATES -> TLSConfigBuilder().build()
             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> {
-                logger.warning { "using unsafe TLS for connection with $host" }
+                logger.info { "using certificate pinning for connections with $host" }
                 tlsConfigForPinnedCert(tls.pubKey, logger)
             }
             is TcpSocket.TLS.UNSAFE_CERTIFICATES -> {
-                logger.info { "using certificate pinning for connections with $host" }
+                logger.warning { "using unsafe TLS for connection with $host" }
                 tlsConfigForUnsafeCertificates()
             }
         }
