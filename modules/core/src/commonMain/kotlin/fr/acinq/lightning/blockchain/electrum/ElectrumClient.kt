@@ -21,12 +21,12 @@ import kotlin.time.Duration.Companion.seconds
 
 sealed class ElectrumConnectionStatus {
     data class Closed(val reason: TcpSocket.IOException?) : ElectrumConnectionStatus()
-    data object Connecting : ElectrumConnectionStatus()
+    data class Connecting(val serverAddress: ServerAddress) : ElectrumConnectionStatus()
     data class Connected(val version: ServerVersionResponse, val height: Int, val header: BlockHeader) : ElectrumConnectionStatus()
 
     fun toConnectionState(): Connection = when (this) {
         is Closed -> Connection.CLOSED(this.reason)
-        Connecting -> Connection.ESTABLISHING
+        is Connecting -> Connection.ESTABLISHING
         is Connected -> Connection.ESTABLISHED
     }
 }
@@ -106,7 +106,7 @@ class ElectrumClient(
     private suspend fun openSocket(serverAddress: ServerAddress, socketBuilder: TcpSocket.Builder, timeout: Duration): TcpSocket? {
         var socket: TcpSocket? = null
         return try {
-            _connectionStatus.value = ElectrumConnectionStatus.Connecting
+            _connectionStatus.value = ElectrumConnectionStatus.Connecting(serverAddress)
             val (host, port, tls) = serverAddress
             logger.info { "attempting connection to electrumx instance [host=$host, port=$port, tls=$tls]" }
             withTimeout(timeout) {
