@@ -226,7 +226,6 @@ afterEvaluate {
 
     configure(targets) {
         compilations.all {
-            cinterops.all { tasks[interopProcessingTaskName].enabled = false }
             compileTaskProvider.get().enabled = false
             tasks[processResourcesTaskName].enabled = false
         }
