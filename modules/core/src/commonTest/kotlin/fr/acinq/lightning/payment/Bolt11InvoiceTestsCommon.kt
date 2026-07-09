@@ -610,6 +610,18 @@ class Bolt11InvoiceTestsCommon : LightningTestSuite() {
         assertEquals(fallbackAddress1, invoice2.fallbackAddress)
     }
 
+    @Test
+    fun `accountable invoice`() {
+        val paymentHash = ByteVector32("a6d4fb71fce77dab6e4e7b674ac3b2b8994c0911a799cab0f06eb6b27e046cca")
+        val paymentSecret = ByteVector32("25c149bc0bbe1d1a4d01d5048c32a0839059174b07ab2edc8063ddbd22200afa")
+        val features = Features(Feature.VariableLengthOnion to FeatureSupport.Mandatory, Feature.PaymentSecret to FeatureSupport.Mandatory)
+        val invoice = Bolt11Invoice.create(Chain.Mainnet, 60000.msat, paymentHash, priv, Either.Left("accountable invoice"), CltvExpiryDelta(18), features, paymentSecret = paymentSecret, timestampSeconds = 1767864238L)
+        assertTrue(invoice.accountable)
+        val expected = "lnbc600n1p547aawpp55m20ku0uua76kmjw0dn54sajhzv5czg357vu4v8sd6mtylsydn9qcqpjsp5yhq5n0qthcw35ngp65zgcv4qswg9j96tq74jahyqv0wm6g3qptaq9qrsgqlqqdqlv93kxmm4de6xzcnvv5sxjmnkda5kxeg939n82lq9kcjzpxjv3d8ull0u5fe8v389sjq9457yljmfuml33wruy0wcl78vp6hqtrvpl7kg2wsga2zdfwx29937hecvdnu7wzpnrgqre2xnf"
+        assertEquals(expected, invoice.write())
+        assertEquals(invoice, Bolt11Invoice.read(expected).get())
+    }
+
     companion object {
         fun createInvoiceUnsafe(
             amount: MilliSatoshi? = null,

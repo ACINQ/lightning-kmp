@@ -166,7 +166,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     payerNote = truncatedPayerNote,
                     quantity = request.quantity_opt
                 ).toPathId(nodeParams.nodePrivateKey)
-                val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(metadata))).write().toByteVector()
+                val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.UpgradeAccountability, RouteBlindingEncryptedDataTlv.PathId(metadata))).write().toByteVector()
                 val cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
                 val paymentInfo = OfferTypes.PaymentInfo(
                     feeBase = remoteChannelUpdates.maxOfOrNull { it.feeBaseMsat } ?: walletParams.invoiceDefaultRoutingFees.feeBase,
@@ -189,6 +189,7 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 val pathExpiry = (paymentInfo.cltvExpiryDelta + CltvExpiryDelta(720) + (nodeParams.bolt12InvoiceExpiry.inWholeMinutes.toInt() / 10)).toCltvExpiry(currentBlockHeight.toLong())
                 val remoteNodePayload = RouteBlindingEncryptedData(
                     TlvStream(
+                        RouteBlindingEncryptedDataTlv.UpgradeAccountability,
                         RouteBlindingEncryptedDataTlv.OutgoingNodeId(EncodedNodeId.WithPublicKey.Wallet(nodeParams.nodeId)),
                         RouteBlindingEncryptedDataTlv.PaymentRelay(cltvExpiryDelta, paymentInfo.feeProportionalMillionths, paymentInfo.feeBase),
                         RouteBlindingEncryptedDataTlv.PaymentConstraints(pathExpiry, paymentInfo.minHtlc)

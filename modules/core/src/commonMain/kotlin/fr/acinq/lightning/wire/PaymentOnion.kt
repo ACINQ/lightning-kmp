@@ -229,6 +229,16 @@ sealed class OnionPaymentPayloadTlv : Tlv {
         }
     }
 
+    /** Flag to allow forwarding nodes to set `accountable` in their `update_add_htlc` */
+    data object UpgradeAccountability : OnionPaymentPayloadTlv(), TlvValueReader<UpgradeAccountability> {
+        override val tag: Long = 19
+        override fun write(out: Output) {}
+        override fun read(input: Input): UpgradeAccountability {
+            require(input.availableBytes == 0)
+            return UpgradeAccountability
+        }
+    }
+
 }
 
 object PaymentOnion {
@@ -259,6 +269,7 @@ object PaymentOnion {
                     OnionPaymentPayloadTlv.InvoiceRoutingInfo.tag to OnionPaymentPayloadTlv.InvoiceRoutingInfo.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.TrampolineOnion.tag to OnionPaymentPayloadTlv.TrampolineOnion.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
                     OnionPaymentPayloadTlv.OutgoingBlindedPaths.tag to OnionPaymentPayloadTlv.OutgoingBlindedPaths.Companion as TlvValueReader<OnionPaymentPayloadTlv>,
+                    OnionPaymentPayloadTlv.UpgradeAccountability.tag to OnionPaymentPayloadTlv.UpgradeAccountability as TlvValueReader<OnionPaymentPayloadTlv>,
                 )
             )
 
@@ -293,6 +304,7 @@ object PaymentOnion {
                 if (total > 0.msat) total else amount
             }
             val paymentMetadata = records.get<OnionPaymentPayloadTlv.PaymentMetadata>()?.data
+            val upgradeAccountability = records.get<OnionPaymentPayloadTlv.UpgradeAccountability>() != null
 
             override fun write(out: Output) = tlvSerializer.write(records, out)
 
@@ -315,6 +327,7 @@ object PaymentOnion {
                     expiry: CltvExpiry,
                     paymentSecret: ByteVector32,
                     paymentMetadata: ByteVector?,
+                    upgradeAccountability: Boolean,
                     userCustomTlvs: Set<GenericTlv> = setOf()
                 ): Standard {
                     val tlvs = buildSet {
@@ -322,6 +335,9 @@ object PaymentOnion {
                         add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
                         add(OnionPaymentPayloadTlv.PaymentData(paymentSecret, amount))
                         paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
+                        if (upgradeAccountability) {
+                            add(OnionPaymentPayloadTlv.UpgradeAccountability)
+                        }
                     }
                     return Standard(TlvStream(tlvs, userCustomTlvs))
                 }
@@ -333,6 +349,7 @@ object PaymentOnion {
                     expiry: CltvExpiry,
                     paymentSecret: ByteVector32,
                     paymentMetadata: ByteVector?,
+                    upgradeAccountability: Boolean,
                     additionalTlvs: Set<OnionPaymentPayloadTlv> = setOf(),
                     userCustomTlvs: Set<GenericTlv> = setOf()
                 ): Standard {
@@ -341,6 +358,9 @@ object PaymentOnion {
                         add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
                         add(OnionPaymentPayloadTlv.PaymentData(paymentSecret, totalAmount))
                         paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
+                        if (upgradeAccountability) {
+                            add(OnionPaymentPayloadTlv.UpgradeAccountability)
+                        }
                         addAll(additionalTlvs)
                     }
                     return Standard(TlvStream(tlvs, userCustomTlvs))
@@ -352,15 +372,19 @@ object PaymentOnion {
                     totalAmount: MilliSatoshi,
                     expiry: CltvExpiry,
                     paymentSecret: ByteVector32,
-                    trampolinePacket: OnionRoutingPacket
+                    trampolinePacket: OnionRoutingPacket,
+                    upgradeAccountability: Boolean,
                 ): Standard {
-                    val tlvs = TlvStream(
-                        OnionPaymentPayloadTlv.AmountToForward(amount),
-                        OnionPaymentPayloadTlv.OutgoingCltv(expiry),
-                        OnionPaymentPayloadTlv.PaymentData(paymentSecret, totalAmount),
-                        OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)
-                    )
-                    return Standard(tlvs)
+                    val tlvs = buildSet {
+                        add(OnionPaymentPayloadTlv.AmountToForward(amount))
+                        add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
+                        add(OnionPaymentPayloadTlv.PaymentData(paymentSecret, totalAmount))
+                        add(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket))
+                        if (upgradeAccountability) {
+                            add(OnionPaymentPayloadTlv.UpgradeAccountability)
+                        }
+                    }
+                    return Standard(TlvStream(tlvs))
                 }
             }
         }
@@ -417,8 +441,17 @@ object PaymentOnion {
                 }
             }
 
-            fun create(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry): ChannelRelayPayload =
-                ChannelRelayPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amountToForward), OnionPaymentPayloadTlv.OutgoingCltv(outgoingCltv), OnionPaymentPayloadTlv.OutgoingChannelId(outgoingChannelId)))
+            fun create(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry, upgradeAccountability: Boolean): ChannelRelayPayload {
+                val tlvs = buildSet {
+                    add(OnionPaymentPayloadTlv.AmountToForward(amountToForward))
+                    add(OnionPaymentPayloadTlv.OutgoingCltv(outgoingCltv))
+                    add(OnionPaymentPayloadTlv.OutgoingChannelId(outgoingChannelId))
+                    if (upgradeAccountability) {
+                        add(OnionPaymentPayloadTlv.UpgradeAccountability)
+                    }
+                }
+                return ChannelRelayPayload(TlvStream(tlvs))
+            }
         }
     }
 
@@ -461,8 +494,17 @@ object PaymentOnion {
                 }
             }
 
-            fun create(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey) =
-                NodeRelayPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(amount), OnionPaymentPayloadTlv.OutgoingCltv(expiry), OnionPaymentPayloadTlv.OutgoingNodeId(nextNodeId)))
+            fun create(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey, upgradeAccountability: Boolean): NodeRelayPayload {
+                val tlvs = buildSet {
+                    add(OnionPaymentPayloadTlv.AmountToForward(amount))
+                    add(OnionPaymentPayloadTlv.OutgoingCltv(expiry))
+                    add(OnionPaymentPayloadTlv.OutgoingNodeId(nextNodeId))
+                    if (upgradeAccountability) {
+                        add(OnionPaymentPayloadTlv.UpgradeAccountability)
+                    }
+                }
+                return NodeRelayPayload(TlvStream(tlvs))
+            }
         }
     }
 
@@ -504,7 +546,7 @@ object PaymentOnion {
                 }
             }
 
-            fun create(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice, routingInfo: List<Bolt11Invoice.TaggedField.RoutingInfo>): RelayToNonTrampolinePayload =
+            fun create(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: Bolt11Invoice, routingInfo: List<Bolt11Invoice.TaggedField.RoutingInfo>, upgradeAccountability: Boolean): RelayToNonTrampolinePayload =
                 RelayToNonTrampolinePayload(
                     TlvStream(
                         buildSet {
@@ -515,6 +557,9 @@ object PaymentOnion {
                             invoice.paymentMetadata?.let { add(OnionPaymentPayloadTlv.PaymentMetadata(it)) }
                             add(OnionPaymentPayloadTlv.InvoiceFeatures(invoice.features.toByteArray().toByteVector()))
                             add(OnionPaymentPayloadTlv.InvoiceRoutingInfo(routingInfo.map { it.hints }))
+                            if (upgradeAccountability) {
+                                add(OnionPaymentPayloadTlv.UpgradeAccountability)
+                            }
                         }
                     )
                 )
