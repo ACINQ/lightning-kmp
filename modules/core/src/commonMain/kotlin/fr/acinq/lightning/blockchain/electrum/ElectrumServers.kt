@@ -4,6 +4,9 @@ import fr.acinq.bitcoin.Chain
 import fr.acinq.lightning.io.TcpSocket
 import fr.acinq.lightning.utils.ServerAddress
 
+/**
+ * Based on: https://github.com/spesmilo/electrum/blob/master/electrum/chains/mainnet/servers.json
+ */
 object ElectrumServers {
 
     private fun electrumServer(host: String, port: Int = 50002): ServerAddress =
@@ -54,9 +57,6 @@ object ElectrumServers {
                         "By3WGCPnSVAnq3vVJyvABfcJQuhXoQ+nF48e3XbfQ1Gnj1Gy6ZB7ikTMOU1KTYzL" +
                         "A8FCjlZR1zNWRA+jHppqMcsCAwEAAQ=="
         ),
-//    electrumServer(host = "electrum.hodlister.co"), too slow
-//    electrumServer(host = "electrum3.hodlister.co"), too slow
-//    electrumServer(host = "electrum5.hodlister.co"), too slow
         electrumServer(
             host = "fortress.qtornado.com", publicKey =
                 "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAy7xI+hVU3rUSAyMMX8OI" +
