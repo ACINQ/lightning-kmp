@@ -62,7 +62,9 @@ object OfferTypes {
 
     sealed class Bolt12Tlv : Tlv
 
-    sealed class InvoiceTlv : Bolt12Tlv()
+    sealed class PayerProofTlv : Bolt12Tlv()
+
+    sealed class InvoiceTlv : PayerProofTlv()
 
     sealed class InvoiceRequestTlv : InvoiceTlv()
 
@@ -657,6 +659,110 @@ object OfferTypes {
         }
     }
 
+    /** The payer signs the payer proof. */
+    data class ProofSignature(val signature: ByteVector64) : PayerProofTlv() {
+        override val tag: Long get() = ProofSignature.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(signature, out)
+        }
+
+        companion object : TlvValueReader<ProofSignature> {
+            const val tag: Long = 241
+            override fun read(input: Input): ProofSignature {
+                return ProofSignature(ByteVector64(LightningCodecs.bytes(input, input.availableBytes)))
+            }
+        }
+    }
+
+    /** Preimage matching the invoice's [InvoicePaymentHash]. */
+    data class InvoicePreimage(val preimage: ByteVector32) : PayerProofTlv() {
+        override val tag: Long get() = InvoicePreimage.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(preimage, out)
+        }
+
+        companion object : TlvValueReader<InvoicePreimage> {
+            const val tag: Long = 1001
+            override fun read(input: Input): InvoicePreimage {
+                return InvoicePreimage(ByteVector32(LightningCodecs.bytes(input, input.availableBytes)))
+            }
+        }
+    }
+
+    /** The payer may omit some invoice TLVs for privacy reasons. */
+    data class OmittedTlvs(val missing: List<Long>) : PayerProofTlv() {
+        override val tag: Long get() = OmittedTlvs.tag
+
+        override fun write(out: Output) {
+            missing.forEach { tlv -> LightningCodecs.writeBigSize(tlv, out) }
+        }
+
+        companion object : TlvValueReader<OmittedTlvs> {
+            const val tag: Long = 1002
+            override fun read(input: Input): OmittedTlvs {
+                val tlvs = ArrayList<Long>()
+                while (input.availableBytes > 0) {
+                    tlvs.add(LightningCodecs.bigSize(input))
+                }
+                return OmittedTlvs(tlvs.toList())
+            }
+        }
+    }
+
+    /** The payer must include the missing parts of the invoice TLV merkle tree. */
+    data class MissingHashes(val missing: List<ByteVector32>) : PayerProofTlv() {
+        override val tag: Long get() = MissingHashes.tag
+
+        override fun write(out: Output) {
+            missing.forEach { hash -> LightningCodecs.writeBytes(hash, out) }
+        }
+
+        companion object : TlvValueReader<MissingHashes> {
+            const val tag: Long = 1003
+            override fun read(input: Input): MissingHashes {
+                val count = input.availableBytes / 32
+                val missing = (0 until count).map { LightningCodecs.bytes(input, 32).byteVector32() }
+                return MissingHashes(missing)
+            }
+        }
+    }
+
+    /** The payer must include a nonce hash for each invoice TLV included in the payer proof. */
+    data class LeafHashes(val hashes: List<ByteVector32>) : PayerProofTlv() {
+        override val tag: Long get() = LeafHashes.tag
+
+        override fun write(out: Output) {
+            hashes.forEach { hash -> LightningCodecs.writeBytes(hash, out) }
+        }
+
+        companion object : TlvValueReader<LeafHashes> {
+            const val tag: Long = 1004
+            override fun read(input: Input): LeafHashes {
+                val count = input.availableBytes / 32
+                val missing = (0 until count).map { LightningCodecs.bytes(input, 32).byteVector32() }
+                return LeafHashes(missing)
+            }
+        }
+    }
+
+    /** An optional challenge may be included in the payer proof. */
+    data class ProofNote(val note: String) : PayerProofTlv() {
+        override val tag: Long get() = ProofNote.tag
+
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(note.encodeToByteArray(), out)
+        }
+
+        companion object : TlvValueReader<ProofNote> {
+            const val tag: Long = 1005
+            override fun read(input: Input): ProofNote {
+                return ProofNote(LightningCodecs.bytes(input, input.availableBytes).decodeToString(throwOnInvalidSequence = true))
+            }
+        }
+    }
+
     private fun isOfferTlv(tlv: GenericTlv): Boolean {
         // Offer TLVs are in the range [1, 79] or [1000000000, 1999999999].
         return tlv.tag in 1..79 || tlv.tag in 1000000000..1999999999
@@ -1055,6 +1161,7 @@ object OfferTypes {
     }
 
     fun <T : Tlv> rootHash(tlvStream: TlvStream<T>): ByteVector32 {
+        // This encoding step ensures that the resulting tlvs are ordered and that we combine known and unknown TLVs.
         val encodedTlvs = (tlvStream.records + tlvStream.unknown).sortedBy { it.tag }.map { tlv ->
             val out = ByteArrayOutput()
             LightningCodecs.writeBigSize(tlv.tag, out)
@@ -1064,6 +1171,9 @@ object OfferTypes {
             LightningCodecs.writeBytes(data, out)
             Pair(tag, out.toByteArray())
         }
+        // The first TLV in the stream is used as a hashing nonce for all leaves of the tree, to ensure that
+        // their values cannot be brute-forced when omitted in payer proofs. For Bolt12 invoices and invoice
+        // requests this is invreq_metadata (tag 0); for payer proofs it's the lowest-tag disclosed TLV.
         val nonceKey = "LnNonce".encodeToByteArray() + encodedTlvs[0].second
 
         fun previousPowerOfTwo(n: Int): Int {
@@ -1092,7 +1202,7 @@ object OfferTypes {
         return ByteVector32(merkleTree(0, encodedTlvs.size))
     }
 
-    private fun hash(tag: ByteArray, msg: ByteArray): ByteArray {
+    fun hash(tag: ByteArray, msg: ByteArray): ByteArray {
         val tagHash = Crypto.sha256(tag)
         return Crypto.sha256(tagHash + tagHash + msg)
     }
@@ -1109,7 +1219,8 @@ object OfferTypes {
     }
 
     /** We often need to remove the signature field to compute the merkle root. */
-    fun <T : Bolt12Tlv> removeSignature(records: TlvStream<T>): TlvStream<T> =
-        TlvStream(records.records.filter { it !is Signature }.toSet(), records.unknown)
+    fun <T : Bolt12Tlv> removeSignature(records: TlvStream<T>): TlvStream<T> {
+        return TlvStream(records.records.filter { it !is Signature }.toSet(), records.unknown)
+    }
 
 }
