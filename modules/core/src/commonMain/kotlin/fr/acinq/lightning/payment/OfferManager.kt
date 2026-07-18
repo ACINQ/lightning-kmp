@@ -49,7 +49,13 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
      * @return invoice requests that must be sent and the corresponding path_id that must be used in case of a timeout.
      */
     fun requestInvoice(payOffer: PayOffer): Triple<ByteVector32, List<OnionMessage>, OfferTypes.InvoiceRequest> {
-        val request = OfferTypes.InvoiceRequest(payOffer.offer, payOffer.amount, 1, nodeParams.features.bolt12Features(), payOffer.payerKey, payOffer.payerNote, nodeParams.chainHash)
+        // If we're providing our contact secret, it means we're willing to reveal our identity to the recipient.
+        // We include our own offer to allow them to add us to their contacts list and pay us back.
+        val contactTlvs = setOfNotNull(
+            payOffer.contactSecret?.let { OfferTypes.InvoiceRequestContactSecret(it) },
+            payOffer.contactSecret?.let { OfferTypes.InvoiceRequestPayerOffer(nodeParams.defaultOffer(walletParams.trampolineNode.id).offer) },
+        )
+        val request = OfferTypes.InvoiceRequest(payOffer.offer, payOffer.amount, 1, nodeParams.features.bolt12Features(), payOffer.payerKey, payOffer.payerNote, nodeParams.chainHash, contactTlvs)
         val replyPathId = randomBytes32()
         pendingInvoiceRequests[replyPathId] = PendingInvoiceRequest(payOffer, request)
         // We add dummy hops to the reply path: this way the receiver only learns that we're at most 3 hops away from our peer.
@@ -130,7 +136,14 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
         }
     }
 
-    private fun receiveInvoiceRequest(request: OfferTypes.InvoiceRequest, pathId: ByteVector?, blindedPrivateKey: PrivateKey, replyPath: RouteBlinding.BlindedRoute?, remoteChannelUpdates: List<ChannelUpdate>, currentBlockHeight: Int): OnionMessageAction.SendMessage? {
+    private fun receiveInvoiceRequest(
+        request: OfferTypes.InvoiceRequest,
+        pathId: ByteVector?,
+        blindedPrivateKey: PrivateKey,
+        replyPath: RouteBlinding.BlindedRoute?,
+        remoteChannelUpdates: List<ChannelUpdate>,
+        currentBlockHeight: Int
+    ): OnionMessageAction.SendMessage? {
         // We must use the most restrictive minimum HTLC value between local and remote.
         val minHtlc = (listOf(nodeParams.htlcMinimum) + remoteChannelUpdates.map { it.htlcMinimumMsat }).max()
         return when {
@@ -155,7 +168,16 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                 val preimage = randomBytes32()
                 val (truncatedPayerNote, truncatedDescription) = OfferPaymentMetadata.truncateNotes(request.payerNote, request.offer.description)
                 val expirySeconds = request.offer.expirySeconds ?: nodeParams.bolt12InvoiceExpiry.inWholeSeconds
-                val metadata = OfferPaymentMetadata.V2(
+                // We mustn't use too much space in the path_id, otherwise the sender won't be able to include it in its payment onion.
+                // If the payer_address is provided, we don't include the payer_offer: we can retrieve it from the DNS.
+                // Otherwise, we want to include the payer_offer, but we must skip it if it's too large.
+                val payerOfferSize = request.payerOffer?.let { OfferTypes.Offer.tlvSerializer.write(it.records).size }
+                val payerOffer = when {
+                    request.payerAddress != null -> null
+                    payerOfferSize != null && payerOfferSize > 300 -> null
+                    else -> request.payerOffer
+                }
+                val metadata = OfferPaymentMetadata.V3(
                     offerId = request.offer.offerId,
                     amount = amount,
                     preimage = preimage,
@@ -164,7 +186,10 @@ class OfferManager(val nodeParams: NodeParams, val walletParams: WalletParams, v
                     description = truncatedDescription,
                     payerKey = request.payerId,
                     payerNote = truncatedPayerNote,
-                    quantity = request.quantity_opt
+                    quantity = request.quantity_opt,
+                    contactSecret = request.contactSecret,
+                    payerOffer = payerOffer,
+                    payerAddress = request.payerAddress,
                 ).toPathId(nodeParams.nodePrivateKey)
                 val recipientPayload = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(metadata))).write().toByteVector()
                 val cltvExpiryDelta = remoteChannelUpdates.maxOfOrNull { it.cltvExpiryDelta } ?: walletParams.invoiceDefaultRoutingFees.cltvExpiryDelta
