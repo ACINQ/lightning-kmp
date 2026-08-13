@@ -947,6 +947,7 @@ data class Commitments(
 
     fun receiveRevocation(revocation: RevokeAndAck): Either<ChannelException, Pair<Commitments, List<ChannelAction>>> {
         if (remoteNextCommitInfo.isRight) return Either.Left(UnexpectedRevocation(channelId))
+        if (!revocation.perCommitmentSecret.isValid()) return Either.Left(InvalidRevocation(channelId))
         // Since htlcs are shared across all commitments, we generate the actions only once based on the first commitment.
         val remoteCommit = active.first().remoteCommit
         if (revocation.perCommitmentSecret.publicKey() != remoteCommit.remotePerCommitmentPoint) return Either.Left(InvalidRevocation(channelId))

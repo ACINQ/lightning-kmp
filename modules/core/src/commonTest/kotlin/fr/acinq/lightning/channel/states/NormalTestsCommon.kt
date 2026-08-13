@@ -1074,6 +1074,26 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv RevokeAndAck -- secret is not a valid private key`() {
+        val (alice0, bob0) = reachNormal()
+        val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first
+        assertIs<LNChannel<Normal>>(alice1)
+        val tx = alice1.signCommitTx()
+
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Commitment.Sign)
+        val commitSig0 = actionsAlice2.findOutgoingMessage<CommitSig>()
+        val (_, actionsBob2) = bob1.process(ChannelCommand.MessageReceived(commitSig0))
+        val rev = actionsBob2.hasOutgoingMessage<RevokeAndAck>()
+
+        val (alice3, actionsAlice3) = alice2.process(ChannelCommand.MessageReceived(rev.copy(perCommitmentSecret = PrivateKey(ByteVector32.Zeroes))))
+        assertIs<LNChannel<Closing>>(alice3)
+        actionsAlice3.hasOutgoingMessage<Error>()
+        assertEquals(2, actionsAlice3.filterIsInstance<ChannelAction.Blockchain.PublishTx>().count())
+        assertEquals(1, actionsAlice3.findWatches<WatchConfirmed>().count())
+        actionsAlice3.hasPublishTx(tx)
+    }
+
+    @Test
     fun `recv RevokeAndAck -- missing nonce`() {
         val (alice0, bob0) = reachNormal()
         val fundingTxId = alice0.commitments.latest.fundingTxId
