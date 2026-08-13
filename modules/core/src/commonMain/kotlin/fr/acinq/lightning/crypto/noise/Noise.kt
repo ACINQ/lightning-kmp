@@ -1,6 +1,6 @@
 package fr.acinq.lightning.crypto.noise
 
-import kotlin.random.Random
+import fr.acinq.lightning.Lightning
 
 interface DHFunctions {
     fun name(): String
@@ -296,9 +296,8 @@ interface ByteStream {
 }
 
 object RandomBytes : ByteStream {
-    override fun nextBytes(length: Int) = Random.nextBytes(length)
+    override fun nextBytes(length: Int) = Lightning.randomBytes(length)
 }
-
 
 sealed class HandshakeState {
     @ExperimentalStdlibApi
@@ -491,7 +490,6 @@ data class HandshakeStateWriter(
             )
     }
 }
-
 
 data class HandshakeStateReader(
     val messages: List<List<MessagePattern>>,
