@@ -38,14 +38,13 @@ class RustlsTest {
     }
 
     // DER-encoded SubjectPublicKeyInfo of electrum.acinq.co, base64 (PEM body of `openssl x509 -pubkey`).
-    private val acinqPubKey =
-        "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0JbFX2sPIVKCwBjNMXpV" +
-                "knD6KErkilQL0UFc8W+jMzuvMrSrKGpxZBcCGGe5L+pNDslopkRnJtL/zurB87Lr" +
-                "hyng7aNo7nGOFvfh4xOc6GcYW4f0ffthReze9qwS4OW0FZ2wJ51OvLWFvV5tYtk3" +
-                "4JKZvnclOuD224g3R2irwLXSLtnOUSwuYB9AfxGlCIONfDwnZuiWMgRTuOtnH2rs" +
-                "yMHnuwN1GpkHVCqHR07/HGaHni9wSwBTFJpoVlHEV3JcO60ll61FhrjAOUg0Q2E5" +
-                "PvD84SNezaIpVBRqfhiL3c6JEA1ZnIcl8GGRlcy/RUHNAIiPB0D7dT7F5fvvDUbe" +
-                "RwIDAQAB"
+    private val acinqPubKey = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAreuyKgAuXbE9LB3vV9A4" +
+            "x3FCAlFH9s70P3TdcMvN2Pntbj2FY/B792q2TCQmiMmJVni+CPlMDAjSsX8s+KVm" +
+            "Ph96ZYha+WIBk2tqhHGq9anuIRXvb36+HifbxJ7mTfYY1uzF2ote5q7LB+h4Mqzc" +
+            "M927YOTQ7LPfhjIgsab3UeET3Y8uYaAC6py5uPeSusF2G3uXgM/TH1Bq2msoqhyt" +
+            "MOeZjDIgTxXzONjvxaPyF7NXnTnvTDsVK9o8YgY5lidsTGXhrogf672TMIawAwsF" +
+            "XoSyerOFbd8i3xQLfl7up8Nqc9pLR+gEc3jofDEhmIZXSHIwBCNnSreUA+9YV7xG" +
+            "7wIDAQAB"
 
     @Test
     fun `tcpsocket test -- pinned public key matches`() {
