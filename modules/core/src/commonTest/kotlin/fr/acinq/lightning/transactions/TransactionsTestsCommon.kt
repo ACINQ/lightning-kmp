@@ -105,8 +105,9 @@ class TransactionsTestsCommon : LightningTestSuite() {
         when (commitmentFormat) {
             Transactions.CommitmentFormat.AnchorOutputs -> {
                 // ECDSA signatures are der-encoded, which creates some variability in signature size compared to the baseline.
+                // worse case scenario: expected weight as defined in the BOLTs uses 2 73-bytes signatures, but actual signatures are 70 bytes => we'd be 6 bytes below the expected weight
                 assertTrue(actual <= expected + 4, "actual=$actual, expected=$expected")
-                assertTrue(actual >= expected - 4, "actual=$actual, expected=$expected")
+                assertTrue(actual >= expected - 6, "actual=$actual, expected=$expected")
             }
             Transactions.CommitmentFormat.SimpleTaprootChannels -> assertEquals(expected, actual)
         }
@@ -175,7 +176,7 @@ class TransactionsTestsCommon : LightningTestSuite() {
             }
             Transaction.correctlySpends(commitTx, listOf(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
             // We check the expected weight of the commit input:
-            val commitInputWeight = commitTx.copy(txIn = listOf(commitTx.txIn.first(), commitTx.txIn.first())).weight() - commitTx.weight()
+            val commitInputWeight = commitTx.txIn.first().weight()
             checkExpectedWeight(commitInputWeight, commitmentFormat.fundingInputWeight, commitmentFormat)
             val htlcTxs = Transactions.makeHtlcTxs(commitTx, commitTxOutputs, commitmentFormat)
             val expiries = htlcTxs.associate { it.htlcId to it.htlcExpiry.toLong() }
