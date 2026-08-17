@@ -37,7 +37,8 @@ class RustlsTest {
         }
     }
 
-    // DER-encoded SubjectPublicKeyInfo of electrum.acinq.co, base64 (PEM body of `openssl x509 -pubkey`).
+    // public key of TLS certificate of electrum.acinq.co
+    // to get this public key you can use: openssl s_client -connect electrum.acinq.co:50002 -servername electrum.acinq.co </dev/null 2>/dev/null | openssl x509 -pubkey
     private val acinqPubKey = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAreuyKgAuXbE9LB3vV9A4" +
             "x3FCAlFH9s70P3TdcMvN2Pntbj2FY/B792q2TCQmiMmJVni+CPlMDAjSsX8s+KVm" +
             "Ph96ZYha+WIBk2tqhHGq9anuIRXvb36+HifbxJ7mTfYY1uzF2ote5q7LB+h4Mqzc" +
