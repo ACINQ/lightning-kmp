@@ -902,6 +902,43 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv CommitSig -- unnecessary partial signature`() {
+        val (alice0, bob0) = reachNormal(channelType = ChannelType.SupportedChannelType.AnchorOutputs)
+        val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, actions2) = nodes1.first.process(ChannelCommand.Commitment.Sign)
+        val commitSig = actions2.findOutgoingMessage<CommitSig>()
+        assertNull(commitSig.partialSignature)
+        // Alice also includes a taproot partial sig, even though this is a non-taproot channel.
+        // We simply ignore it and use the individual signature for our commitment transaction.
+        val invalidPartialSig = ChannelSpendSignature.PartialSignatureWithNonce(randomBytes32(), IndividualNonce(randomBytes(66)))
+        val commitSig1 = commitSig.copy(tlvStream = TlvStream(CommitSigTlv.FundingTx(commitSig.fundingTxId!!), CommitSigTlv.PartialSignatureWithNonce(invalidPartialSig)))
+        val (bob3, actions3) = nodes1.second.process(ChannelCommand.MessageReceived(commitSig1))
+        actions3.findOutgoingMessage<RevokeAndAck>()
+        val commitTx = bob3.signCommitTx()
+        val commitInput = bob3.commitments.latest.commitInput(bob3.channelKeys)
+        Transaction.correctlySpends(commitTx, mapOf(commitInput.outPoint to commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+
+    @Test
+    fun `recv CommitSig -- unnecessary individual signature`() {
+        val (alice0, bob0) = reachNormal(channelType = ChannelType.SupportedChannelType.SimpleTaprootChannels)
+        val (nodes1, _, _) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (_, actions2) = nodes1.first.process(ChannelCommand.Commitment.Sign)
+        val commitSig = actions2.findOutgoingMessage<CommitSig>()
+        assertNotNull(commitSig.partialSignature)
+        assertEquals(ChannelSpendSignature.IndividualSignature(ByteVector64.Zeroes), commitSig.signature)
+        // Alice also includes a non-zero individual signature, even though this is a taproot channel.
+        // We simply ignore it and use the partial signature for our commitment transaction.
+        val invalidIndividualSig = ChannelSpendSignature.IndividualSignature(randomBytes64())
+        val commitSig1 = commitSig.copy(signature = invalidIndividualSig)
+        val (bob3, actions3) = nodes1.second.process(ChannelCommand.MessageReceived(commitSig1))
+        actions3.findOutgoingMessage<RevokeAndAck>()
+        val commitTx = bob3.signCommitTx()
+        val commitInput = bob3.commitments.latest.commitInput(bob3.channelKeys)
+        Transaction.correctlySpends(commitTx, mapOf(commitInput.outPoint to commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+
+    @Test
     fun `recv CommitSig -- bad htlc sig count`() {
         val (alice0, bob0) = reachNormal()
         val (alice1, bob1) = addHtlc(50_000_000.msat, alice0, bob0).first

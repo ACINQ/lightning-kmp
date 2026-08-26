@@ -130,14 +130,15 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val txId: TxId
                 val htlcsOut = spec.htlcs.outgoings().map { it.id }.joinToString(",")
                 "built local commit number=$localCommitIndex toLocalMsat=${spec.toLocal.toLong()} toRemoteMsat=${spec.toRemote.toLong()} htlc_in=$htlcsIn htlc_out=$htlcsOut feeratePerKw=${spec.feerate} txid=${localCommitTx.tx.txid} fundingTxId=${commitInput.outPoint.txid}"
             }
-            val remoteSigOk = when (commitmentFormat) {
-                Transactions.CommitmentFormat.AnchorOutputs -> localCommitTx.checkRemoteSig(fundingKey.publicKey(), remoteFundingPubKey, commit.signature)
-                Transactions.CommitmentFormat.SimpleTaprootChannels -> when (val remoteSig = commit.sigOrPartialSig) {
-                    is ChannelSpendSignature.IndividualSignature -> false
-                    is ChannelSpendSignature.PartialSignatureWithNonce -> {
-                        val localNonce = NonceGenerator.verificationNonce(commitInput.outPoint.txid, fundingKey, remoteFundingPubKey, localCommitIndex)
-                        localCommitTx.checkRemotePartialSignature(fundingKey.publicKey(), remoteFundingPubKey, remoteSig, localNonce.publicNonce)
-                    }
+            val remoteSig = when (val sig = commit.signatureFor(commitmentFormat)) {
+                null -> return Either.Left(InvalidCommitmentSignature(channelParams.channelId, localCommitTx.tx.txid))
+                else -> sig
+            }
+            val remoteSigOk = when (remoteSig) {
+                is ChannelSpendSignature.IndividualSignature -> localCommitTx.checkRemoteSig(fundingKey.publicKey(), remoteFundingPubKey, commit.signature)
+                is ChannelSpendSignature.PartialSignatureWithNonce -> {
+                    val localNonce = NonceGenerator.verificationNonce(commitInput.outPoint.txid, fundingKey, remoteFundingPubKey, localCommitIndex)
+                    localCommitTx.checkRemotePartialSignature(fundingKey.publicKey(), remoteFundingPubKey, remoteSig, localNonce.publicNonce)
                 }
             }
             if (!remoteSigOk) {
@@ -152,7 +153,7 @@ data class LocalCommit(val index: Long, val spec: CommitmentSpec, val txId: TxId
                     return Either.Left(InvalidHtlcSignature(channelParams.channelId, htlcTx.tx.txid))
                 }
             }
-            return Either.Right(LocalCommit(localCommitIndex, spec, localCommitTx.tx.txid, commit.sigOrPartialSig, commit.htlcSignatures))
+            return Either.Right(LocalCommit(localCommitIndex, spec, localCommitTx.tx.txid, remoteSig, commit.htlcSignatures))
         }
     }
 }

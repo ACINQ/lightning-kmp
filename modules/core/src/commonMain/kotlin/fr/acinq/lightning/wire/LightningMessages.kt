@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.ChannelFlags
 import fr.acinq.lightning.channel.ChannelSpendSignature
 import fr.acinq.lightning.channel.ChannelType
 import fr.acinq.lightning.router.Announcements
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
 import fr.acinq.secp256k1.Hex
 import io.ktor.utils.io.charsets.*
@@ -1314,8 +1315,12 @@ data class CommitSig(
     override val type: Long get() = CommitSig.type
 
     val partialSignature: ChannelSpendSignature.PartialSignatureWithNonce? = tlvStream.get<CommitSigTlv.PartialSignatureWithNonce>()?.psig
-    val sigOrPartialSig: ChannelSpendSignature = partialSignature ?: signature
     val fundingTxId: TxId? = tlvStream.get<CommitSigTlv.FundingTx>()?.txId
+
+    fun signatureFor(commitmentFormat: Transactions.CommitmentFormat): ChannelSpendSignature? = when (commitmentFormat) {
+        Transactions.CommitmentFormat.AnchorOutputs -> signature
+        Transactions.CommitmentFormat.SimpleTaprootChannels -> partialSignature
+    }
 
     override fun write(out: Output) {
         LightningCodecs.writeBytes(channelId, out)
