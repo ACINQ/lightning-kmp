@@ -456,14 +456,22 @@ object Helpers {
             localClosingComplete: ClosingComplete?,
             remoteNonce: IndividualNonce?
         ): Either<ChannelException, Transactions.ClosingTx> {
-            val closingTxsWithSig = listOfNotNull(
-                closingSig.closerAndCloseeOutputsSig?.let { sig -> closingTxs.localAndRemote?.let { tx -> Pair(tx, ChannelSpendSignature.IndividualSignature(sig)) } },
-                closingSig.closerAndCloseeOutputsPartialSig?.let { sig -> remoteNonce?.let { nonce -> closingTxs.localAndRemote?.let { tx -> Pair(tx, ChannelSpendSignature.PartialSignatureWithNonce(sig, nonce)) } } },
-                closingSig.closerOutputOnlySig?.let { sig -> closingTxs.localOnly?.let { tx -> Pair(tx, ChannelSpendSignature.IndividualSignature(sig)) } },
-                closingSig.closerOutputOnlyPartialSig?.let { sig -> remoteNonce?.let { nonce -> closingTxs.localOnly?.let { tx -> Pair(tx, ChannelSpendSignature.PartialSignatureWithNonce(sig, nonce)) } } },
-                closingSig.closeeOutputOnlySig?.let { sig -> closingTxs.remoteOnly?.let { tx -> Pair(tx, ChannelSpendSignature.IndividualSignature(sig)) } },
-                closingSig.closeeOutputOnlyPartialSig?.let { sig -> remoteNonce?.let { nonce -> closingTxs.remoteOnly?.let { tx -> Pair(tx, ChannelSpendSignature.PartialSignatureWithNonce(sig, nonce)) } } },
-            )
+            val closingTxsWithSig = when (commitment.commitmentFormat) {
+                Transactions.CommitmentFormat.AnchorOutputs -> {
+                    listOfNotNull(
+                        closingSig.closerAndCloseeOutputsSig?.let { sig -> closingTxs.localAndRemote?.let { tx -> Pair(tx, ChannelSpendSignature.IndividualSignature(sig)) } },
+                        closingSig.closerOutputOnlySig?.let { sig -> closingTxs.localOnly?.let { tx -> Pair(tx, ChannelSpendSignature.IndividualSignature(sig)) } },
+                        closingSig.closeeOutputOnlySig?.let { sig -> closingTxs.remoteOnly?.let { tx -> Pair(tx, ChannelSpendSignature.IndividualSignature(sig)) } },
+                    )
+                }
+                Transactions.CommitmentFormat.SimpleTaprootChannels -> {
+                    listOfNotNull(
+                        closingSig.closerAndCloseeOutputsPartialSig?.let { sig -> remoteNonce?.let { nonce -> closingTxs.localAndRemote?.let { tx -> Pair(tx, ChannelSpendSignature.PartialSignatureWithNonce(sig, nonce)) } } },
+                        closingSig.closerOutputOnlyPartialSig?.let { sig -> remoteNonce?.let { nonce -> closingTxs.localOnly?.let { tx -> Pair(tx, ChannelSpendSignature.PartialSignatureWithNonce(sig, nonce)) } } },
+                        closingSig.closeeOutputOnlyPartialSig?.let { sig -> remoteNonce?.let { nonce -> closingTxs.remoteOnly?.let { tx -> Pair(tx, ChannelSpendSignature.PartialSignatureWithNonce(sig, nonce)) } } },
+                    )
+                }
+            }
             return when (val preferred = closingTxsWithSig.firstOrNull()) {
                 null -> Either.Left(MissingCloseSignature(commitment.channelId))
                 else -> {
