@@ -72,7 +72,7 @@ object Scripts {
      */
     fun cltvTimeout(tx: Transaction): Long = when {
         // locktime is a number of blocks
-        tx.lockTime <= Script.LOCKTIME_THRESHOLD -> tx.lockTime
+        tx.lockTime < Script.LOCKTIME_THRESHOLD -> tx.lockTime
         else -> {
             // locktime is a unix epoch timestamp
             require(tx.lockTime <= 0x20FFFFFF) { "locktime should be lesser than 0x20FFFFFF" }

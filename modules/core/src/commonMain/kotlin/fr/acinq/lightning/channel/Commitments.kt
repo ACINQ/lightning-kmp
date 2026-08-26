@@ -2,8 +2,10 @@ package fr.acinq.lightning.channel
 
 import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.Crypto.sha256
+import fr.acinq.bitcoin.Script.LOCKTIME_THRESHOLD
 import fr.acinq.bitcoin.crypto.musig2.IndividualNonce
 import fr.acinq.bitcoin.utils.Either
+import fr.acinq.lightning.CltvExpiry
 import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.Feature
 import fr.acinq.lightning.MilliSatoshi
@@ -777,9 +779,14 @@ data class Commitments(
         return failure?.let { Either.Left(it) } ?: Either.Right(Pair(copy(changes = changes1, payments = payments1), add))
     }
 
-    fun receiveAdd(add: UpdateAddHtlc): Either<ChannelException, Commitments> {
+    fun receiveAdd(add: UpdateAddHtlc, currentBlockHeight: Long): Either<ChannelException, Commitments> {
         if (add.id != changes.remoteNextHtlcId) {
             return Either.Left(UnexpectedHtlcId(channelId, expected = changes.remoteNextHtlcId, actual = add.id))
+        }
+
+        // CLTV expiry values >= 500_000_000 would indicate a time in seconds instead of a block height.
+        if (add.cltvExpiry >= CltvExpiry(LOCKTIME_THRESHOLD)) {
+            return Either.Left(ExpiryTooBig(channelId, CltvExpiry(LOCKTIME_THRESHOLD), add.cltvExpiry, currentBlockHeight))
         }
 
         // we used to not enforce a strictly positive minimum, hence the max(1 msat)

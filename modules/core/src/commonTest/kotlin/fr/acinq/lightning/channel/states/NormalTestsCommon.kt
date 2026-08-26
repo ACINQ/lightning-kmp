@@ -456,6 +456,16 @@ class NormalTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv UpdateAddHtlc -- invalid cltv_expiry`() {
+        val (_, bob0) = reachNormal()
+        val add = UpdateAddHtlc(bob0.channelId, 0, 15_000.msat, randomBytes32(), CltvExpiry(500_000_000), TestConstants.emptyOnionPacket)
+        val (bob1, actions1) = bob0.process(ChannelCommand.MessageReceived(add))
+        assertIs<LNChannel<Closing>>(bob1)
+        val error = actions1.hasOutgoingMessage<Error>()
+        assertEquals(error.toAscii(), ExpiryTooBig(bob0.channelId, CltvExpiry(500_000_000), CltvExpiry(500_000_000), bob0.currentBlockHeight.toLong()).message)
+    }
+
+    @Test
     fun `recv UpdateAddHtlc -- value too small`() {
         val (_, bob0) = reachNormal()
         val add = UpdateAddHtlc(bob0.channelId, 0, 150.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(bob0.currentBlockHeight.toLong()), TestConstants.emptyOnionPacket)

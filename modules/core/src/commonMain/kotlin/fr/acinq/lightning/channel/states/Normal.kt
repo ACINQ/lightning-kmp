@@ -154,7 +154,7 @@ data class Normal(
                     Pair(this@Normal, actions)
                 }
                 else -> when (cmd.message) {
-                    is UpdateAddHtlc -> when (val result = commitments.receiveAdd(cmd.message)) {
+                    is UpdateAddHtlc -> when (val result = commitments.receiveAdd(cmd.message, currentBlockHeight.toLong())) {
                         is Either.Left -> handleLocalError(cmd, result.value)
                         is Either.Right -> {
                             val newState = this@Normal.copy(commitments = result.value)

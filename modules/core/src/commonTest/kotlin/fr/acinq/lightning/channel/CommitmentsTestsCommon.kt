@@ -61,7 +61,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac1.availableBalanceForSend(), a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
 
-        val bc1 = bc0.receiveAdd(add).right!!
+        val bc1 = bc0.receiveAdd(add, currentBlockHeight).right!!
         assertEquals(bc1.availableBalanceForSend(), b)
         assertEquals(bc1.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -147,7 +147,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(ac1.availableBalanceForSend(), a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(ac1.availableBalanceForReceive(), b)
 
-        val bc1 = bc0.receiveAdd(add).right!!
+        val bc1 = bc0.receiveAdd(add, currentBlockHeight).right!!
         assertEquals(bc1.availableBalanceForSend(), b)
         assertEquals(bc1.availableBalanceForReceive(), a - p - htlcOutputFee)
 
@@ -246,15 +246,15 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
         assertEquals(bc1.availableBalanceForSend(), b - p3) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
         assertEquals(bc1.availableBalanceForReceive(), a)
 
-        val bc2 = bc1.receiveAdd(add1).right!!
+        val bc2 = bc1.receiveAdd(add1, currentBlockHeight).right!!
         assertEquals(bc2.availableBalanceForSend(), b - p3)
         assertEquals(bc2.availableBalanceForReceive(), a - p1 - htlcOutputFee)
 
-        val bc3 = bc2.receiveAdd(add2).right!!
+        val bc3 = bc2.receiveAdd(add2, currentBlockHeight).right!!
         assertEquals(bc3.availableBalanceForSend(), b - p3)
         assertEquals(bc3.availableBalanceForReceive(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-        val ac3 = ac2.receiveAdd(add3).right!!
+        val ac3 = ac2.receiveAdd(add3, currentBlockHeight).right!!
         assertEquals(ac3.availableBalanceForSend(), a - p1 - htlcOutputFee - p2 - htlcOutputFee)
         assertEquals(ac3.availableBalanceForReceive(), b - p3)
 
@@ -396,7 +396,7 @@ class CommitmentsTestsCommon : LightningTestSuite(), LoggingContext {
             val add = UpdateAddHtlc(
                 randomBytes32(), c.changes.remoteNextHtlcId, c.availableBalanceForReceive(), randomBytes32(), CltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket
             )
-            val result = c.receiveAdd(add)
+            val result = c.receiveAdd(add, currentBlockHeight)
             assertTrue(result.isRight)
         }
     }
