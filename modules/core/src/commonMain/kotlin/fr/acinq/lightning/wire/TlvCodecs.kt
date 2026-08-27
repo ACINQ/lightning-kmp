@@ -33,6 +33,7 @@ interface TlvValueReader<T : Tlv> {
 sealed class InvalidTlvPayload { abstract val tag: Long }
 data class CannotDecodeTlv(override val tag: Long) : InvalidTlvPayload() { override fun toString(): String = "cannot decode tlv (tag=$tag)" }
 data class MissingRequiredTlv(override val tag: Long) : InvalidTlvPayload() { override fun toString(): String = "missing required tlv (tag=$tag)" }
+data class InvalidTlvValue(override val tag: Long) : InvalidTlvPayload() { override fun toString(): String = "invalid tlv value (tag=$tag)" }
 data class ForbiddenTlv(override val tag: Long) : InvalidTlvPayload() { override fun toString(): String = "forbidden tlv (tag=$tag)" }
 // @formatter:on
 
