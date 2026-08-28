@@ -29,12 +29,12 @@
                         "option_route_blinding": "Optional",
                         "option_dual_fund": "Mandatory",
                         "option_channel_type": "Mandatory",
-                        "wake_up_notification_provider": "Optional",
-                        "trampoline_payment_experimental": "Optional"
+                        "wake_up_notification_provider": "Optional"
                     },
                     "unknown": [
                         139,
-                        147
+                        147,
+                        149
                     ]
                 }
             },
@@ -59,12 +59,12 @@
                         "option_quiescence": "Mandatory",
                         "option_channel_type": "Mandatory",
                         "zero_reserve_channels": "Optional",
-                        "wake_up_notification_client": "Optional",
-                        "trampoline_payment_experimental": "Optional"
+                        "wake_up_notification_client": "Optional"
                     },
                     "unknown": [
                         137,
                         145,
+                        149,
                         155
                     ]
                 }
