@@ -16,6 +16,8 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.crypto.RouteBlinding
 import fr.acinq.lightning.message.OnionMessages
+import fr.acinq.lightning.payment.ContactAddress
+import fr.acinq.lightning.payment.UnverifiedContactAddress
 import fr.acinq.lightning.utils.toByteVector
 
 /**
@@ -411,6 +413,79 @@ object OfferTypes {
             const val tag: Long = 89
             override fun read(input: Input): InvoiceRequestPayerNote {
                 return InvoiceRequestPayerNote(LightningCodecs.bytes(input, input.availableBytes).decodeToString(throwOnInvalidSequence = true))
+            }
+        }
+    }
+
+    /**
+     * When paying one of our contacts, this contains the secret that lets them detect that the payment came from us.
+     * See [bLIP 42](https://github.com/lightning/blips/blob/master/blip-0042.md) for more details.
+     */
+    data class InvoiceRequestContactSecret(val contactSecret: ByteVector32) : InvoiceRequestTlv() {
+        override val tag: Long get() = InvoiceRequestContactSecret.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(contactSecret, out)
+
+        companion object : TlvValueReader<InvoiceRequestContactSecret> {
+            const val tag: Long = 2_000_001_729L
+            override fun read(input: Input): InvoiceRequestContactSecret = InvoiceRequestContactSecret(LightningCodecs.bytes(input, 32).byteVector32())
+        }
+    }
+
+    /**
+     * When paying one of our contacts, we may include our offer to allow them to pay us back and add us to their contacts.
+     * See [bLIP 42](https://github.com/lightning/blips/blob/master/blip-0042.md) for more details.
+     */
+    data class InvoiceRequestPayerOffer(val offer: Offer) : InvoiceRequestTlv() {
+        override val tag: Long get() = InvoiceRequestPayerOffer.tag
+        override fun write(out: Output) = LightningCodecs.writeBytes(Offer.tlvSerializer.write(offer.records), out)
+
+        companion object : TlvValueReader<InvoiceRequestPayerOffer> {
+            const val tag: Long = 2_000_001_731L
+            override fun read(input: Input): InvoiceRequestPayerOffer = InvoiceRequestPayerOffer(Offer(Offer.tlvSerializer.read(LightningCodecs.bytes(input, input.availableBytes))))
+        }
+    }
+
+    /**
+     * When paying one of our contacts, we may include our BIP 353 address to allow them to pay us back and add us to their contacts.
+     * See [bLIP 42](https://github.com/lightning/blips/blob/master/blip-0042.md) for more details.
+     */
+    data class InvoiceRequestPayerAddress(val address: ContactAddress) : InvoiceRequestTlv() {
+        override val tag: Long get() = InvoiceRequestPayerAddress.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeByte(address.name.length, out)
+            LightningCodecs.writeBytes(address.name.encodeToByteArray(), out)
+            LightningCodecs.writeByte(address.domain.length, out)
+            LightningCodecs.writeBytes(address.domain.encodeToByteArray(), out)
+        }
+
+        companion object : TlvValueReader<InvoiceRequestPayerAddress> {
+            const val tag: Long = 2_000_001_733L
+            override fun read(input: Input): InvoiceRequestPayerAddress {
+                val name = LightningCodecs.bytes(input, LightningCodecs.byte(input)).decodeToString()
+                val domain = LightningCodecs.bytes(input, LightningCodecs.byte(input)).decodeToString()
+                return InvoiceRequestPayerAddress(ContactAddress(name, domain))
+            }
+        }
+    }
+
+    /**
+     * When [[InvoiceRequestPayerAddress]] is included, the invoice request must be signed with the signing key of the offer matching the BIP 353 address.
+     * This proves that the payer really owns this BIP 353 address.
+     * See [bLIP 42](https://github.com/lightning/blips/blob/master/blip-0042.md) for more details.
+     */
+    data class InvoiceRequestPayerAddressSignature(val offerSigningKey: PublicKey, val signature: ByteVector64) : InvoiceRequestTlv() {
+        override val tag: Long get() = InvoiceRequestPayerAddressSignature.tag
+        override fun write(out: Output) {
+            LightningCodecs.writeBytes(offerSigningKey.value, out)
+            LightningCodecs.writeBytes(signature, out)
+        }
+
+        companion object : TlvValueReader<InvoiceRequestPayerAddressSignature> {
+            const val tag: Long = 2_000_001_735L
+            override fun read(input: Input): InvoiceRequestPayerAddressSignature {
+                val offerSigningKey = PublicKey(LightningCodecs.bytes(input, 33))
+                val signature = LightningCodecs.bytes(input, 64).byteVector64()
+                return InvoiceRequestPayerAddressSignature(offerSigningKey, signature)
             }
         }
     }
@@ -889,6 +964,9 @@ object OfferTypes {
         val requestedAmount: MilliSatoshi = amount ?: (offer.amount!! * quantity)
         val payerId: PublicKey = records.get<InvoiceRequestPayerId>()!!.publicKey
         val payerNote: String? = records.get<InvoiceRequestPayerNote>()?.note
+        val contactSecret: ByteVector32? = records.get<InvoiceRequestContactSecret>()?.contactSecret
+        val payerOffer: Offer? = records.get<InvoiceRequestPayerOffer>()?.offer
+        val payerAddress: UnverifiedContactAddress? = records.get<InvoiceRequestPayerAddress>()?.let { pa -> records.get<InvoiceRequestPayerAddressSignature>()?.let { ps -> UnverifiedContactAddress(pa.address, ps.offerSigningKey) } }
         private val signature: ByteVector64 = records.get<Signature>()!!.signature
 
         fun isValid(): Boolean =
@@ -897,7 +975,19 @@ object OfferTypes {
                     offer.chains.contains(chain) &&
                     ((offer.quantityMax == null && quantity_opt == null) || (offer.quantityMax != null && quantity_opt != null && quantity <= offer.quantityMax)) &&
                     Features.areCompatible(offer.features, features) &&
+                    checkPayerAddressSignature() &&
                     checkSignature()
+
+        private fun checkPayerAddressSignature(): Boolean = when (val ps = records.get<InvoiceRequestPayerAddressSignature>()) {
+            null -> true
+            else -> {
+                // The payer address signature covers the invoice request without its top-level signature.
+                // Note that the standard invoice request signature includes the InvoiceRequestPayerAddressSignature field.
+                val signedTlvs = TlvStream(records.records.filter { it !is Signature && it !is InvoiceRequestPayerAddressSignature }.toSet(), records.unknown)
+                val signatureTag = ByteVector(("lightning" + "invoice_request" + "invreq_payer_bip_353_signature").encodeToByteArray())
+                verifySchnorr(signatureTag, rootHash(signedTlvs), ps.signature, ps.offerSigningKey)
+            }
+        }
 
         fun checkSignature(): Boolean = verifySchnorr(signatureTag, rootHash(removeSignature(records)), signature, payerId)
 
@@ -959,10 +1049,10 @@ object OfferTypes {
                     is Left -> return Left(offer.value)
                     is Right -> {}
                 }
-                if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(0))
-                if (records.get<InvoiceRequestAmount>() == null && records.get<OfferAmount>() == null) return Left(MissingRequiredTlv(82))
-                if (records.get<InvoiceRequestPayerId>() == null) return Left(MissingRequiredTlv(88))
-                if (records.get<Signature>() == null) return Left(MissingRequiredTlv(240))
+                if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(InvoiceRequestMetadata.tag))
+                if (records.get<InvoiceRequestAmount>() == null && records.get<OfferAmount>() == null) return Left(MissingRequiredTlv(InvoiceRequestAmount.tag))
+                if (records.get<InvoiceRequestPayerId>() == null) return Left(MissingRequiredTlv(InvoiceRequestPayerId.tag))
+                if (records.get<Signature>() == null) return Left(MissingRequiredTlv(Signature.tag))
                 if (records.unknown.any { !isInvoiceRequestTlv(it) }) return Left(ForbiddenTlv(records.unknown.find { !isInvoiceRequestTlv(it) }!!.tag))
                 return Right(InvoiceRequest(records))
             }
@@ -989,6 +1079,10 @@ object OfferTypes {
                     InvoiceRequestQuantity.tag to InvoiceRequestQuantity as TlvValueReader<InvoiceRequestTlv>,
                     InvoiceRequestPayerId.tag to InvoiceRequestPayerId as TlvValueReader<InvoiceRequestTlv>,
                     InvoiceRequestPayerNote.tag to InvoiceRequestPayerNote as TlvValueReader<InvoiceRequestTlv>,
+                    InvoiceRequestContactSecret.tag to InvoiceRequestContactSecret as TlvValueReader<InvoiceRequestTlv>,
+                    InvoiceRequestPayerOffer.tag to InvoiceRequestPayerOffer as TlvValueReader<InvoiceRequestTlv>,
+                    InvoiceRequestPayerAddress.tag to InvoiceRequestPayerAddress as TlvValueReader<InvoiceRequestTlv>,
+                    InvoiceRequestPayerAddressSignature.tag to InvoiceRequestPayerAddressSignature as TlvValueReader<InvoiceRequestTlv>,
                     Signature.tag to Signature as TlvValueReader<InvoiceRequestTlv>,
                 )
             )
@@ -1028,6 +1122,10 @@ object OfferTypes {
                 InvoiceRequestQuantity.tag to InvoiceRequestQuantity as TlvValueReader<InvoiceTlv>,
                 InvoiceRequestPayerId.tag to InvoiceRequestPayerId as TlvValueReader<InvoiceTlv>,
                 InvoiceRequestPayerNote.tag to InvoiceRequestPayerNote as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestContactSecret.tag to InvoiceRequestContactSecret as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestPayerOffer.tag to InvoiceRequestPayerOffer as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestPayerAddress.tag to InvoiceRequestPayerAddress as TlvValueReader<InvoiceTlv>,
+                InvoiceRequestPayerAddressSignature.tag to InvoiceRequestPayerAddressSignature as TlvValueReader<InvoiceTlv>,
                 // Invoice part
                 InvoicePaths.tag to InvoicePaths as TlvValueReader<InvoiceTlv>,
                 InvoiceBlindedPay.tag to InvoiceBlindedPay as TlvValueReader<InvoiceTlv>,
