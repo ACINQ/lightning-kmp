@@ -2,8 +2,13 @@ package fr.acinq.lightning.wire
 
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.PublicKey
+import fr.acinq.lightning.CltvExpiry
+import fr.acinq.lightning.CltvExpiryDelta
 import fr.acinq.lightning.EncodedNodeId
+import fr.acinq.lightning.Features
+import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.wire.RouteBlindingEncryptedDataTlv.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -48,6 +53,46 @@ class RouteBlindingTestsCommon : LightningTestSuite() {
                     NextPathKey(PublicKey(ByteVector("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f")))
                 )
             ),
+        )
+
+        for (payload in payloads) {
+            val encoded = payload.key
+            val data = payload.value
+            assertEquals(data, RouteBlindingEncryptedData.read(encoded.toByteArray()).right)
+            assertEquals(encoded, ByteVector(data.write()))
+        }
+    }
+
+    @Test
+    fun `decode payment onion route blinding data for accountable invoice`() {
+        val payloads = mapOf(
+            ByteVector("01200000000000000000000000000000000000000000000000000000000000000000 02080000000000000001 0300 0a080032000000002710 0c05000b724632 0e00") to RouteBlindingEncryptedData(TlvStream(
+                Padding(ByteVector("0000000000000000000000000000000000000000000000000000000000000000")),
+                OutgoingChannelId(ShortChannelId(1)),
+                UpgradeAccountability,
+                PaymentRelay(CltvExpiryDelta(50), 0, 10000.msat),
+                PaymentConstraints(CltvExpiry(750150), 50.msat),
+                AllowedFeatures(Features.empty))),
+            ByteVector("02080000000000000002 0300 0821031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f 0a07004b0000009664 0c05000b721432 0e00") to RouteBlindingEncryptedData(TlvStream(
+                OutgoingChannelId(ShortChannelId(2)),
+                UpgradeAccountability,
+                NextPathKey(PublicKey(ByteVector("031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))),
+                PaymentRelay(CltvExpiryDelta(75), 150, 100.msat),
+                PaymentConstraints(CltvExpiry(750100), 50.msat),
+                AllowedFeatures(Features.empty))),
+            ByteVector("012200000000000000000000000000000000000000000000000000000000000000000000 02080000000000000003 0300 0a06001900000064 0c05000b71c932 0e00") to RouteBlindingEncryptedData(TlvStream(
+                Padding(ByteVector("00000000000000000000000000000000000000000000000000000000000000000000")),
+                OutgoingChannelId(ShortChannelId(3)),
+                UpgradeAccountability,
+                PaymentRelay(CltvExpiryDelta(25), 100, 0.msat),
+                PaymentConstraints(CltvExpiry(750025), 50.msat),
+                AllowedFeatures(Features.empty))),
+            ByteVector("011c00000000000000000000000000000000000000000000000000000000 0300 0616c9cf92f45ade68345bc20ae672e2012f4af487ed4415 0c05000b71b032 0e00") to RouteBlindingEncryptedData(TlvStream(
+                Padding(ByteVector("00000000000000000000000000000000000000000000000000000000")),
+                UpgradeAccountability,
+                PathId(ByteVector("c9cf92f45ade68345bc20ae672e2012f4af487ed4415")),
+                PaymentConstraints(CltvExpiry(750000), 50.msat),
+                AllowedFeatures(Features.empty))),
         )
 
         for (payload in payloads) {
