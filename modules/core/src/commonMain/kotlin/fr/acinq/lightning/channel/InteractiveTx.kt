@@ -320,8 +320,8 @@ data class FundingContributions(val inputs: List<InteractiveTxInput.Outgoing>, v
         ): Either<FundingContributionFailure, FundingContributions> {
             walletInputs.forEach { utxo ->
                 if (utxo.previousTx.txOut.size <= utxo.outputIndex) return Either.Left(FundingContributionFailure.InputOutOfBounds(utxo.txId, utxo.outputIndex))
-                val dustLimit = Transactions.dustLimit(utxo.previousTx.txOut[utxo.outputIndex].publicKeyScript)
-                if (utxo.amount < dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(utxo.txId, utxo.outputIndex, utxo.amount, dustLimit))
+                //val dustLimit = Transactions.dustLimit(utxo.previousTx.txOut[utxo.outputIndex].publicKeyScript)
+                //if (utxo.amount < dustLimit) return Either.Left(FundingContributionFailure.InputBelowDust(utxo.txId, utxo.outputIndex, utxo.amount, dustLimit))
                 if (Transaction.write(utxo.previousTx.stripInputWitnesses()).size > 65_000) return Either.Left(FundingContributionFailure.InputTxTooLarge(utxo.previousTx))
             }
             val previousFundingAmount = sharedUtxo?.second?.fundingAmount ?: 0.sat

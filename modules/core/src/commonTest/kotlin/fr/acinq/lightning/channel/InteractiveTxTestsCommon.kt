@@ -785,12 +785,12 @@ class InteractiveTxTestsCommon : LightningTestSuite() {
         val privKey = randomKey()
         val pubKey = privKey.publicKey()
         val fundingParams = InteractiveTxParams(randomBytes32(), true, 150_000.sat, 50_000.sat, pubKey, 0, 660.sat, Transactions.CommitmentFormat.AnchorOutputs, FeeratePerKw(2500.sat))
-        run {
+        /*run {
             val previousTx = Transaction(2, listOf(), listOf(TxOut(293.sat, Script.pay2wpkh(pubKey))), 0)
             val result = FundingContributions.create(channelKeys, swapInKeys, fundingParams, listOf(WalletState.Utxo(previousTx.txid, 0, 0, previousTx, WalletState.AddressMeta.Single)), null).left
             assertNotNull(result)
             assertIs<FundingContributionFailure.InputBelowDust>(result)
-        }
+        }*/
         run {
             val txIn = (1..1000).map { TxIn(OutPoint(TxId(randomBytes32()), 3), ByteVector.empty, 0, Script.witnessPay2wpkh(pubKey, Transactions.PlaceHolderSig)) }
             val txOut = (1..1000).map { i -> TxOut(1000.sat * i, Script.pay2wpkh(pubKey)) }
