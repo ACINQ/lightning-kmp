@@ -17,6 +17,24 @@ sealed class FinalFailure {
     /** Use this function when no payment attempts have been made (e.g. when a precondition failed). */
     fun toPaymentFailure(): OutgoingPaymentFailure = OutgoingPaymentFailure(this, listOf<LightningOutgoingPayment.Part.Status.Failed>())
 
+    val category: OutgoingPaymentFailure.Category
+        get() = when (this) {
+            AlreadyInProgress -> OutgoingPaymentFailure.Category.LocalValidation
+            AlreadyPaid -> OutgoingPaymentFailure.Category.LocalValidation
+            InvalidPaymentAmount -> OutgoingPaymentFailure.Category.LocalValidation
+            FeaturesNotSupported -> OutgoingPaymentFailure.Category.LocalValidation
+            InvalidPaymentId -> OutgoingPaymentFailure.Category.LocalValidation
+            ChannelNotConnected -> OutgoingPaymentFailure.Category.LocalChannel
+            ChannelOpening -> OutgoingPaymentFailure.Category.LocalChannel
+            ChannelClosing -> OutgoingPaymentFailure.Category.LocalChannel
+            NoAvailableChannels -> OutgoingPaymentFailure.Category.LocalChannel
+            InsufficientBalance -> OutgoingPaymentFailure.Category.LocalBalance
+            RecipientUnreachable -> OutgoingPaymentFailure.Category.Recipient
+            RetryExhausted -> OutgoingPaymentFailure.Category.Retry
+            WalletRestarted -> OutgoingPaymentFailure.Category.Retry
+            UnknownError -> OutgoingPaymentFailure.Category.Unknown
+        }
+
     // @formatter:off
     data object AlreadyInProgress : FinalFailure() { override fun toString(): String = "another payment is in progress for that invoice" }
     data object AlreadyPaid : FinalFailure() { override fun toString(): String = "this invoice has already been paid" }
@@ -36,6 +54,19 @@ sealed class FinalFailure {
 }
 
 data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<LightningOutgoingPayment.Part.Status.Failed>) {
+    enum class Category {
+        LocalValidation,
+        LocalBalance,
+        LocalChannel,
+        Fee,
+        Cltv,
+        Liquidity,
+        Recipient,
+        Remote,
+        Retry,
+        Unknown
+    }
+
     constructor(reason: FinalFailure, failures: List<Either<ChannelException, FailureMessage>>, completedAt: Long = currentTimestampMillis()) : this(
         reason,
         failures.map { LightningOutgoingPayment.Part.Status.Failed(convertFailure(it), completedAt) }
@@ -49,6 +80,9 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
             else -> Either.Right(reason)
         }
     }
+
+    /** Stable classification of the most user-friendly reason for the payment failure. */
+    val category: Category get() = explain().fold({ it.category }, { it.category })
 
     /**
      * A detailed summary of the all internal errors.
