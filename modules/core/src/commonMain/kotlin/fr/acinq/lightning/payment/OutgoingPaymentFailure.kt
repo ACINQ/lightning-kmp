@@ -54,16 +54,32 @@ sealed class FinalFailure {
 }
 
 data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<LightningOutgoingPayment.Part.Status.Failed>) {
+    /**
+     * Stable high-level classification for outgoing payment failures.
+     *
+     * This is meant for APIs, logs and diagnostics that need machine-readable failure classes without relying on
+     * localized messages or the exact failure hierarchy used internally by lightning-kmp.
+     */
     enum class Category {
+        /** The payment request or caller-provided payment parameters are invalid. */
         LocalValidation,
+        /** The wallet doesn't have enough spendable balance for this payment. */
         LocalBalance,
+        /** The wallet cannot currently use its local channels to send this payment. */
         LocalChannel,
+        /** The payment failed because routing fees were insufficient. */
         Fee,
+        /** The payment failed because CLTV/expiry requirements were not met. */
         Cltv,
+        /** The payment could not be relayed to the recipient, most likely because of insufficient liquidity. */
         Liquidity,
+        /** The recipient was unreachable or rejected the payment. */
         Recipient,
+        /** A remote node in the route failed the payment. */
         Remote,
+        /** Payment attempts were exhausted or interrupted and the payment may be retried later. */
         Retry,
+        /** The failure cannot be reliably classified. */
         Unknown
     }
 
