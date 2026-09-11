@@ -84,20 +84,20 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
     @Test
     fun `categorize final failures`() {
         val testCases = listOf(
-            FinalFailure.AlreadyInProgress to OutgoingPaymentFailure.Category.LocalValidation,
-            FinalFailure.AlreadyPaid to OutgoingPaymentFailure.Category.LocalValidation,
-            FinalFailure.InvalidPaymentAmount to OutgoingPaymentFailure.Category.LocalValidation,
-            FinalFailure.FeaturesNotSupported to OutgoingPaymentFailure.Category.LocalValidation,
-            FinalFailure.InvalidPaymentId to OutgoingPaymentFailure.Category.LocalValidation,
-            FinalFailure.ChannelNotConnected to OutgoingPaymentFailure.Category.LocalChannel,
-            FinalFailure.ChannelOpening to OutgoingPaymentFailure.Category.LocalChannel,
-            FinalFailure.ChannelClosing to OutgoingPaymentFailure.Category.LocalChannel,
-            FinalFailure.NoAvailableChannels to OutgoingPaymentFailure.Category.LocalChannel,
-            FinalFailure.InsufficientBalance to OutgoingPaymentFailure.Category.LocalBalance,
-            FinalFailure.RecipientUnreachable to OutgoingPaymentFailure.Category.Recipient,
-            FinalFailure.RetryExhausted to OutgoingPaymentFailure.Category.Retry,
-            FinalFailure.WalletRestarted to OutgoingPaymentFailure.Category.Retry,
-            FinalFailure.UnknownError to OutgoingPaymentFailure.Category.Unknown,
+            FinalFailure.AlreadyInProgress to PaymentFailureCategory.LocalValidation,
+            FinalFailure.AlreadyPaid to PaymentFailureCategory.LocalValidation,
+            FinalFailure.InvalidPaymentAmount to PaymentFailureCategory.LocalValidation,
+            FinalFailure.FeaturesNotSupported to PaymentFailureCategory.LocalValidation,
+            FinalFailure.InvalidPaymentId to PaymentFailureCategory.LocalValidation,
+            FinalFailure.ChannelNotConnected to PaymentFailureCategory.LocalChannel,
+            FinalFailure.ChannelOpening to PaymentFailureCategory.LocalChannel,
+            FinalFailure.ChannelClosing to PaymentFailureCategory.LocalChannel,
+            FinalFailure.NoAvailableChannels to PaymentFailureCategory.LocalChannel,
+            FinalFailure.InsufficientBalance to PaymentFailureCategory.LocalBalance,
+            FinalFailure.RecipientUnreachable to PaymentFailureCategory.Recipient,
+            FinalFailure.RetryExhausted to PaymentFailureCategory.Retry,
+            FinalFailure.WalletRestarted to PaymentFailureCategory.Retry,
+            FinalFailure.UnknownError to PaymentFailureCategory.Unknown,
         )
         testCases.forEach { (failure, category) ->
             assertEquals(category, failure.category)
@@ -107,19 +107,19 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
     @Test
     fun `categorize payment part failures`() {
         val testCases = listOf(
-            LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentAmountTooSmall to OutgoingPaymentFailure.Category.LocalValidation,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentAmountTooBig to OutgoingPaymentFailure.Category.LocalValidation,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.NotEnoughFunds to OutgoingPaymentFailure.Category.LocalBalance,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.NotEnoughFees to OutgoingPaymentFailure.Category.Fee,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentExpiryTooBig to OutgoingPaymentFailure.Category.Cltv,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.TooManyPendingPayments to OutgoingPaymentFailure.Category.Retry,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsSplicing to OutgoingPaymentFailure.Category.LocalChannel,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing to OutgoingPaymentFailure.Category.LocalChannel,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.TemporaryRemoteFailure to OutgoingPaymentFailure.Category.Remote,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientLiquidityIssue to OutgoingPaymentFailure.Category.Liquidity,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientIsOffline to OutgoingPaymentFailure.Category.Recipient,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientRejectedPayment to OutgoingPaymentFailure.Category.Recipient,
-            LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable("unknown failure") to OutgoingPaymentFailure.Category.Unknown,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentAmountTooSmall to PaymentFailureCategory.LocalValidation,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentAmountTooBig to PaymentFailureCategory.LocalValidation,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.NotEnoughFunds to PaymentFailureCategory.LocalBalance,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.NotEnoughFees to PaymentFailureCategory.Fee,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.PaymentExpiryTooBig to PaymentFailureCategory.Cltv,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.TooManyPendingPayments to PaymentFailureCategory.Retry,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsSplicing to PaymentFailureCategory.LocalChannel,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.ChannelIsClosing to PaymentFailureCategory.LocalChannel,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.TemporaryRemoteFailure to PaymentFailureCategory.Remote,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientLiquidityIssue to PaymentFailureCategory.Liquidity,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientIsOffline to PaymentFailureCategory.Recipient,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.RecipientRejectedPayment to PaymentFailureCategory.Recipient,
+            LightningOutgoingPayment.Part.Status.Failed.Failure.Uninterpretable("unknown failure") to PaymentFailureCategory.Unknown,
         )
         testCases.forEach { (failure, category) ->
             assertEquals(category, failure.category)
@@ -129,13 +129,13 @@ class OutgoingPaymentFailureTestsCommon : LightningTestSuite() {
     @Test
     fun `categorize outgoing payment failures using explanation`() {
         val testCases = listOf(
-            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(TrampolineFeeInsufficient))) to OutgoingPaymentFailure.Category.Fee,
-            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(FeeInsufficient(10_000.msat, channelUpdate)))) to OutgoingPaymentFailure.Category.Fee,
-            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(TemporaryChannelFailure(channelUpdate)))) to OutgoingPaymentFailure.Category.Remote,
-            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(UnknownNextPeer))) to OutgoingPaymentFailure.Category.Recipient,
-            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(PaymentTimeout))) to OutgoingPaymentFailure.Category.Liquidity,
-            FinalFailure.RetryExhausted.toPaymentFailure() to OutgoingPaymentFailure.Category.Retry,
-            FinalFailure.InsufficientBalance.toPaymentFailure() to OutgoingPaymentFailure.Category.LocalBalance,
+            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(TrampolineFeeInsufficient))) to PaymentFailureCategory.Fee,
+            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(FeeInsufficient(10_000.msat, channelUpdate)))) to PaymentFailureCategory.Fee,
+            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(TemporaryChannelFailure(channelUpdate)))) to PaymentFailureCategory.Remote,
+            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(UnknownNextPeer))) to PaymentFailureCategory.Recipient,
+            OutgoingPaymentFailure(FinalFailure.NoAvailableChannels, listOf(Either.Right(PaymentTimeout))) to PaymentFailureCategory.Liquidity,
+            FinalFailure.RetryExhausted.toPaymentFailure() to PaymentFailureCategory.Retry,
+            FinalFailure.InsufficientBalance.toPaymentFailure() to PaymentFailureCategory.LocalBalance,
         )
         testCases.forEach { (failure, category) ->
             assertEquals(category, failure.category)
