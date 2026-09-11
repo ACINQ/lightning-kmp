@@ -450,6 +450,23 @@ data class LightningOutgoingPayment(
                  * Applications should define their own localized message for each of these failure cases.
                  */
                 sealed class Failure {
+                    val category: PaymentFailureCategory
+                        get() = when (this) {
+                            PaymentAmountTooSmall -> PaymentFailureCategory.LocalValidation
+                            PaymentAmountTooBig -> PaymentFailureCategory.LocalValidation
+                            NotEnoughFunds -> PaymentFailureCategory.LocalBalance
+                            NotEnoughFees -> PaymentFailureCategory.Fee
+                            PaymentExpiryTooBig -> PaymentFailureCategory.Cltv
+                            TooManyPendingPayments -> PaymentFailureCategory.Retry
+                            ChannelIsSplicing -> PaymentFailureCategory.LocalChannel
+                            ChannelIsClosing -> PaymentFailureCategory.LocalChannel
+                            TemporaryRemoteFailure -> PaymentFailureCategory.Remote
+                            RecipientLiquidityIssue -> PaymentFailureCategory.Liquidity
+                            RecipientIsOffline -> PaymentFailureCategory.Recipient
+                            RecipientRejectedPayment -> PaymentFailureCategory.Recipient
+                            is Uninterpretable -> PaymentFailureCategory.Unknown
+                        }
+
                     // @formatter:off
                     /** The payment is too small: try sending a larger amount. */
                     data object PaymentAmountTooSmall : Failure() { override fun toString(): String = "the payment amount is too small" }
