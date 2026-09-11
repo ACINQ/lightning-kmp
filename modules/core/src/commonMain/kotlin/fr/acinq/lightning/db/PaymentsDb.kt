@@ -450,21 +450,21 @@ data class LightningOutgoingPayment(
                  * Applications should define their own localized message for each of these failure cases.
                  */
                 sealed class Failure {
-                    val category: OutgoingPaymentFailure.Category
+                    val category: PaymentFailureCategory
                         get() = when (this) {
-                            PaymentAmountTooSmall -> OutgoingPaymentFailure.Category.LocalValidation
-                            PaymentAmountTooBig -> OutgoingPaymentFailure.Category.LocalValidation
-                            NotEnoughFunds -> OutgoingPaymentFailure.Category.LocalBalance
-                            NotEnoughFees -> OutgoingPaymentFailure.Category.Fee
-                            PaymentExpiryTooBig -> OutgoingPaymentFailure.Category.Cltv
-                            TooManyPendingPayments -> OutgoingPaymentFailure.Category.Retry
-                            ChannelIsSplicing -> OutgoingPaymentFailure.Category.LocalChannel
-                            ChannelIsClosing -> OutgoingPaymentFailure.Category.LocalChannel
-                            TemporaryRemoteFailure -> OutgoingPaymentFailure.Category.Remote
-                            RecipientLiquidityIssue -> OutgoingPaymentFailure.Category.Liquidity
-                            RecipientIsOffline -> OutgoingPaymentFailure.Category.Recipient
-                            RecipientRejectedPayment -> OutgoingPaymentFailure.Category.Recipient
-                            is Uninterpretable -> OutgoingPaymentFailure.Category.Unknown
+                            PaymentAmountTooSmall -> PaymentFailureCategory.LocalValidation
+                            PaymentAmountTooBig -> PaymentFailureCategory.LocalValidation
+                            NotEnoughFunds -> PaymentFailureCategory.LocalBalance
+                            NotEnoughFees -> PaymentFailureCategory.Fee
+                            PaymentExpiryTooBig -> PaymentFailureCategory.Cltv
+                            TooManyPendingPayments -> PaymentFailureCategory.Retry
+                            ChannelIsSplicing -> PaymentFailureCategory.LocalChannel
+                            ChannelIsClosing -> PaymentFailureCategory.LocalChannel
+                            TemporaryRemoteFailure -> PaymentFailureCategory.Remote
+                            RecipientLiquidityIssue -> PaymentFailureCategory.Liquidity
+                            RecipientIsOffline -> PaymentFailureCategory.Recipient
+                            RecipientRejectedPayment -> PaymentFailureCategory.Recipient
+                            is Uninterpretable -> PaymentFailureCategory.Unknown
                         }
 
                     // @formatter:off

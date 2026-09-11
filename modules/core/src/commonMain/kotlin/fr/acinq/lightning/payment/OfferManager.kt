@@ -33,6 +33,14 @@ private data class PendingInvoiceRequest(val payOffer: PayOffer, val request: Of
 
 /** Failures occurring when fetching an invoice to pay an offer */
 sealed class Bolt12InvoiceRequestFailure {
+    val category: PaymentFailureCategory
+        get() = when (this) {
+            is NoResponse -> PaymentFailureCategory.Recipient
+            is MalformedResponse -> PaymentFailureCategory.Recipient
+            is ErrorFromRecipient -> PaymentFailureCategory.Recipient
+            is InvoiceMismatch -> PaymentFailureCategory.Recipient
+        }
+
     // @formatter:off
     data class NoResponse(val request: OfferTypes.InvoiceRequest) : Bolt12InvoiceRequestFailure() { override fun toString(): String = "no response to the invoice request" }
     data class MalformedResponse(val request: OfferTypes.InvoiceRequest, val failure: Bolt12Invoice.Companion.Bolt12ParsingResult.Failure.Malformed) : Bolt12InvoiceRequestFailure() { override fun toString(): String = "recipient returned an invalid response to the invoice request" }
