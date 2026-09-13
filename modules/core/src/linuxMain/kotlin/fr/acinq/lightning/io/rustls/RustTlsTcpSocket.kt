@@ -420,6 +420,13 @@ class RustTlsTcpSocket(
             if (rc != 0) error("read_tls bridge failed with io result $rc")
             rustlsCheck(rustls_connection_process_new_packets(conn))
         }
+        // Processing incoming records can leave rustls wanting to write: a TLS 1.3 KeyUpdate
+        // response, a session-ticket ack, an alert. Nothing else flushes on the read path, so those
+        // records would sit in rustls' output buffer until the next application-level `send` — on a
+        // connection that is mostly idle for days, that is far too late.
+        // Lock order: [readMutex], held by our caller, then [writeMutex]. The write path never takes
+        // [readMutex], so the two cannot deadlock against each other.
+        if (connMutex.withLock { rustls_connection_wants_write(conn) }) flushOutgoing()
         return true
     }
 
