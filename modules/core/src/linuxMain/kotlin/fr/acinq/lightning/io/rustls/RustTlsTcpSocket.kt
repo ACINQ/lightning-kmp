@@ -221,6 +221,7 @@ class RustTlsTcpSocket(
     private suspend fun sendInternal(bytes: ByteArray, offset: Int, length: Int) = useConnection {
         writeMutex.withLock {
             var sent = 0
+            var stalled = false
             bytes.usePinned { pinned ->
                 while (sent < length) {
                     coroutineContext.ensureActive()
@@ -240,6 +241,15 @@ class RustTlsTcpSocket(
                     }
                     sent += written
                     flushOutgoingLocked()
+                    // rustls accepts no plaintext once its outgoing buffer is full; the flush above
+                    // is what normally drains it. If a whole iteration writes nothing even after
+                    // flushing, we are not going to make progress and must not spin on it.
+                    if (written == 0) {
+                        if (stalled) throw TcpSocket.IOException.Unknown("TLS send stalled: rustls accepted no plaintext after flushing")
+                        stalled = true
+                    } else {
+                        stalled = false
+                    }
                 }
             }
         }
