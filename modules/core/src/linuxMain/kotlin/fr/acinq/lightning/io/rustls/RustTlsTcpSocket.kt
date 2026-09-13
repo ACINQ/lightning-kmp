@@ -133,7 +133,7 @@ class RustTlsTcpSocket(
             flushOutgoing()
             if (!rustls_connection_is_handshaking(conn)) break
             if (rustls_connection_wants_read(conn)) {
-                if (!feedIncoming()) error("peer closed the connection during the TLS handshake")
+                if (!feedIncoming()) throw TcpSocket.IOException.ConnectionClosed()
             }
         }
         // Flush any final handshake / session-ticket records.
@@ -194,10 +194,20 @@ class RustTlsTcpSocket(
     override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int) {
         var received = 0
         while (received < length) {
-            received += receiveAvailable(buffer, offset + received, length - received)
+            val read = receiveAvailable(buffer, offset + received, length - received)
+            // [receiveAvailable] either makes progress or throws. A non-positive value would loop
+            // forever here, and would also make the next iteration pass rustls a negative offset
+            // into `buffer`, i.e. an out-of-bounds pointer.
+            check(read > 0) { "receiveAvailable returned $read" }
+            received += read
         }
     }
 
+    /**
+     * @return the number of plaintext bytes read, always strictly positive.
+     * @throws TcpSocket.IOException.ConnectionClosed when the peer closed the connection, either
+     * cleanly (TLS close_notify) or abruptly (socket EOF).
+     */
     override suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int {
         checkOpen()
         while (true) {
@@ -216,8 +226,10 @@ class RustTlsTcpSocket(
                 }
             }
             when (n) {
-                NEED_MORE_TLS -> if (!feedIncoming()) return -1 // socket EOF
-                0 -> return 0 // clean TLS EOF (peer sent close_notify)
+                // Callers (e.g. `linesFlow`) loop until we throw: returning an EOF marker instead
+                // would silently turn that loop into a busy-wait.
+                NEED_MORE_TLS -> if (!feedIncoming()) throw TcpSocket.IOException.ConnectionClosed() // socket EOF
+                0 -> throw TcpSocket.IOException.ConnectionClosed() // clean TLS EOF (peer sent close_notify)
                 else -> return n
             }
         }
