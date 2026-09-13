@@ -17,6 +17,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlin.concurrent.AtomicInt
 import kotlin.coroutines.coroutineContext
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.CPointer
@@ -145,7 +146,14 @@ class RustTlsTcpSocket(
         pos = 0u
     }
 
-    private var closed = false
+    /** 0 = open, 1 = closed. */
+    private val closed = AtomicInt(0)
+
+    /** Number of coroutines currently inside [useConnection], i.e. potentially using [conn]. */
+    private val inFlight = AtomicInt(0)
+
+    /** 0 = native resources still owned, 1 = already released. */
+    private val released = AtomicInt(0)
 
     /** Exclusive access to [conn]. Held only across rustls calls, never across socket I/O. */
     private val connMutex = Mutex()
@@ -157,7 +165,7 @@ class RustTlsTcpSocket(
     private val readMutex = Mutex()
 
     /** Drive the TLS handshake to completion, exchanging records over the socket. */
-    suspend fun handshake() {
+    suspend fun handshake() = useConnection {
         while (connMutex.withLock { rustls_connection_is_handshaking(conn) }) {
             flushOutgoing()
             if (!connMutex.withLock { rustls_connection_is_handshaking(conn) }) break
@@ -190,10 +198,14 @@ class RustTlsTcpSocket(
      * then release all resources. Prefer this over [close] when you can suspend.
      */
     suspend fun closeNotify() {
-        if (closed) return
+        if (closed.value == 1) return
         withContext(Dispatchers.IO) {
-            connMutex.withLock { rustls_connection_send_close_notify(conn) }
-            runCatching { flushOutgoing() }
+            runCatching {
+                useConnection {
+                    connMutex.withLock { rustls_connection_send_close_notify(conn) }
+                    flushOutgoing()
+                }
+            }
             close()
         }
     }
@@ -206,8 +218,7 @@ class RustTlsTcpSocket(
         }
     }
 
-    private suspend fun sendInternal(bytes: ByteArray, offset: Int, length: Int) {
-        checkOpen()
+    private suspend fun sendInternal(bytes: ByteArray, offset: Int, length: Int) = useConnection {
         writeMutex.withLock {
             var sent = 0
             bytes.usePinned { pinned ->
@@ -263,11 +274,10 @@ class RustTlsTcpSocket(
         }
 
     private suspend fun receiveAvailableInternal(buffer: ByteArray, offset: Int, length: Int): Int =
-        readMutex.withLock { receiveAvailableLocked(buffer, offset, length) }
+        useConnection { readMutex.withLock { receiveAvailableLocked(buffer, offset, length) } }
 
     /** Caller must hold [readMutex]. */
     private suspend fun receiveAvailableLocked(buffer: ByteArray, offset: Int, length: Int): Int {
-        checkOpen()
         while (true) {
             coroutineContext.ensureActive()
             // Decrypt buffered application data straight into the caller's buffer,
@@ -296,16 +306,49 @@ class RustTlsTcpSocket(
         }
     }
 
-    /** Release the socket and all native rustls resources (without a clean close_notify). */
+    /**
+     * Release the socket and all native rustls resources (without a clean close_notify).
+     *
+     * Safe to call while other coroutines are reading from or writing to this socket: the native
+     * resources are only freed once none of them is using [conn] any more.
+     */
     override fun close() {
-        if (closed) return
-        closed = true
+        if (!closed.compareAndSet(0, 1)) return
+        // Closing the socket makes any suspended read/write on the Ktor channels fail, so in-flight
+        // users unwind promptly rather than keeping the native resources alive indefinitely.
         socket.close()
-        rustls_connection_free(conn)
-        inPin.unpin()
-        outPin.unpin()
-        nativeHeap.free(ioIn)
-        nativeHeap.free(ioOut)
+        releaseIfIdle()
+    }
+
+    /**
+     * Free the rustls connection and the pinned staging buffers, but only once the socket is closed
+     * and no coroutine is inside [useConnection].
+     *
+     * The ordering is what makes this safe: [useConnection] increments [inFlight] *before* reading
+     * [closed], and [close] writes [closed] *before* [releaseIfIdle] reads [inFlight]. So if we
+     * observe `inFlight == 0` here, any caller arriving afterwards is guaranteed to observe
+     * `closed == 1` and to bail out before touching [conn].
+     */
+    private fun releaseIfIdle() {
+        if (closed.value == 1 && inFlight.value == 0 && released.compareAndSet(0, 1)) {
+            rustls_connection_free(conn)
+            inPin.unpin()
+            outPin.unpin()
+            nativeHeap.free(ioIn)
+            nativeHeap.free(ioOut)
+        }
+    }
+
+    /** Run [action] with [conn] and the staging buffers kept alive, or throw if we are closed. */
+    private suspend fun <R> useConnection(action: suspend () -> R): R {
+        inFlight.incrementAndGet()
+        try {
+            if (closed.value == 1) throw TcpSocket.IOException.ConnectionClosed()
+            return action()
+        } finally {
+            inFlight.decrementAndGet()
+            releaseIfIdle()
+        }
     }
 
     // --- internal plumbing -------------------------------------------------
@@ -368,10 +411,6 @@ class RustTlsTcpSocket(
             rustlsCheck(rustls_connection_process_new_packets(conn))
         }
         return true
-    }
-
-    private fun checkOpen() {
-        if (closed) throw TcpSocket.IOException.ConnectionClosed()
     }
 
     /**
