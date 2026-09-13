@@ -7,6 +7,15 @@ import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.readAvailable
 import io.ktor.utils.io.writeFully
+import io.ktor.utils.io.ClosedWriteChannelException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.channels.ClosedReceiveChannelException
+import kotlinx.coroutines.channels.ClosedSendChannelException
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -162,17 +171,27 @@ class RustTlsTcpSocket(
      */
     suspend fun closeNotify() {
         if (closed) return
-        rustls_connection_send_close_notify(conn)
-        runCatching { flushOutgoing() }
-        close()
+        withContext(Dispatchers.IO) {
+            rustls_connection_send_close_notify(conn)
+            runCatching { flushOutgoing() }
+            close()
+        }
     }
 
     override suspend fun send(bytes: ByteArray?, offset: Int, length: Int, flush: Boolean) {
         if (bytes == null || bytes.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            ensureActive()
+            tryIo { sendInternal(bytes, offset, length) }
+        }
+    }
+
+    private suspend fun sendInternal(bytes: ByteArray, offset: Int, length: Int) {
         checkOpen()
         var sent = 0
         bytes.usePinned { pinned ->
             while (sent < length) {
+                coroutineContext.ensureActive()
                 val written = memScoped {
                     val outN = alloc<size_tVar>()
                     rustlsCheck(
@@ -192,14 +211,19 @@ class RustTlsTcpSocket(
     }
 
     override suspend fun receiveFully(buffer: ByteArray, offset: Int, length: Int) {
-        var received = 0
-        while (received < length) {
-            val read = receiveAvailable(buffer, offset + received, length - received)
-            // [receiveAvailable] either makes progress or throws. A non-positive value would loop
-            // forever here, and would also make the next iteration pass rustls a negative offset
-            // into `buffer`, i.e. an out-of-bounds pointer.
-            check(read > 0) { "receiveAvailable returned $read" }
-            received += read
+        withContext(Dispatchers.IO) {
+            ensureActive()
+            tryIo {
+                var received = 0
+                while (received < length) {
+                    val read = receiveAvailableInternal(buffer, offset + received, length - received)
+                    // [receiveAvailableInternal] either makes progress or throws. A non-positive value
+                    // would loop forever here, and would also make the next iteration pass rustls a
+                    // negative offset into `buffer`, i.e. an out-of-bounds pointer.
+                    check(read > 0) { "receiveAvailable returned $read" }
+                    received += read
+                }
+            }
         }
     }
 
@@ -208,9 +232,16 @@ class RustTlsTcpSocket(
      * @throws TcpSocket.IOException.ConnectionClosed when the peer closed the connection, either
      * cleanly (TLS close_notify) or abruptly (socket EOF).
      */
-    override suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int {
+    override suspend fun receiveAvailable(buffer: ByteArray, offset: Int, length: Int): Int =
+        withContext(Dispatchers.IO) {
+            ensureActive()
+            tryIo { receiveAvailableInternal(buffer, offset, length) }
+        }
+
+    private suspend fun receiveAvailableInternal(buffer: ByteArray, offset: Int, length: Int): Int {
         checkOpen()
         while (true) {
+            coroutineContext.ensureActive()
             // Decrypt buffered application data straight into the caller's buffer,
             // capped at `length` so rustls can't overrun it.
             val n = buffer.usePinned { pinned ->
@@ -295,6 +326,28 @@ class RustTlsTcpSocket(
     }
 
     private fun checkOpen() {
-        check(!closed) { "TlsClientConnection is closed" }
+        if (closed) throw TcpSocket.IOException.ConnectionClosed()
+    }
+
+    /**
+     * Map everything this class can throw onto the [TcpSocket.IOException] hierarchy callers expect,
+     * mirroring [fr.acinq.lightning.io.KtorNoTlsTcpSocket]. Cancellation must propagate untouched.
+     */
+    private inline fun <R> tryIo(io: () -> R): R {
+        try {
+            return io()
+        } catch (ex: TcpSocket.IOException) {
+            throw ex
+        } catch (ex: CancellationException) {
+            throw ex
+        } catch (ex: ClosedReceiveChannelException) {
+            throw TcpSocket.IOException.ConnectionClosed(ex)
+        } catch (ex: ClosedWriteChannelException) {
+            throw TcpSocket.IOException.ConnectionClosed(ex)
+        } catch (ex: ClosedSendChannelException) {
+            throw TcpSocket.IOException.ConnectionClosed(ex)
+        } catch (ex: Throwable) {
+            throw TcpSocket.IOException.Unknown(ex.message, ex)
+        }
     }
 }
