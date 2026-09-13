@@ -14,6 +14,8 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.coroutineContext
 import kotlinx.cinterop.COpaquePointer
@@ -104,7 +106,16 @@ private val readTlsCallback = staticCFunction {
  * the TLS state machine; this class pumps ciphertext between rustls and the socket
  * and exposes plaintext [write]/[read].
  *
- * Not safe for concurrent use; drive it from a single coroutine.
+ * Safe to use from several coroutines: `ElectrumClient` writes requests from one coroutine while
+ * reading responses in another. Three locks are involved, and they are always taken in this order:
+ *
+ *  1. [readMutex] / [writeMutex] — one reader and one writer at a time, as required by the Ktor
+ *     byte channels and by the [ioIn] / [ioOut] staging buffers. They are disjoint, so a slow read
+ *     never blocks a write.
+ *  2. [connMutex] — exclusive access to the `rustls_connection`. rustls-ffi takes `&mut Connection`,
+ *     so concurrent calls are a data race, not merely a lost update.
+ *
+ * [connMutex] is never held across socket I/O: only across the (non-suspending) rustls calls.
  */
 @OptIn(ExperimentalForeignApi::class)
 class RustTlsTcpSocket(
@@ -136,12 +147,21 @@ class RustTlsTcpSocket(
 
     private var closed = false
 
+    /** Exclusive access to [conn]. Held only across rustls calls, never across socket I/O. */
+    private val connMutex = Mutex()
+
+    /** Single-writer access to [ioOut], [outBytes] and [writeChannel]. */
+    private val writeMutex = Mutex()
+
+    /** Single-reader access to [ioIn], [inBytes] and [readChannel]. */
+    private val readMutex = Mutex()
+
     /** Drive the TLS handshake to completion, exchanging records over the socket. */
     suspend fun handshake() {
-        while (rustls_connection_is_handshaking(conn)) {
+        while (connMutex.withLock { rustls_connection_is_handshaking(conn) }) {
             flushOutgoing()
-            if (!rustls_connection_is_handshaking(conn)) break
-            if (rustls_connection_wants_read(conn)) {
+            if (!connMutex.withLock { rustls_connection_is_handshaking(conn) }) break
+            if (connMutex.withLock { rustls_connection_wants_read(conn) }) {
                 if (!feedIncoming()) throw TcpSocket.IOException.ConnectionClosed()
             }
         }
@@ -172,7 +192,7 @@ class RustTlsTcpSocket(
     suspend fun closeNotify() {
         if (closed) return
         withContext(Dispatchers.IO) {
-            rustls_connection_send_close_notify(conn)
+            connMutex.withLock { rustls_connection_send_close_notify(conn) }
             runCatching { flushOutgoing() }
             close()
         }
@@ -188,24 +208,28 @@ class RustTlsTcpSocket(
 
     private suspend fun sendInternal(bytes: ByteArray, offset: Int, length: Int) {
         checkOpen()
-        var sent = 0
-        bytes.usePinned { pinned ->
-            while (sent < length) {
-                coroutineContext.ensureActive()
-                val written = memScoped {
-                    val outN = alloc<size_tVar>()
-                    rustlsCheck(
-                        rustls_connection_write(
-                            conn,
-                            (pinned.addressOf(offset + sent).reinterpret<UByteVar>()),
-                            (length - sent).convert(),
-                            outN.ptr,
-                        )
-                    )
-                    outN.value.toInt()
+        writeMutex.withLock {
+            var sent = 0
+            bytes.usePinned { pinned ->
+                while (sent < length) {
+                    coroutineContext.ensureActive()
+                    val written = connMutex.withLock {
+                        memScoped {
+                            val outN = alloc<size_tVar>()
+                            rustlsCheck(
+                                rustls_connection_write(
+                                    conn,
+                                    (pinned.addressOf(offset + sent).reinterpret<UByteVar>()),
+                                    (length - sent).convert(),
+                                    outN.ptr,
+                                )
+                            )
+                            outN.value.toInt()
+                        }
+                    }
+                    sent += written
+                    flushOutgoingLocked()
                 }
-                sent += written
-                flushOutgoing()
             }
         }
     }
@@ -238,28 +262,34 @@ class RustTlsTcpSocket(
             tryIo { receiveAvailableInternal(buffer, offset, length) }
         }
 
-    private suspend fun receiveAvailableInternal(buffer: ByteArray, offset: Int, length: Int): Int {
+    private suspend fun receiveAvailableInternal(buffer: ByteArray, offset: Int, length: Int): Int =
+        readMutex.withLock { receiveAvailableLocked(buffer, offset, length) }
+
+    /** Caller must hold [readMutex]. */
+    private suspend fun receiveAvailableLocked(buffer: ByteArray, offset: Int, length: Int): Int {
         checkOpen()
         while (true) {
             coroutineContext.ensureActive()
             // Decrypt buffered application data straight into the caller's buffer,
             // capped at `length` so rustls can't overrun it.
-            val n = buffer.usePinned { pinned ->
-                memScoped {
-                    val outN = alloc<size_tVar>()
-                    when (val r = rustls_connection_read(
-                        conn, pinned.addressOf(offset).reinterpret<UByteVar>(), length.convert(), outN.ptr,
-                    )) {
-                        RUSTLS_RESULT_OK -> outN.value.toInt()        // 0 => clean EOF
-                        RUSTLS_RESULT_PLAINTEXT_EMPTY -> NEED_MORE_TLS // nothing buffered yet
-                        else -> throw RustlsException(r)
+            val n = connMutex.withLock {
+                buffer.usePinned { pinned ->
+                    memScoped {
+                        val outN = alloc<size_tVar>()
+                        when (val r = rustls_connection_read(
+                            conn, pinned.addressOf(offset).reinterpret<UByteVar>(), length.convert(), outN.ptr,
+                        )) {
+                            RUSTLS_RESULT_OK -> outN.value.toInt()        // 0 => clean EOF
+                            RUSTLS_RESULT_PLAINTEXT_EMPTY -> NEED_MORE_TLS // nothing buffered yet
+                            else -> throw RustlsException(r)
+                        }
                     }
                 }
             }
             when (n) {
                 // Callers (e.g. `linesFlow`) loop until we throw: returning an EOF marker instead
                 // would silently turn that loop into a busy-wait.
-                NEED_MORE_TLS -> if (!feedIncoming()) throw TcpSocket.IOException.ConnectionClosed() // socket EOF
+                NEED_MORE_TLS -> if (!feedIncomingLocked()) throw TcpSocket.IOException.ConnectionClosed() // socket EOF
                 0 -> throw TcpSocket.IOException.ConnectionClosed() // clean TLS EOF (peer sent close_notify)
                 else -> return n
             }
@@ -281,15 +311,25 @@ class RustTlsTcpSocket(
     // --- internal plumbing -------------------------------------------------
 
     /** Push all pending outgoing TLS records from rustls to the socket. */
-    private suspend fun flushOutgoing() {
-        while (rustls_connection_wants_write(conn)) {
-            ioOut.len = 0u
-            val rc = memScoped {
-                val outN = alloc<size_tVar>()
-                rustls_connection_write_tls(conn, writeTlsCallback, ioOut.ptr, outN.ptr)
+    private suspend fun flushOutgoing() = writeMutex.withLock { flushOutgoingLocked() }
+
+    /** Caller must hold [writeMutex]. */
+    private suspend fun flushOutgoingLocked() {
+        while (true) {
+            coroutineContext.ensureActive()
+            val len = connMutex.withLock {
+                if (!rustls_connection_wants_write(conn)) {
+                    0
+                } else {
+                    ioOut.len = 0u
+                    val rc = memScoped {
+                        val outN = alloc<size_tVar>()
+                        rustls_connection_write_tls(conn, writeTlsCallback, ioOut.ptr, outN.ptr)
+                    }
+                    if (rc != 0) error("write_tls bridge failed with io result $rc")
+                    ioOut.len.toInt()
+                }
             }
-            if (rc != 0) error("write_tls bridge failed with io result $rc")
-            val len = ioOut.len.toInt()
             if (len == 0) break
             writeChannel.writeFully(outBytes, 0, len)
             writeChannel.flush()
@@ -308,7 +348,10 @@ class RustTlsTcpSocket(
      *
      * @return false if the socket reached end-of-stream with nothing left to feed.
      */
-    private suspend fun feedIncoming(): Boolean {
+    private suspend fun feedIncoming(): Boolean = readMutex.withLock { feedIncomingLocked() }
+
+    /** Caller must hold [readMutex]. */
+    private suspend fun feedIncomingLocked(): Boolean {
         // Refill staging from the socket only once the previous chunk is fully consumed.
         if (ioIn.pos >= ioIn.len) {
             val read = readChannel.readAvailable(inBytes, 0, inBytes.size)
@@ -316,12 +359,14 @@ class RustTlsTcpSocket(
             ioIn.len = read.convert()
             ioIn.pos = 0u
         }
-        val rc = memScoped {
-            val outN = alloc<size_tVar>()
-            rustls_connection_read_tls(conn, readTlsCallback, ioIn.ptr, outN.ptr)
+        connMutex.withLock {
+            val rc = memScoped {
+                val outN = alloc<size_tVar>()
+                rustls_connection_read_tls(conn, readTlsCallback, ioIn.ptr, outN.ptr)
+            }
+            if (rc != 0) error("read_tls bridge failed with io result $rc")
+            rustlsCheck(rustls_connection_process_new_packets(conn))
         }
-        if (rc != 0) error("read_tls bridge failed with io result $rc")
-        rustlsCheck(rustls_connection_process_new_packets(conn))
         return true
     }
 
