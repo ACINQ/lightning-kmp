@@ -37,10 +37,22 @@ internal actual object PlatformSocketBuilder : TcpSocket.Builder {
                             is TcpSocket.TLS.UNSAFE_CERTIFICATES -> RustlsClientConfig.build(caBundlePath = null, dangerousSkipCertVerification = true)
                             is TcpSocket.TLS.PINNED_PUBLIC_KEY -> RustlsClientConfig.build(pinnedPublicKey = decodePinnedPublicKey(tls.pubKey))
                         }
-                        val conn = config.newConnection(host)
-                        val tls = RustTlsTcpSocket(conn, socket)
-                        tls.handshake()
-                        tls
+                        try {
+                            val tls = RustTlsTcpSocket(config.newConnection(host), socket)
+                            try {
+                                tls.handshake()
+                            } catch (e: Exception) {
+                                // Frees the rustls connection and the pinned staging buffers (and closes the socket).
+                                tls.close()
+                                throw e
+                            }
+                            tls
+                        } finally {
+                            // The connection holds its own reference to the config, but the verifier callback reads
+                            // the pinned key (attached as connection userdata) during the handshake, so the config
+                            // must not be closed before the handshake is over.
+                            config.close()
+                        }
                     }
                 }
             } catch (e: Exception) {
