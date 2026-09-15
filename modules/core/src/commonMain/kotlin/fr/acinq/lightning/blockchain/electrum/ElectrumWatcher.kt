@@ -49,7 +49,6 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
     private data class State(
         val height: Int, // current block height. 0 means that we're not connected
         val watches: Set<Watch> = setOf(),
-        val scriptHashStatus: Map<ByteVector32, String> = mapOf(),
         val scriptHashSubscriptions: Set<ByteVector32> = setOf(),
         val publishQueue: Set<Transaction> = setOf(),
         val block2tx: Map<Long, Set<Transaction>> = mapOf(),
@@ -123,9 +122,12 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
         }
 
         suspend fun processScripHashSubscriptionResponse(response: ScriptHashSubscriptionResponse) = runCatching {
-            val existingStatus = state.scriptHashStatus[response.scriptHash]
-            if (response.status != null && response.status != existingStatus) {
-                state = state.copy(scriptHashStatus = state.scriptHashStatus + (response.scriptHash to response.status))
+            // A null status means that this script hash has no transaction history yet.
+            // Note that we don't skip script hashes whose status hasn't changed: the server only notifies us when the status changes,
+            // but we also get here when adding a new watch on a script hash we were already subscribed to, and the transactions
+            // matching that new watch may already be in the history (e.g. we watch a funding output for confirmation, then for
+            // spending, while the channel was closed when we were offline). The status would never change in that case.
+            if (response.status != null) {
                 val history = client.getScriptHashHistory(response.scriptHash)
                 processScripHashHistory(history)
                 state = state.copy(idleSince = currentTimestampMillis())
@@ -185,7 +187,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                             is ElectrumConnectionStatus.Connected -> {
                                 state = state.copy(height = cmd.status.height)
                                 // reset all subscriptions
-                                state = state.copy(scriptHashSubscriptions = setOf(), scriptHashStatus = mapOf())
+                                state = state.copy(scriptHashSubscriptions = setOf())
                                 state.watches.forEach { addWatch(it) }
 
                                 // handle pending publish commands
@@ -195,7 +197,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                             }
 
                             is ElectrumConnectionStatus.Closed -> {
-                                state = state.copy(height = 0, scriptHashSubscriptions = setOf(), scriptHashStatus = mapOf(), idleSince = null)
+                                state = state.copy(height = 0, scriptHashSubscriptions = setOf(), idleSince = null)
                                 stopTimer()
                             }
                         }
