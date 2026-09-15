@@ -187,8 +187,10 @@ private fun derContentStart(p: CPointer<UByteVar>, off: Int): Int {
  * An immutable, shareable rustls client configuration: which root certificates to
  * trust (or whether to verify at all).
  *
- * A single config can back many connections. Call [close] when you are done with it;
- * existing connections keep an internal reference, so closing it early is safe.
+ * A single config can back many connections. Call [close] when you are done with it.
+ * Existing connections keep their own reference to the underlying rustls config, but when
+ * a public key is pinned, the verifier callback reads it from this object's native memory
+ * during each connection's handshake: only close the config once those handshakes are over.
  */
 @OptIn(ExperimentalForeignApi::class)
 class RustlsClientConfig private constructor(
