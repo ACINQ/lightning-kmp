@@ -17,8 +17,10 @@ import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -288,6 +290,11 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
         )
         val spent = listener.filterIsInstance<WatchSpentTriggered>().first()
         assertEquals(spendingTx.txid, spent.spendingTx.txid)
+
+        // Channels react to a spent output by watching the spending tx for confirmation: the history of that tx's script hash
+        // contains the spending tx itself, but this must not re-trigger the watch-spent (that would create a loop).
+        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, spendingTx, 100, WatchConfirmed.ClosingTxConfirmed))
+        assertNull(withTimeoutOrNull(3.seconds) { listener.filterIsInstance<WatchSpentTriggered>().first() })
 
         watcher.stop()
         client.stop()

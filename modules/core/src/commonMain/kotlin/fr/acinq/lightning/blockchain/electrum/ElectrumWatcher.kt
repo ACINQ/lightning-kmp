@@ -66,14 +66,20 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
     init {
         logger.info { "initializing electrum watcher" }
 
-        suspend fun processScripHashHistory(history: List<TransactionHistoryItem>) = runCatching {
+        /**
+         * Check the given [watches] against the history of a script hash.
+         *
+         * @param watches the watches to evaluate: this is all of our watches when the history of a script hash has changed, but only
+         * the new watch when we've just added one. Watches that are already set have already been evaluated against that history.
+         */
+        suspend fun processScripHashHistory(history: List<TransactionHistoryItem>, watches: Collection<Watch>) = runCatching {
             val txs = history.filter { it.blockHeight >= -1 }.mapNotNull { client.getTx(it.txid) }
 
             // WatchSpent
             txs.forEach { tx ->
                 val outpoints = tx.txIn.map { it.outPoint }
                 outpoints.forEach { outPoint ->
-                    state.watches
+                    watches
                         .filterIsInstance<WatchSpent>()
                         .filter { it.txId == outPoint.txid && it.outputIndex == outPoint.index.toInt() }
                         .map { w ->
@@ -86,7 +92,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
             // WatchConfirmed
             val txMap = txs.associateBy { it.txid }
             history.filter { it.blockHeight > 0 }.forEach { item ->
-                val triggered = state.watches
+                val triggered = watches
                     .filterIsInstance<WatchConfirmed>()
                     .filter { it.txId == item.txid }
                     .filter { state.height - item.blockHeight + 1 >= it.minDepth }
@@ -123,13 +129,9 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
 
         suspend fun processScripHashSubscriptionResponse(response: ScriptHashSubscriptionResponse) = runCatching {
             // A null status means that this script hash has no transaction history yet.
-            // Note that we don't skip script hashes whose status hasn't changed: the server only notifies us when the status changes,
-            // but we also get here when adding a new watch on a script hash we were already subscribed to, and the transactions
-            // matching that new watch may already be in the history (e.g. we watch a funding output for confirmation, then for
-            // spending, while the channel was closed when we were offline). The status would never change in that case.
             if (response.status != null) {
                 val history = client.getScriptHashHistory(response.scriptHash)
-                processScripHashHistory(history)
+                processScripHashHistory(history, state.watches)
                 state = state.copy(idleSince = currentTimestampMillis())
             }
         }
@@ -155,7 +157,13 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
             )
             if (state.isConnected) {
                 val response = client.startScriptHashSubscription(scriptHash)
-                processScripHashSubscriptionResponse(response)
+                // We may already be subscribed to this script hash, (e.g. we watched a funding output for confirmation, and now watch
+                // it for spending): we must check the existing history.
+                if (response.status != null) {
+                    val history = client.getScriptHashHistory(scriptHash)
+                    processScripHashHistory(history, listOf(watch))
+                    state = state.copy(idleSince = currentTimestampMillis())
+                }
             }
         }
 
@@ -216,7 +224,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                                 state.watches.filterIsInstance<WatchConfirmed>().forEach { watch ->
                                     val scriptHash = ElectrumClient.computeScriptHash(watch.publicKeyScript)
                                     val history = client.getScriptHashHistory(scriptHash)
-                                    processScripHashHistory(history)
+                                    processScripHashHistory(history, state.watches)
                                 }
 
                                 val toPublish = state.block2tx.filterKeys { it <= cmd.notification.blockHeight }
