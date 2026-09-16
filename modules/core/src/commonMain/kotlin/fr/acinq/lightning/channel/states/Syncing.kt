@@ -323,7 +323,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                             val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.fundingInput.index.toInt())
                                             WaitForChannelReady(commitments1, mapOf(), shortChannelId, channelReady)
                                         }
-                                        else -> state
+                                        else -> state.updateCommitments(commitments1)
                                     }
                                     Pair(this@Syncing.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                                 }

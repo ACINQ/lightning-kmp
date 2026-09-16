@@ -67,7 +67,7 @@ data class Offline(val state: PersistedChannelState) : ChannelState() {
                                             val shortChannelId = ShortChannelId(watch.blockHeight, watch.txIndex, commitments1.latest.fundingInput.index.toInt())
                                             WaitForChannelReady(commitments1, mapOf(), shortChannelId, channelReady)
                                         }
-                                        else -> state
+                                        else -> state.updateCommitments(commitments1)
                                     }
                                     Pair(this@Offline.copy(state = nextState), actions + listOf(ChannelAction.Storage.StoreState(nextState)))
                                 }
