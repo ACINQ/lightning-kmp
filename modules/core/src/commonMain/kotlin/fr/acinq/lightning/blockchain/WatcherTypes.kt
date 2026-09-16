@@ -1,8 +1,6 @@
 package fr.acinq.lightning.blockchain
 
 import fr.acinq.bitcoin.*
-import fr.acinq.bitcoin.utils.Try
-import fr.acinq.bitcoin.utils.runTrying
 
 sealed class Watch {
     abstract val channelId: ByteVector32
@@ -39,19 +37,6 @@ data class WatchConfirmed(
     data object ClosingTxConfirmed : OnChainEvent()
     data class ParentTxConfirmed(val childTx: Transaction) : OnChainEvent()
     data object AlternativeCommitTxConfirmed : OnChainEvent()
-
-    companion object {
-        fun extractPublicKeyScript(witness: ScriptWitness): ByteVector {
-            val result = runTrying {
-                val pub = PublicKey(witness.last())
-                Script.write(Script.pay2wpkh(pub))
-            }
-            return when (result) {
-                is Try.Success -> ByteVector(result.result)
-                is Try.Failure -> ByteVector(Script.write(Script.pay2wsh(witness.last())))
-            }
-        }
-    }
 }
 
 data class WatchConfirmedTriggered(
