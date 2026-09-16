@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlin.math.max
+import kotlin.time.Duration.Companion.seconds
 
 class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, loggerFactory: LoggerFactory) : IWatcher, CoroutineScope by scope {
 
@@ -170,12 +171,12 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
         fun startTimer() {
             if (timerJob != null) return
 
-            val timeMillis: Long = 2L * 1_000 // fire timer every 2 seconds
+            val duration = 2.seconds
             timerJob = launch {
-                delay(timeMillis)
+                delay(duration)
                 while (isActive) {
                     mailbox.send(WatcherCommand.NotifyIfReady)
-                    delay(timeMillis)
+                    delay(duration)
                 }
             }
         }
