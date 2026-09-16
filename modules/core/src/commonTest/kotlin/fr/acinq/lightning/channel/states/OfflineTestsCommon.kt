@@ -15,6 +15,7 @@ import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
 import kotlin.test.*
 
@@ -651,6 +652,30 @@ class OfflineTestsCommon : LightningTestSuite() {
                 actions.hasWatchFundingSpent(fundingTx.txid)
                 actions.has<ChannelAction.Storage.StoreState>()
             }
+    }
+
+    @Test
+    fun `recv ChannelFundingDepthOk -- unconfirmed splice`() {
+        val (alice, bob) = SpliceTestsCommon.reachNormalWithConfirmedFundingTx()
+        val (alice1, bob1) = SpliceTestsCommon.spliceIn(alice, bob, listOf(50_000.sat))
+        val spliceTx = alice1.commitments.latest.localFundingStatus.signedTx!!
+        assertEquals(2, alice1.commitments.active.size)
+        assertIs<LocalFundingStatus.UnconfirmedFundingTx>(alice1.commitments.latest.localFundingStatus)
+        val (alice2, bob2) = disconnect(alice1, bob1)
+        assertIs<Normal>(alice2.state.state)
+        assertIs<Normal>(bob2.state.state)
+        listOf(alice2, bob2).forEach { channel ->
+            val (channel1, actions1) = channel.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(channel.commitments.channelId, WatchConfirmed.ChannelFundingDepthOk, 100, 0, spliceTx)))
+            assertIs<Offline>(channel1.state)
+            assertIs<Normal>(channel1.state.state)
+            // The commitment isn't pruned yet: our peer hasn't sent splice_locked.
+            assertEquals(2, channel1.commitments.active.size)
+            assertEquals(spliceTx.txid, channel1.commitments.latest.fundingTxId)
+            assertIs<LocalFundingStatus.ConfirmedFundingTx>(channel1.commitments.latest.localFundingStatus)
+            actions1.hasWatchFundingSpent(spliceTx.txid)
+            // The updated state must be persisted, otherwise we would keep watching the splice tx for confirmation after a restart.
+            assertEquals(channel1.state.state, actions1.find<ChannelAction.Storage.StoreState>().data)
+        }
     }
 
     @Test

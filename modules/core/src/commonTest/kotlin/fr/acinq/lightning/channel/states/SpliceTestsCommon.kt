@@ -1881,7 +1881,7 @@ class SpliceTestsCommon : LightningTestSuite() {
     companion object {
         private val spliceFeerate = FeeratePerKw(253.sat)
 
-        private fun reachNormalWithConfirmedFundingTx(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels, zeroConf: Boolean = false): Pair<LNChannel<Normal>, LNChannel<Normal>> {
+        fun reachNormalWithConfirmedFundingTx(channelType: ChannelType.SupportedChannelType = ChannelType.SupportedChannelType.SimpleTaprootChannels, zeroConf: Boolean = false): Pair<LNChannel<Normal>, LNChannel<Normal>> {
             val (alice, bob) = reachNormal(channelType = channelType, zeroConf = zeroConf)
             return when (val fundingStatus = alice.commitments.latest.localFundingStatus) {
                 is LocalFundingStatus.UnconfirmedFundingTx -> {
