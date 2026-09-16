@@ -6,6 +6,7 @@ import fr.acinq.lightning.blockchain.*
 import fr.acinq.lightning.logging.LoggerFactory
 import fr.acinq.lightning.logging.debug
 import fr.acinq.lightning.logging.info
+import fr.acinq.lightning.logging.warning
 import fr.acinq.lightning.transactions.Scripts
 import fr.acinq.lightning.utils.currentTimestampMillis
 import kotlinx.coroutines.*
@@ -244,10 +245,17 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                             when {
                                 csvTimeout > 0 -> {
                                     require(tx.txIn.size == 1) { "watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs" }
-                                    val parentTxid = tx.txIn[0].outPoint.txid
-                                    logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx" }
-                                    val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.first().witness)
-                                    addWatch(WatchConfirmed(ByteVector32.Zeroes, parentTxid, parentPublicKeyScript, csvTimeout.toInt(), WatchConfirmed.ParentTxConfirmed(tx)))
+                                    val parentOutPoint = tx.txIn.first().outPoint
+                                    logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=${parentOutPoint.txid} tx=$tx" }
+                                    // We must fetch the parent transaction to get the script of the output we're spending: it cannot be
+                                    // derived from the witness, which doesn't contain it for taproot key path spends.
+                                    when (val parentPublicKeyScript = client.getTx(parentOutPoint.txid)?.txOut?.getOrNull(parentOutPoint.index.toInt())?.publicKeyScript) {
+                                        null -> {
+                                            logger.warning { "could not retrieve output ${parentOutPoint.txid}:${parentOutPoint.index} spent by txid=${tx.txid}, will retry when reconnecting" }
+                                            state = state.copy(publishQueue = state.publishQueue + tx)
+                                        }
+                                        else -> addWatch(WatchConfirmed(ByteVector32.Zeroes, parentOutPoint.txid, parentPublicKeyScript, csvTimeout.toInt(), WatchConfirmed.ParentTxConfirmed(tx)))
+                                    }
                                 }
 
                                 cltvTimeout > blockCount -> {
