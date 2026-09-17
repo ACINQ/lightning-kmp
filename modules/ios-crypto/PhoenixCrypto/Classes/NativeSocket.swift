@@ -109,7 +109,7 @@ public class NativeSocket: NSObject {
 					log.debug("NWConnection.state => waiting: err(dns): \(String(describing: error))")
 				case .tls(_):
 					log.debug("NWConnection.state => waiting: err(tls): \(String(describing: error))")
-				@unknown default:
+				default:
 					log.debug("NWConnection.state => waiting: err(unknown): \(String(describing: error))")
 				}
 				if case NWError.tls = error {
@@ -402,7 +402,7 @@ public class NativeSocket: NSObject {
 					log.debug("NWListener.state => waiting: err(dns): \(String(describing: error))")
 				case .tls(_):
 					log.debug("NWListener.state => waiting: err(tls): \(String(describing: error))")
-				@unknown default:
+				default:
 					log.debug("NWListener.state => waiting: err(unknown): \(String(describing: error))")
 				}
 			case .ready:
