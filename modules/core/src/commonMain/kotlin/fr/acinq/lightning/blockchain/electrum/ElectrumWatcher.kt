@@ -153,14 +153,14 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                     scriptHash
                 }
             }
+            // Subscriptions are per-connection: we reset them whenever we (re)connect, so this tells us whether the server is
+            // already sending us notifications for that script hash.
+            val alreadySubscribed = state.scriptHashSubscriptions.contains(scriptHash)
             state = state.copy(
                 watches = state.watches + watch, scriptHashSubscriptions = state.scriptHashSubscriptions + scriptHash
             )
             if (state.isConnected) {
                 runCatching {
-                    // Subscriptions are per-connection: we reset them whenever we (re)connect, so this tells us whether the server is
-                    // already sending us notifications for that script hash.
-                    val alreadySubscribed = state.scriptHashSubscriptions.contains(scriptHash)
                     // We may already be subscribed to this script hash, (e.g. we watched a funding output for confirmation, and now watch
                     // it for spending): we must check the existing history, but we don't subscribe again
                     if (alreadySubscribed || client.startScriptHashSubscription(scriptHash).status != null) {
