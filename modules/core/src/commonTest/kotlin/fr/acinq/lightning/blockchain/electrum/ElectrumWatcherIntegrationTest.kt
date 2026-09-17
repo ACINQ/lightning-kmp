@@ -15,9 +15,12 @@ import fr.acinq.lightning.utils.ServerAddress
 import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.utils.sat
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -230,6 +233,68 @@ class ElectrumWatcherIntegrationTest : LightningTestSuite() {
 
         val msg = listener.first() as WatchSpentTriggered
         assertEquals(spendingTx.txid, msg.spendingTx.txid)
+
+        watcher.stop()
+        client.stop()
+    }
+
+    @Test
+    fun `watch for spent transactions after watching the same output for confirmation`() = runSuspendTest {
+        val client = ElectrumClient(this, loggerFactory).apply { connect(ServerAddress("localhost", 51001, TcpSocket.TLS.DISABLED), TcpSocket.Builder()) }
+        val watcher = ElectrumWatcher(client, this, loggerFactory)
+
+        val address = bitcoincli.getNewAddress()
+        val addressScript = Script.write(addressToPublicKeyScript(Chain.Regtest.chainHash, address).right!!).byteVector()
+        val tx = bitcoincli.sendToAddress(address, 1.0)
+
+        // find the output for the address we generated and create a tx that spends it
+        val pos = tx.txOut.indexOfFirst {
+            it.publicKeyScript == addressScript
+        }
+        assertTrue(pos != -1)
+
+        val spendingTx = kotlin.run {
+            val tmp = Transaction(
+                version = 2,
+                txIn = listOf(TxIn(OutPoint(tx, pos.toLong()), signatureScript = emptyList(), sequence = TxIn.SEQUENCE_FINAL)),
+                txOut = listOf(TxOut(tx.txOut[pos].amount - 1000.sat, publicKeyScript = addressScript)),
+                lockTime = 0
+            )
+            val signedTx = bitcoincli.signTransaction(tmp)
+            Transaction.correctlySpends(signedTx, listOf(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+            signedTx
+        }
+
+        // the output is spent while we're not watching it
+        val sentTx = bitcoincli.sendRawTransaction(spendingTx)
+        assertEquals(spendingTx, sentTx)
+        bitcoincli.generateBlocks(2)
+
+        // We first watch the parent tx for confirmation, which subscribes to its output's script hash: this is what happens when
+        // we restart with a funding tx that we hadn't yet seen confirmed.
+        val listener = watcher.openWatchNotificationsFlow()
+        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, tx.txid, tx.txOut[pos].publicKeyScript, 1, WatchConfirmed.ChannelFundingDepthOk))
+        val confirmed = listener.filterIsInstance<WatchConfirmedTriggered>().first()
+        assertEquals(tx.txid, confirmed.tx.txid)
+
+        // We then watch the same output for spending: the spending tx is already in the history and the script hash status won't
+        // change, but we must still detect the spend.
+        watcher.watch(
+            WatchSpent(
+                ByteVector32.Zeroes,
+                tx.txid,
+                pos,
+                tx.txOut[pos].publicKeyScript,
+                WatchSpent.ChannelSpent(tx.txOut[pos].amount)
+            )
+        )
+        val spent = listener.filterIsInstance<WatchSpentTriggered>().first()
+        assertEquals(spendingTx.txid, spent.spendingTx.txid)
+
+        // Channels react to a spent output by watching the spending tx for confirmation: the history of that tx's script hash
+        // contains the spending tx itself, but this must not re-trigger the watch-spent (that would create a loop).
+        watcher.watch(WatchConfirmed(ByteVector32.Zeroes, spendingTx, 100, WatchConfirmed.ClosingTxConfirmed))
+        assertNull(withTimeoutOrNull(3.seconds) { listener.filterIsInstance<WatchSpentTriggered>().first() })
 
         watcher.stop()
         client.stop()

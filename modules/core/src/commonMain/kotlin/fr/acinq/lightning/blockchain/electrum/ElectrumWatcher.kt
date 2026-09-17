@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlin.math.max
+import kotlin.time.Duration.Companion.seconds
 
 class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, loggerFactory: LoggerFactory) : IWatcher, CoroutineScope by scope {
 
@@ -49,7 +50,6 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
     private data class State(
         val height: Int, // current block height. 0 means that we're not connected
         val watches: Set<Watch> = setOf(),
-        val scriptHashStatus: Map<ByteVector32, String> = mapOf(),
         val scriptHashSubscriptions: Set<ByteVector32> = setOf(),
         val publishQueue: Set<Transaction> = setOf(),
         val block2tx: Map<Long, Set<Transaction>> = mapOf(),
@@ -67,14 +67,20 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
     init {
         logger.info { "initializing electrum watcher" }
 
-        suspend fun processScripHashHistory(history: List<TransactionHistoryItem>) = runCatching {
+        /**
+         * Check the given [watches] against the history of a script hash.
+         *
+         * @param watches the watches to evaluate: this is all of our watches when the history of a script hash has changed, but only
+         * the new watch when we've just added one. Watches that are already set have already been evaluated against that history.
+         */
+        suspend fun processScripHashHistory(history: List<TransactionHistoryItem>, watches: Collection<Watch>) = runCatching {
             val txs = history.filter { it.blockHeight >= -1 }.mapNotNull { client.getTx(it.txid) }
 
             // WatchSpent
             txs.forEach { tx ->
                 val outpoints = tx.txIn.map { it.outPoint }
                 outpoints.forEach { outPoint ->
-                    state.watches
+                    watches
                         .filterIsInstance<WatchSpent>()
                         .filter { it.txId == outPoint.txid && it.outputIndex == outPoint.index.toInt() }
                         .map { w ->
@@ -87,7 +93,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
             // WatchConfirmed
             val txMap = txs.associateBy { it.txid }
             history.filter { it.blockHeight > 0 }.forEach { item ->
-                val triggered = state.watches
+                val triggered = watches
                     .filterIsInstance<WatchConfirmed>()
                     .filter { it.txId == item.txid }
                     .filter { state.height - item.blockHeight + 1 >= it.minDepth }
@@ -123,11 +129,10 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
         }
 
         suspend fun processScripHashSubscriptionResponse(response: ScriptHashSubscriptionResponse) = runCatching {
-            val existingStatus = state.scriptHashStatus[response.scriptHash]
-            if (response.status != null && response.status != existingStatus) {
-                state = state.copy(scriptHashStatus = state.scriptHashStatus + (response.scriptHash to response.status))
+            // A null status means that this script hash has no transaction history yet.
+            if (response.status != null) {
                 val history = client.getScriptHashHistory(response.scriptHash)
-                processScripHashHistory(history)
+                processScripHashHistory(history, state.watches)
                 state = state.copy(idleSince = currentTimestampMillis())
             }
         }
@@ -148,24 +153,34 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                     scriptHash
                 }
             }
+            // Subscriptions are per-connection: we reset them whenever we (re)connect, so this tells us whether the server is
+            // already sending us notifications for that script hash.
+            val alreadySubscribed = state.scriptHashSubscriptions.contains(scriptHash)
             state = state.copy(
                 watches = state.watches + watch, scriptHashSubscriptions = state.scriptHashSubscriptions + scriptHash
             )
             if (state.isConnected) {
-                val response = client.startScriptHashSubscription(scriptHash)
-                processScripHashSubscriptionResponse(response)
+                runCatching {
+                    // We may already be subscribed to this script hash, (e.g. we watched a funding output for confirmation, and now watch
+                    // it for spending): we must check the existing history, but we don't subscribe again
+                    if (alreadySubscribed || client.startScriptHashSubscription(scriptHash).status != null) {
+                        val history = client.getScriptHashHistory(scriptHash)
+                        processScripHashHistory(history, listOf(watch))
+                        state = state.copy(idleSince = currentTimestampMillis())
+                    }
+                }
             }
         }
 
         fun startTimer() {
             if (timerJob != null) return
 
-            val timeMillis: Long = 2L * 1_000 // fire timer every 2 seconds
+            val duration = 2.seconds
             timerJob = launch {
-                delay(timeMillis)
+                delay(duration)
                 while (isActive) {
                     mailbox.send(WatcherCommand.NotifyIfReady)
-                    delay(timeMillis)
+                    delay(duration)
                 }
             }
         }
@@ -185,7 +200,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                             is ElectrumConnectionStatus.Connected -> {
                                 state = state.copy(height = cmd.status.height)
                                 // reset all subscriptions
-                                state = state.copy(scriptHashSubscriptions = setOf(), scriptHashStatus = mapOf())
+                                state = state.copy(scriptHashSubscriptions = setOf())
                                 state.watches.forEach { addWatch(it) }
 
                                 // handle pending publish commands
@@ -195,7 +210,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                             }
 
                             is ElectrumConnectionStatus.Closed -> {
-                                state = state.copy(height = 0, scriptHashSubscriptions = setOf(), scriptHashStatus = mapOf(), idleSince = null)
+                                state = state.copy(height = 0, scriptHashSubscriptions = setOf(), idleSince = null)
                                 stopTimer()
                             }
                         }
@@ -214,7 +229,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                                 state.watches.filterIsInstance<WatchConfirmed>().forEach { watch ->
                                     val scriptHash = ElectrumClient.computeScriptHash(watch.publicKeyScript)
                                     val history = client.getScriptHashHistory(scriptHash)
-                                    processScripHashHistory(history)
+                                    processScripHashHistory(history, state.watches)
                                 }
 
                                 val toPublish = state.block2tx.filterKeys { it <= cmd.notification.blockHeight }
