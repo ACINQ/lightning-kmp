@@ -158,6 +158,53 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
             }
         }
 
+        suspend fun processPublish(tx: Transaction) {
+            if (!state.isConnected) {
+                state = state.copy(publishQueue = state.publishQueue + tx)
+            } else {
+                val blockCount = state.height
+                val cltvTimeout = Scripts.cltvTimeout(tx)
+                val csvTimeout = Scripts.csvTimeout(tx)
+                when {
+                    csvTimeout > 0 -> {
+                        require(tx.txIn.size == 1) { "watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs" }
+                        val parentOutPoint = tx.txIn.first().outPoint
+                        logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=${parentOutPoint.txid} tx=$tx" }
+                        // We must fetch the parent transaction to get the script of the output we're spending: it cannot be
+                        // derived from the witness, which doesn't contain it for taproot key path spends.
+                        when (val parentPublicKeyScript = client.getTx(parentOutPoint.txid)?.txOut?.getOrNull(parentOutPoint.index.toInt())?.publicKeyScript) {
+                            null -> {
+                                // This can happen on a transient electrum error, without losing the connection: we put the
+                                // transaction back into the publish queue, which is retried on every new block.
+                                logger.warning { "could not retrieve output ${parentOutPoint.txid}:${parentOutPoint.index} spent by txid=${tx.txid}, will retry later" }
+                                state = state.copy(publishQueue = state.publishQueue + tx)
+                            }
+
+                            else -> addWatch(WatchConfirmed(ByteVector32.Zeroes, parentOutPoint.txid, parentPublicKeyScript, csvTimeout.toInt(), WatchConfirmed.ParentTxConfirmed(tx)))
+                        }
+                    }
+
+                    cltvTimeout > blockCount -> {
+                        logger.info { "delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)" }
+                        val block2tx = state.block2tx + (cltvTimeout to state.block2tx.getOrElse(cltvTimeout) { setOf() } + tx)
+                        state = state.copy(block2tx = block2tx)
+                    }
+
+                    else -> {
+                        logger.info { "publishing tx=[${tx.txid} / $tx]" }
+                        client.broadcastTransaction(tx)
+                        state = state.copy(sent = state.sent + tx)
+                    }
+                }
+            }
+        }
+
+        suspend fun processPublishQueue() {
+            val pending = state.publishQueue
+            state = state.copy(publishQueue = setOf())
+            pending.forEach { processPublish(it) }
+        }
+
         fun startTimer() {
             if (timerJob != null) return
 
@@ -190,8 +237,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                                 state.watches.forEach { addWatch(it) }
 
                                 // handle pending publish commands
-                                state.publishQueue.forEach { publish(it) }
-                                state = state.copy(publishQueue = setOf())
+                                processPublishQueue()
                                 startTimer()
                             }
 
@@ -218,6 +264,8 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
                                     processScripHashHistory(history)
                                 }
 
+                                processPublishQueue()
+
                                 val toPublish = state.block2tx.filterKeys { it <= cmd.notification.blockHeight }
                                 val txs = toPublish.values.flatten()
                                 txs.forEach {
@@ -234,44 +282,7 @@ class ElectrumWatcher(val client: IElectrumClient, val scope: CoroutineScope, lo
 
                     is WatcherCommand.AddWatch -> addWatch(cmd.watch)
 
-                    is WatcherCommand.Publish -> {
-                        if (!state.isConnected) {
-                            state = state.copy(publishQueue = state.publishQueue + cmd.tx)
-                        } else {
-                            val tx = cmd.tx
-                            val blockCount = state.height
-                            val cltvTimeout = Scripts.cltvTimeout(tx)
-                            val csvTimeout = Scripts.csvTimeout(tx)
-                            when {
-                                csvTimeout > 0 -> {
-                                    require(tx.txIn.size == 1) { "watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs" }
-                                    val parentOutPoint = tx.txIn.first().outPoint
-                                    logger.info { "txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=${parentOutPoint.txid} tx=$tx" }
-                                    // We must fetch the parent transaction to get the script of the output we're spending: it cannot be
-                                    // derived from the witness, which doesn't contain it for taproot key path spends.
-                                    when (val parentPublicKeyScript = client.getTx(parentOutPoint.txid)?.txOut?.getOrNull(parentOutPoint.index.toInt())?.publicKeyScript) {
-                                        null -> {
-                                            logger.warning { "could not retrieve output ${parentOutPoint.txid}:${parentOutPoint.index} spent by txid=${tx.txid}, will retry when reconnecting" }
-                                            state = state.copy(publishQueue = state.publishQueue + tx)
-                                        }
-                                        else -> addWatch(WatchConfirmed(ByteVector32.Zeroes, parentOutPoint.txid, parentPublicKeyScript, csvTimeout.toInt(), WatchConfirmed.ParentTxConfirmed(tx)))
-                                    }
-                                }
-
-                                cltvTimeout > blockCount -> {
-                                    logger.info { "delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)" }
-                                    val block2tx = state.block2tx + (cltvTimeout to state.block2tx.getOrElse(cltvTimeout) { setOf() } + tx)
-                                    state = state.copy(block2tx = block2tx)
-                                }
-
-                                else -> {
-                                    logger.info { "publishing tx=[${tx.txid} / $tx]" }
-                                    client.broadcastTransaction(tx)
-                                    state = state.copy(sent = state.sent + tx)
-                                }
-                            }
-                        }
-                    }
+                    is WatcherCommand.Publish -> processPublish(cmd.tx)
 
                     is WatcherCommand.NotifyIfReady -> {
                         if (state.isConnected) {
