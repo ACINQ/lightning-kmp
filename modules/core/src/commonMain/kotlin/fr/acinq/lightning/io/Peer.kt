@@ -812,33 +812,19 @@ class Peer(
     private suspend fun getCurrentBlockHeight(): Int = currentTipFlow.filterNotNull().first()
 
     suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice, trampolineFeesOverride: List<TrampolineFees>? = null): SendPaymentResult {
-        val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
-        this.launch(start = CoroutineStart.UNDISPATCHED) {
-            res.complete(
-                eventsFlow
-                    .filterIsInstance<SendPaymentResult>()
-                    .filter { it.request.paymentId == paymentId }
-                    .first()
-            )
-        }
-        send(PayInvoice(paymentId, amount, LightningOutgoingPayment.Details.Normal(paymentRequest), trampolineFeesOverride))
-        return res.await()
+        return eventsFlow
+            .onSubscription { send(PayInvoice(paymentId, amount, LightningOutgoingPayment.Details.Normal(paymentRequest), trampolineFeesOverride)) }
+            .filterIsInstance<SendPaymentResult>()
+            .first { it.request.paymentId == paymentId }
     }
 
     suspend fun payOffer(amount: MilliSatoshi, offer: OfferTypes.Offer, payerKey: PrivateKey, payerNote: String?, fetchInvoiceTimeout: Duration, trampolineFeesOverride: List<TrampolineFees>? = null): SendPaymentResult {
-        val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
-        this.launch(start = CoroutineStart.UNDISPATCHED) {
-            res.complete(
-                eventsFlow
-                    .filterIsInstance<SendPaymentResult>()
-                    .filter { it.request.paymentId == paymentId }
-                    .first()
-            )
-        }
-        send(PayOffer(paymentId, payerKey, payerNote, amount, offer, fetchInvoiceTimeout, trampolineFeesOverride))
-        return res.await()
+        return eventsFlow
+            .onSubscription { send(PayOffer(paymentId, payerKey, payerNote, amount, offer, fetchInvoiceTimeout, trampolineFeesOverride)) }
+            .filterIsInstance<SendPaymentResult>()
+            .first { it.request.paymentId == paymentId }
     }
 
     suspend fun createInvoice(paymentPreimage: ByteVector32, amount: MilliSatoshi?, description: Either<String, ByteVector32>, expiry: Duration? = null): Bolt11Invoice {
