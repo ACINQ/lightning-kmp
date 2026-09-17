@@ -811,10 +811,10 @@ class Peer(
 
     private suspend fun getCurrentBlockHeight(): Int = currentTipFlow.filterNotNull().first()
 
-    suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice): SendPaymentResult {
+    suspend fun payInvoice(amount: MilliSatoshi, paymentRequest: Bolt11Invoice, trampolineFeesOverride: List<TrampolineFees>? = null): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
-        this.launch {
+        this.launch(start = CoroutineStart.UNDISPATCHED) {
             res.complete(
                 eventsFlow
                     .filterIsInstance<SendPaymentResult>()
@@ -822,14 +822,14 @@ class Peer(
                     .first()
             )
         }
-        send(PayInvoice(paymentId, amount, LightningOutgoingPayment.Details.Normal(paymentRequest)))
+        send(PayInvoice(paymentId, amount, LightningOutgoingPayment.Details.Normal(paymentRequest), trampolineFeesOverride))
         return res.await()
     }
 
-    suspend fun payOffer(amount: MilliSatoshi, offer: OfferTypes.Offer, payerKey: PrivateKey, payerNote: String?, fetchInvoiceTimeout: Duration): SendPaymentResult {
+    suspend fun payOffer(amount: MilliSatoshi, offer: OfferTypes.Offer, payerKey: PrivateKey, payerNote: String?, fetchInvoiceTimeout: Duration, trampolineFeesOverride: List<TrampolineFees>? = null): SendPaymentResult {
         val res = CompletableDeferred<SendPaymentResult>()
         val paymentId = UUID.randomUUID()
-        this.launch {
+        this.launch(start = CoroutineStart.UNDISPATCHED) {
             res.complete(
                 eventsFlow
                     .filterIsInstance<SendPaymentResult>()
@@ -837,7 +837,7 @@ class Peer(
                     .first()
             )
         }
-        send(PayOffer(paymentId, payerKey, payerNote, amount, offer, fetchInvoiceTimeout))
+        send(PayOffer(paymentId, payerKey, payerNote, amount, offer, fetchInvoiceTimeout, trampolineFeesOverride))
         return res.await()
     }
 

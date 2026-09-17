@@ -3,6 +3,8 @@ package fr.acinq.lightning.io.peer
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Chain
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.Script
 import fr.acinq.bitcoin.byteVector
@@ -21,6 +23,7 @@ import fr.acinq.lightning.db.InMemoryDatabases
 import fr.acinq.lightning.db.LightningOutgoingPayment
 import fr.acinq.lightning.io.*
 import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.payment.Bolt11Invoice
 import fr.acinq.lightning.payment.LiquidityPolicy
 import fr.acinq.lightning.router.Announcements
 import fr.acinq.lightning.serialization.channel.Encryption.from
@@ -35,6 +38,7 @@ import fr.acinq.lightning.utils.UUID
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.toByteVector32
 import fr.acinq.lightning.wire.*
 import fr.acinq.secp256k1.Hex
 import kotlinx.coroutines.CompletableDeferred
@@ -71,6 +75,25 @@ class PeerTest : LightningTestSuite() {
         TlvStream(ChannelTlv.ChannelTypeTlv(ChannelType.SupportedChannelType.SimpleTaprootChannels))
     )
 
+    private fun makeInvoice(amount: MilliSatoshi?, supportsTrampoline: Boolean, privKey: PrivateKey = randomKey()): Bolt11Invoice {
+        val paymentHash = Crypto.sha256(randomBytes32()).toByteVector32()
+        val invoiceFeatures: Map<Feature, FeatureSupport> = buildMap {
+            put(Feature.VariableLengthOnion, FeatureSupport.Optional)
+            put(Feature.PaymentSecret, FeatureSupport.Mandatory)
+            put(Feature.BasicMultiPartPayment, FeatureSupport.Optional)
+            if (supportsTrampoline) put(Feature.ExperimentalTrampolinePayment, FeatureSupport.Optional)
+        }
+        return Bolt11Invoice.create(
+            chain = Chain.Regtest,
+            amount = amount,
+            paymentHash = paymentHash,
+            privateKey = privKey,
+            description = Either.Left("unit test"),
+            minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
+            features = Features(invoiceFeatures),
+        )
+    }
+
     @Test
     fun `init peer`() = runSuspendTest {
         val alice = buildPeer(this, TestConstants.Alice.nodeParams, TestConstants.Alice.walletParams)
@@ -89,6 +112,30 @@ class PeerTest : LightningTestSuite() {
     @Test
     fun `init peer -- bundled`() = runSuspendTest {
         newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams))
+    }
+
+    @Test
+    fun `pay invoice with trampoline fee override`() = runSuspendTest {
+        val peer = buildPeer(this, TestConstants.Alice.nodeParams, TestConstants.Alice.walletParams)
+        val trampolineFeesOverride = listOf(TrampolineFees(2.sat, 500, CltvExpiryDelta(576)))
+        val invoice = makeInvoice(amount = null, supportsTrampoline = true)
+
+        val result = peer.payInvoice(100_000.msat, invoice, trampolineFeesOverride)
+
+        val failure = assertIs<PaymentNotSent>(result)
+        assertEquals(trampolineFeesOverride, failure.request.trampolineFeesOverride)
+    }
+
+    @Test
+    fun `pay offer with trampoline fee override`() = runSuspendTest {
+        val peer = buildPeer(this, TestConstants.Bob.nodeParams, TestConstants.Bob.walletParams)
+        val trampolineFeesOverride = listOf(TrampolineFees(2.sat, 500, CltvExpiryDelta(576)))
+        val offer = TestConstants.Alice.nodeParams.randomOffer(TestConstants.Alice.nodeParams.nodeId, 100_000.msat, "test offer").offer
+
+        val result = peer.payOffer(100_000.msat, offer, randomKey(), null, 1.seconds, trampolineFeesOverride)
+
+        val failure = assertIs<OfferNotPaid>(result)
+        assertEquals(trampolineFeesOverride, failure.request.trampolineFeesOverride)
     }
 
     @Test
