@@ -313,6 +313,8 @@ object Serialization {
                     write(0x0c)
                 FinalFailure.AlreadyInProgress ->
                     write(0x0d)
+                FinalFailure.RecipientRejectedPayment ->
+                    write(0x0e)
             }
             writeNumber(o.completedAt)
         }
