@@ -141,7 +141,7 @@ class ElectrumClientTest : LightningTestSuite() {
     @Test
     fun `header subscription`() = runTest { client ->
         val response = client.startHeaderSubscription()
-        assertTrue(BlockHeader.checkProofOfWork(response.header))
+        assertTrue(BlockHeader.checkProofOfWork(response.header, Chain.Mainnet.chainHash))
         client.stop()
     }
 
@@ -164,7 +164,7 @@ class ElectrumClientTest : LightningTestSuite() {
         client.connect(ElectrumMainnetServerAddress, TcpSocket.Builder())
         // The subscription call will automatically be retried.
         val response = subscriptionJob.await()
-        assertTrue(BlockHeader.checkProofOfWork(response.header))
+        assertTrue(BlockHeader.checkProofOfWork(response.header, Chain.Mainnet.chainHash))
         client.stop()
     }
 
