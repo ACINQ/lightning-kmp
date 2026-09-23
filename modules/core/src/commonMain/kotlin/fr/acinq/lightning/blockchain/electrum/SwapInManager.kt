@@ -10,6 +10,7 @@ import fr.acinq.lightning.channel.SpliceStatus
 import fr.acinq.lightning.channel.states.*
 import fr.acinq.lightning.io.AddWalletInputsToChannel
 import fr.acinq.lightning.logging.MDCLogger
+import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.sat
 
 internal sealed class SwapInCommand {
@@ -34,7 +35,16 @@ class SwapInManager(private var reservedUtxos: Set<OutPoint>, private val logger
         is SwapInCommand.TrySwapIn -> {
             val availableWallet = cmd.wallet.withoutReservedUtxos(reservedUtxos).withConfirmations(cmd.currentBlockHeight, cmd.swapInParams)
             logger.info { "swap-in wallet balance: deeplyConfirmed=${availableWallet.deeplyConfirmed.balance}, weaklyConfirmed=${availableWallet.weaklyConfirmed.balance}, unconfirmed=${availableWallet.unconfirmed.balance}" }
-            val utxos = availableWallet.deeplyConfirmed.filter { Transaction.write(it.previousTx.stripInputWitnesses()).size < 65_000 }
+            val utxos = availableWallet.deeplyConfirmed.filter {
+                val sizeOk = Transaction.write(it.previousTx.stripInputWitnesses()).size < 65_000
+                val aboveDust = it.amount >= Transactions.dustLimit(it.previousTx.txOut[it.outputIndex].publicKeyScript)
+                if (!sizeOk) {
+                    logger.info { "swap-in wallet: ignoring ${it.outPoint} (serialized tx too big)" }
+                } else if (!aboveDust) {
+                    logger.info { "swap-in wallet: ignoring ${it.outPoint} (dust amount)" }
+                }
+                sizeOk && aboveDust
+            }
             if (utxos.balance > 0.sat) {
                 logger.info { "swap-in wallet: requesting channel using ${utxos.size} utxos with balance=${utxos.balance}" }
                 reservedUtxos = reservedUtxos.union(utxos.map { it.outPoint })
