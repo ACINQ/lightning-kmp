@@ -15,24 +15,16 @@ import fr.acinq.lightning.wire.*
  * localized messages or the exact failure hierarchy used internally by lightning-kmp.
  */
 enum class PaymentFailureCategory {
-    /** The payment request or caller-provided payment parameters are invalid. */
-    LocalValidation,
-    /** The wallet doesn't have enough spendable balance for this payment. */
-    LocalBalance,
-    /** The wallet cannot currently use its local channels to send this payment. */
-    LocalChannel,
-    /** The payment failed because routing fees were insufficient. */
-    Fee,
-    /** The payment failed because CLTV/expiry requirements were not met. */
-    Cltv,
-    /** The payment could not be relayed to the recipient, most likely because of insufficient liquidity. */
-    Liquidity,
-    /** The recipient was unreachable or rejected the payment. */
-    Recipient,
-    /** A remote node in the route failed the payment. */
-    Remote,
-    /** Payment attempts were exhausted or interrupted and the payment may be retried later. */
-    Retry,
+    /** The payment cannot be completed because of local payment parameters or state. */
+    LocalFatal,
+    /** The payment may be completed after a local change such as adjusting amount, balance or channel state. */
+    LocalTransient,
+    /** The payment failed while in-flight and may be retried. */
+    InflightTransient,
+    /** The payment failed because fees were insufficient and may be retried with higher fees. */
+    NotEnoughFee,
+    /** The payment cannot be completed because the recipient rejected it or returned invalid data. */
+    RemoteFatal,
     /** The failure cannot be reliably classified. */
     Unknown
 }
@@ -48,19 +40,19 @@ sealed class FinalFailure {
 
     val category: PaymentFailureCategory
         get() = when (this) {
-            AlreadyInProgress -> PaymentFailureCategory.LocalValidation
-            AlreadyPaid -> PaymentFailureCategory.LocalValidation
-            InvalidPaymentAmount -> PaymentFailureCategory.LocalValidation
-            FeaturesNotSupported -> PaymentFailureCategory.LocalValidation
-            InvalidPaymentId -> PaymentFailureCategory.LocalValidation
-            ChannelNotConnected -> PaymentFailureCategory.LocalChannel
-            ChannelOpening -> PaymentFailureCategory.LocalChannel
-            ChannelClosing -> PaymentFailureCategory.LocalChannel
-            NoAvailableChannels -> PaymentFailureCategory.LocalChannel
-            InsufficientBalance -> PaymentFailureCategory.LocalBalance
-            RecipientUnreachable -> PaymentFailureCategory.Recipient
-            RetryExhausted -> PaymentFailureCategory.Retry
-            WalletRestarted -> PaymentFailureCategory.Retry
+            AlreadyPaid -> PaymentFailureCategory.LocalFatal
+            InvalidPaymentAmount -> PaymentFailureCategory.LocalFatal
+            FeaturesNotSupported -> PaymentFailureCategory.LocalFatal
+            InvalidPaymentId -> PaymentFailureCategory.LocalFatal
+            AlreadyInProgress -> PaymentFailureCategory.LocalTransient
+            ChannelNotConnected -> PaymentFailureCategory.LocalTransient
+            ChannelOpening -> PaymentFailureCategory.LocalTransient
+            ChannelClosing -> PaymentFailureCategory.LocalTransient
+            NoAvailableChannels -> PaymentFailureCategory.LocalTransient
+            InsufficientBalance -> PaymentFailureCategory.LocalTransient
+            RetryExhausted -> PaymentFailureCategory.LocalTransient
+            WalletRestarted -> PaymentFailureCategory.LocalTransient
+            RecipientUnreachable -> PaymentFailureCategory.InflightTransient
             UnknownError -> PaymentFailureCategory.Unknown
         }
 

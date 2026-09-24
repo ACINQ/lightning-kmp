@@ -452,18 +452,18 @@ data class LightningOutgoingPayment(
                 sealed class Failure {
                     val category: PaymentFailureCategory
                         get() = when (this) {
-                            PaymentAmountTooSmall -> PaymentFailureCategory.LocalValidation
-                            PaymentAmountTooBig -> PaymentFailureCategory.LocalValidation
-                            NotEnoughFunds -> PaymentFailureCategory.LocalBalance
-                            NotEnoughFees -> PaymentFailureCategory.Fee
-                            PaymentExpiryTooBig -> PaymentFailureCategory.Cltv
-                            TooManyPendingPayments -> PaymentFailureCategory.Retry
-                            ChannelIsSplicing -> PaymentFailureCategory.LocalChannel
-                            ChannelIsClosing -> PaymentFailureCategory.LocalChannel
-                            TemporaryRemoteFailure -> PaymentFailureCategory.Remote
-                            RecipientLiquidityIssue -> PaymentFailureCategory.Liquidity
-                            RecipientIsOffline -> PaymentFailureCategory.Recipient
-                            RecipientRejectedPayment -> PaymentFailureCategory.Recipient
+                            PaymentAmountTooSmall -> PaymentFailureCategory.LocalFatal
+                            PaymentAmountTooBig -> PaymentFailureCategory.LocalFatal
+                            PaymentExpiryTooBig -> PaymentFailureCategory.LocalFatal
+                            NotEnoughFunds -> PaymentFailureCategory.LocalTransient
+                            TooManyPendingPayments -> PaymentFailureCategory.LocalTransient
+                            ChannelIsSplicing -> PaymentFailureCategory.LocalTransient
+                            ChannelIsClosing -> PaymentFailureCategory.LocalTransient
+                            NotEnoughFees -> PaymentFailureCategory.NotEnoughFee
+                            TemporaryRemoteFailure -> PaymentFailureCategory.InflightTransient
+                            RecipientLiquidityIssue -> PaymentFailureCategory.InflightTransient
+                            RecipientIsOffline -> PaymentFailureCategory.InflightTransient
+                            RecipientRejectedPayment -> PaymentFailureCategory.RemoteFatal
                             is Uninterpretable -> PaymentFailureCategory.Unknown
                         }
 

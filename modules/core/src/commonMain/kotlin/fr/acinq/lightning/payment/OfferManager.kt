@@ -35,10 +35,10 @@ private data class PendingInvoiceRequest(val payOffer: PayOffer, val request: Of
 sealed class Bolt12InvoiceRequestFailure {
     val category: PaymentFailureCategory
         get() = when (this) {
-            is NoResponse -> PaymentFailureCategory.Recipient
-            is MalformedResponse -> PaymentFailureCategory.Recipient
-            is ErrorFromRecipient -> PaymentFailureCategory.Recipient
-            is InvoiceMismatch -> PaymentFailureCategory.Recipient
+            is NoResponse -> PaymentFailureCategory.InflightTransient
+            is MalformedResponse -> PaymentFailureCategory.RemoteFatal
+            is ErrorFromRecipient -> PaymentFailureCategory.RemoteFatal
+            is InvoiceMismatch -> PaymentFailureCategory.RemoteFatal
         }
 
     // @formatter:off
