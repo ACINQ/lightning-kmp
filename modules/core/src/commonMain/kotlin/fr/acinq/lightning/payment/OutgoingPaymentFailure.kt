@@ -9,6 +9,27 @@ import fr.acinq.lightning.utils.currentTimestampMillis
 import fr.acinq.lightning.wire.*
 
 /**
+ * Stable high-level classification for payment failures.
+ *
+ * This is meant for APIs, logs and diagnostics that need machine-readable failure classes without relying on
+ * localized messages or the exact failure hierarchy used internally by lightning-kmp.
+ */
+enum class PaymentFailureCategory {
+    /** The payment cannot be completed because of local payment parameters or state. */
+    LocalFatal,
+    /** The payment may be completed after a local change such as adjusting amount, balance or channel state. */
+    LocalTransient,
+    /** The payment failed while in-flight and may be retried. */
+    InflightTransient,
+    /** The payment failed because fees were insufficient and may be retried with higher fees. */
+    NotEnoughFee,
+    /** The payment cannot be completed because the recipient rejected it or returned invalid data. */
+    RemoteFatal,
+    /** The failure cannot be reliably classified. */
+    Unknown
+}
+
+/**
  * A fatal failure that stops payment attempts.
  * Applications should define their own localized message for each of these failures.
  */
@@ -16,6 +37,24 @@ sealed class FinalFailure {
 
     /** Use this function when no payment attempts have been made (e.g. when a precondition failed). */
     fun toPaymentFailure(): OutgoingPaymentFailure = OutgoingPaymentFailure(this, listOf<LightningOutgoingPayment.Part.Status.Failed>())
+
+    val category: PaymentFailureCategory
+        get() = when (this) {
+            AlreadyPaid -> PaymentFailureCategory.LocalFatal
+            InvalidPaymentAmount -> PaymentFailureCategory.LocalFatal
+            FeaturesNotSupported -> PaymentFailureCategory.LocalFatal
+            InvalidPaymentId -> PaymentFailureCategory.LocalFatal
+            AlreadyInProgress -> PaymentFailureCategory.LocalTransient
+            ChannelNotConnected -> PaymentFailureCategory.LocalTransient
+            ChannelOpening -> PaymentFailureCategory.LocalTransient
+            ChannelClosing -> PaymentFailureCategory.LocalTransient
+            NoAvailableChannels -> PaymentFailureCategory.LocalTransient
+            InsufficientBalance -> PaymentFailureCategory.LocalTransient
+            RetryExhausted -> PaymentFailureCategory.LocalTransient
+            WalletRestarted -> PaymentFailureCategory.LocalTransient
+            RecipientUnreachable -> PaymentFailureCategory.InflightTransient
+            UnknownError -> PaymentFailureCategory.Unknown
+        }
 
     // @formatter:off
     data object AlreadyInProgress : FinalFailure() { override fun toString(): String = "another payment is in progress for that invoice" }
@@ -49,6 +88,9 @@ data class OutgoingPaymentFailure(val reason: FinalFailure, val failures: List<L
             else -> Either.Right(reason)
         }
     }
+
+    /** Stable classification of the most user-friendly reason for the payment failure. */
+    val category: PaymentFailureCategory get() = explain().fold({ it.category }, { it.category })
 
     /**
      * A detailed summary of the all internal errors.
