@@ -144,7 +144,7 @@ class OfferManagerTestsCommon : LightningTestSuite() {
         val failure = bobOfferManager.eventsFlow.first()
         assertIs<OfferNotPaid>(failure)
         assertEquals(OfferNotPaid(payOffer, Bolt12InvoiceRequestFailure.NoResponse(request)), failure)
-        assertEquals(PaymentFailureCategory.Recipient, failure.reason.category)
+        assertEquals(PaymentFailureCategory.InflightTransient, failure.reason.category)
         // The timeout can be replayed without any side-effect.
         bobOfferManager.checkInvoiceRequestTimeout(invoiceRequestPathId, payOffer)
         // Alice sends an invoice back to Bob after the timeout.
