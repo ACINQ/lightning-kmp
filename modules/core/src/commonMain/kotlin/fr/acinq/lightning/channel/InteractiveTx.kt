@@ -666,6 +666,7 @@ sealed class InteractiveTxSessionAction {
     data class OutputBelowDust(val channelId: ByteVector32, val serialId: Long, val amount: Satoshi, val dustLimit: Satoshi) : RemoteFailure() { override fun toString(): String = "invalid output amount=$amount below dust=$dustLimit (serial_id=$serialId)" }
     data class InvalidTxInputOutputCount(val channelId: ByteVector32, val inputCount: Int, val outputCount: Int) : RemoteFailure() { override fun toString(): String = "invalid number of inputs or outputs (inputCount=$inputCount, outputCount=$outputCount)" }
     data class InvalidTxBelowReserve(val channelId: ByteVector32, val remoteAmount: Satoshi, val reserve: Satoshi) : RemoteFailure() { override fun toString(): String = "peer takes too much funds out and falls below reverse ($remoteAmount < $reserve)" }
+    data class InvalidTxBalances(val channelId: ByteVector32, val localAmount: MilliSatoshi, val remoteAmount: MilliSatoshi) : RemoteFailure() { override fun toString(): String = "invalid balances after splice (local=$localAmount, remote=$remoteAmount)" }
     data class InvalidTxSharedInput(val channelId: ByteVector32) : RemoteFailure() { override fun toString(): String = "shared input is missing or duplicated" }
     data class InvalidTxSharedOutput(val channelId: ByteVector32) : RemoteFailure() { override fun toString(): String = "shared output is missing or duplicated" }
     data class InvalidTxSharedAmount(val channelId: ByteVector32, val serialId: Long, val amount: Satoshi, val expected: Satoshi) : RemoteFailure() { override fun toString(): String = "invalid shared output amount=$amount expected=$expected (serial_id=$serialId)" }
@@ -994,6 +995,10 @@ data class InteractiveTxSession(
             return InteractiveTxSessionAction.InvalidTxSharedOutput(fundingParams.channelId)
         }
         val sharedOutput = sharedOutputs.first()
+        if (sharedOutput.localAmount < 0.msat || sharedOutput.remoteAmount < 0.msat) {
+            // A contribution larger than the corresponding balance would create a commitment transaction that cannot be published.
+            return InteractiveTxSessionAction.InvalidTxBalances(fundingParams.channelId, sharedOutput.localAmount, sharedOutput.remoteAmount)
+        }
 
         val sharedInput = fundingParams.sharedInput?.let {
             if (fundingParams.remoteContribution >= 0.sat) {

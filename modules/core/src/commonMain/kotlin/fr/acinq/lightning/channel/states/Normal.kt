@@ -8,6 +8,7 @@ import fr.acinq.lightning.*
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
 import fr.acinq.lightning.blockchain.WatchSpentTriggered
+import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.transactions.Transactions
 import fr.acinq.lightning.utils.*
@@ -453,11 +454,28 @@ data class Normal(
                             logger.warning { "rejecting splice attempt: quiescence not negotiated" }
                             Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceNotQuiescent(channelId).message))))
                         }
-                        is SpliceStatus.NonInitiatorQuiescent ->
-                            if (commitments.isQuiescent()) {
+                        is SpliceStatus.NonInitiatorQuiescent -> {
+                            val parentCommitment = commitments.active.first()
+                            // As non-initiator we don't contribute and don't sell liquidity, so our peer's balance only changes by their contribution.
+                            val nextRemoteBalance = parentCommitment.localCommit.spec.toRemote + cmd.message.fundingContribution.toMilliSatoshi()
+                            if (!commitments.isQuiescent()) {
+                                logger.warning { "rejecting splice attempt: channel is not quiescent" }
+                                Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceNotQuiescent(channelId).message))))
+                            } else if (cmd.message.lockTime > currentBlockHeight + Channel.MAX_LOCKTIME_AHEAD_BLOCKS) {
+                                // A transaction with a lock time in the future cannot be mined: we would be unable to force-close until then.
+                                logger.warning { "rejecting splice attempt: lock time is too far in the future (lockTime=${cmd.message.lockTime}, currentBlockHeight=$currentBlockHeight)" }
+                                Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidLockTime(channelId, cmd.message.lockTime, currentBlockHeight).message))))
+                            } else if (cmd.message.feerate < FeeratePerKw.MinimumFeeratePerKw) {
+                                // A transaction below the minimum relay feerate cannot be relayed or mined.
+                                logger.warning { "rejecting splice attempt: feerate is too low (feerate=${cmd.message.feerate})" }
+                                Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceFeerate(channelId, cmd.message.feerate, FeeratePerKw.MinimumFeeratePerKw).message))))
+                            } else if (nextRemoteBalance < 0.msat) {
+                                // Our peer cannot remove more funds than they have: this would create a commitment transaction that cannot be published.
+                                logger.warning { "rejecting splice attempt: remote balance would be negative (contribution=${cmd.message.fundingContribution}, currentBalance=${parentCommitment.localCommit.spec.toRemote})" }
+                                Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceBalance(channelId, nextRemoteBalance).message))))
+                            } else {
                                 val channelKeys = channelKeys()
                                 logger.info { "accepting splice with remote.amount=${cmd.message.fundingContribution}" }
-                                val parentCommitment = commitments.active.first()
                                 val (nextCommitmentFormat, channelType) = when {
                                     cmd.message.channelType == ChannelType.SupportedChannelType.SimpleTaprootChannels && parentCommitment.commitmentFormat == Transactions.CommitmentFormat.AnchorOutputs -> {
                                         Pair(Transactions.CommitmentFormat.SimpleTaprootChannels, cmd.message.channelType)
@@ -505,10 +523,8 @@ data class Normal(
                                     )
                                 )
                                 Pair(nextState, listOf(ChannelAction.Message.Send(spliceAck)))
-                            } else {
-                                logger.warning { "rejecting splice attempt: channel is not quiescent" }
-                                Pair(this@Normal.copy(spliceStatus = SpliceStatus.Aborted), listOf(ChannelAction.Message.Send(TxAbort(channelId, InvalidSpliceNotQuiescent(channelId).message))))
                             }
+                        }
                         is SpliceStatus.Aborted -> {
                             logger.info { "rejecting splice attempt: our previous tx_abort was not acked" }
                             Pair(this@Normal, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidSpliceAbortNotAcked(channelId).message))))

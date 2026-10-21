@@ -537,6 +537,60 @@ class SpliceTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `reject splice_init -- lock time too far in the future`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val cmd = createSpliceOutRequest(25_000.sat)
+        // Bob initiates a splice, but his splice_init contains a lock time that would prevent the splice transaction from being mined.
+        val (_, alice1, spliceInit) = reachQuiescent(cmd, bob, alice)
+        val invalidSpliceInit = spliceInit.copy(lockTime = alice.currentBlockHeight + Channel.MAX_LOCKTIME_AHEAD_BLOCKS + 1L)
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(invalidSpliceInit))
+        assertIs<Normal>(alice2.state)
+        assertEquals(SpliceStatus.Aborted, alice2.state.spliceStatus)
+        assertEquals(actionsAlice2.size, 1)
+        assertEquals(actionsAlice2.hasOutgoingMessage<TxAbort>().toAscii(), InvalidLockTime(alice.channelId, invalidSpliceInit.lockTime, alice.currentBlockHeight).message)
+        // A lock time slightly ahead of our view of the blockchain is accepted.
+        val validSpliceInit = spliceInit.copy(lockTime = alice.currentBlockHeight + Channel.MAX_LOCKTIME_AHEAD_BLOCKS.toLong())
+        val (alice3, actionsAlice3) = alice1.process(ChannelCommand.MessageReceived(validSpliceInit))
+        assertIs<Normal>(alice3.state)
+        assertIs<SpliceStatus.InProgress>(alice3.state.spliceStatus)
+        actionsAlice3.hasOutgoingMessage<SpliceAck>()
+    }
+
+    @Test
+    fun `reject splice_init -- feerate too low`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val cmd = createSpliceOutRequest(25_000.sat)
+        val (_, alice1, spliceInit) = reachQuiescent(cmd, bob, alice)
+        val invalidSpliceInit = spliceInit.copy(feerate = FeeratePerKw(252.sat))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(invalidSpliceInit))
+        assertIs<Normal>(alice2.state)
+        assertEquals(SpliceStatus.Aborted, alice2.state.spliceStatus)
+        assertEquals(actionsAlice2.size, 1)
+        assertEquals(actionsAlice2.hasOutgoingMessage<TxAbort>().toAscii(), InvalidSpliceFeerate(alice.channelId, FeeratePerKw(252.sat), FeeratePerKw.MinimumFeeratePerKw).message)
+    }
+
+    @Test
+    fun `reject splice_init -- remote balance would be negative`() {
+        val (alice, bob) = reachNormalWithConfirmedFundingTx()
+        val bobBalance = alice.commitments.latest.localCommit.spec.toRemote
+        val cmd = createSpliceOutRequest(25_000.sat)
+        // Bob initiates a splice, but claims to remove more funds than he has: this would create an invalid commitment transaction.
+        val (_, alice1, spliceInit) = reachQuiescent(cmd, bob, alice)
+        val invalidSpliceInit = spliceInit.copy(fundingContribution = -(bobBalance.truncateToSatoshi() + 1000.sat))
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.MessageReceived(invalidSpliceInit))
+        assertIs<Normal>(alice2.state)
+        assertEquals(SpliceStatus.Aborted, alice2.state.spliceStatus)
+        assertEquals(actionsAlice2.size, 1)
+        assertEquals(actionsAlice2.hasOutgoingMessage<TxAbort>().toAscii(), InvalidSpliceBalance(alice.channelId, bobBalance + invalidSpliceInit.fundingContribution.toMilliSatoshi()).message)
+        // Bob can remove all of his funds from the channel (e.g. to pay on-chain fees), but not more.
+        val validSpliceInit = spliceInit.copy(fundingContribution = -bobBalance.truncateToSatoshi())
+        val (alice3, actionsAlice3) = alice1.process(ChannelCommand.MessageReceived(validSpliceInit))
+        assertIs<Normal>(alice3.state)
+        assertIs<SpliceStatus.InProgress>(alice3.state.spliceStatus)
+        actionsAlice3.hasOutgoingMessage<SpliceAck>()
+    }
+
+    @Test
     fun `reject splice_init -- cancel on-the-fly funding`() {
         val cmd = createSpliceOutRequest(50_000.sat)
         val (alice, bob) = reachNormal()
