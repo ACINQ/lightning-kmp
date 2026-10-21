@@ -88,15 +88,28 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             }
             is Either.Right -> {
                 val hop = NodeHop(walletParams.trampolineNode.id, request.recipient, trampolineFees.cltvExpiryDelta, trampolineFees.calculateFees(request.amount))
-                val (childPayment, sharedSecrets, cmd) = createOutgoingPayment(request, result.value, hop, currentBlockHeight)
-                if (attemptNumber == 0) {
-                    db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentDetails, listOf(childPayment), LightningOutgoingPayment.Status.Pending))
-                } else {
-                    db.addLightningOutgoingPaymentParts(request.paymentId, listOf(childPayment))
+                when (val outgoingPayment = createOutgoingPayment(request, result.value, hop, currentBlockHeight)) {
+                    is Either.Left -> {
+                        logger.warning { "payment failed: ${outgoingPayment.value}" }
+                        if (attemptNumber == 0) {
+                            db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentDetails))
+                        }
+                        db.completeLightningOutgoingPayment(request.paymentId, FinalFailure.InvoiceTooLarge)
+                        removeFromState(request.paymentId)
+                        Either.Left(Failure(request, OutgoingPaymentFailure(FinalFailure.InvoiceTooLarge, failures)))
+                    }
+                    is Either.Right -> {
+                        val (childPayment, sharedSecrets, cmd) = outgoingPayment.value
+                        if (attemptNumber == 0) {
+                            db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentDetails, listOf(childPayment), LightningOutgoingPayment.Status.Pending))
+                        } else {
+                            db.addLightningOutgoingPaymentParts(request.paymentId, listOf(childPayment))
+                        }
+                        val payment = PaymentAttempt(request, attemptNumber, childPayment, sharedSecrets, failures)
+                        pending[request.paymentId] = payment
+                        Either.Right(Progress(request, payment.fees, listOf(cmd)))
+                    }
                 }
-                val payment = PaymentAttempt(request, attemptNumber, childPayment, sharedSecrets, failures)
-                pending[request.paymentId] = payment
-                Either.Right(Progress(request, payment.fees, listOf(cmd)))
             }
         }
     }
@@ -297,23 +310,24 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         }
     }
 
-    private fun createOutgoingPayment(request: PayInvoice, channel: Normal, hop: NodeHop, currentBlockHeight: Int): Triple<LightningOutgoingPayment.Part, SharedSecrets, WrappedChannelCommand> {
+    private fun createOutgoingPayment(request: PayInvoice, channel: Normal, hop: NodeHop, currentBlockHeight: Int): Either<OutgoingPaymentPacket.PayloadTooLarge, Triple<LightningOutgoingPayment.Part, SharedSecrets, WrappedChannelCommand>> {
         val logger = MDCLogger(logger, staticMdc = request.mdc())
-        val childId = UUID.randomUUID()
-        childToPaymentId[childId] = request.paymentId
-        val (amount, expiry, onion) = createPaymentOnion(request, hop, currentBlockHeight)
-        val outgoingPayment = LightningOutgoingPayment.Part(
-            id = childId,
-            amount = amount,
-            route = listOf(HopDesc(nodeParams.nodeId, hop.nodeId, channel.shortChannelId), HopDesc(hop.nodeId, hop.nextNodeId)),
-            status = LightningOutgoingPayment.Part.Status.Pending
-        )
-        logger.info { "sending $amount to channel ${channel.shortChannelId}" }
-        val add = ChannelCommand.Htlc.Add(amount, request.paymentHash, expiry, onion.packet, paymentId = childId, commit = true)
-        return Triple(outgoingPayment, onion.sharedSecrets, WrappedChannelCommand(channel.channelId, add))
+        return createPaymentOnion(request, hop, currentBlockHeight).map { (amount, expiry, onion) ->
+            val childId = UUID.randomUUID()
+            childToPaymentId[childId] = request.paymentId
+            val outgoingPayment = LightningOutgoingPayment.Part(
+                id = childId,
+                amount = amount,
+                route = listOf(HopDesc(nodeParams.nodeId, hop.nodeId, channel.shortChannelId), HopDesc(hop.nodeId, hop.nextNodeId)),
+                status = LightningOutgoingPayment.Part.Status.Pending
+            )
+            logger.info { "sending $amount to channel ${channel.shortChannelId}" }
+            val add = ChannelCommand.Htlc.Add(amount, request.paymentHash, expiry, onion.packet, paymentId = childId, commit = true)
+            Triple(outgoingPayment, onion.sharedSecrets, WrappedChannelCommand(channel.channelId, add))
+        }
     }
 
-    private fun createPaymentOnion(request: PayInvoice, hop: NodeHop, currentBlockHeight: Int): Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets> {
+    private fun createPaymentOnion(request: PayInvoice, hop: NodeHop, currentBlockHeight: Int): Either<OutgoingPaymentPacket.PayloadTooLarge, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
         return when (val paymentRequest = request.paymentDetails.paymentRequest) {
             is Bolt11Invoice -> {
                 val minFinalExpiryDelta = paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA

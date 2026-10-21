@@ -1,11 +1,13 @@
 package fr.acinq.lightning.payment
 
+import fr.acinq.bitcoin.ByteVector
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Chain
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.lightning.*
+import fr.acinq.lightning.Lightning.randomBytes
 import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.channel.*
@@ -88,6 +90,24 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
             assertNull(outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId))
         }
+    }
+
+    @Test
+    fun `invoice too large`() = runSuspendTest {
+        val (alice, _) = TestsHelper.reachNormal()
+        // The payment_metadata field doesn't fit in the trampoline onion: we must fail the payment instead of crashing.
+        val invoice = makeInvoice(amount = 100_000.msat, supportsTrampoline = true, paymentMetadata = randomBytes(639).toByteVector())
+        val outgoingPaymentHandler = OutgoingPaymentHandler(alice.staticParams.nodeParams, defaultWalletParams, InMemoryPaymentsDb())
+        val payment = PayInvoice(UUID.randomUUID(), 100_000.msat, LightningOutgoingPayment.Details.Normal(invoice))
+        val result = outgoingPaymentHandler.sendPayment(payment, mapOf(alice.channelId to alice.state), alice.currentBlockHeight)
+        assertFailureEquals(result as OutgoingPaymentHandler.Failure, OutgoingPaymentHandler.Failure(payment, FinalFailure.InvoiceTooLarge.toPaymentFailure()))
+        assertNull(outgoingPaymentHandler.getPendingPayment(payment.paymentId))
+
+        val dbPayment = outgoingPaymentHandler.db.getLightningOutgoingPayment(payment.paymentId)
+        assertNotNull(dbPayment)
+        assertTrue(dbPayment.status is LightningOutgoingPayment.Status.Failed)
+        assertEquals(FinalFailure.InvoiceTooLarge, dbPayment.status.reason)
+        assertTrue(dbPayment.parts.isEmpty())
     }
 
     @Test
@@ -661,7 +681,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
         }
     }
 
-    private fun makeInvoice(amount: MilliSatoshi?, supportsTrampoline: Boolean, privKey: PrivateKey = randomKey(), extraHops: List<List<Bolt11Invoice.TaggedField.ExtraHop>> = listOf()): Bolt11Invoice {
+    private fun makeInvoice(amount: MilliSatoshi?, supportsTrampoline: Boolean, privKey: PrivateKey = randomKey(), extraHops: List<List<Bolt11Invoice.TaggedField.ExtraHop>> = listOf(), paymentMetadata: ByteVector? = null): Bolt11Invoice {
         val paymentPreimage: ByteVector32 = randomBytes32()
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
         val invoiceFeatures: Map<Feature, FeatureSupport> = buildMap {
@@ -678,6 +698,7 @@ class OutgoingPaymentHandlerTestsCommon : LightningTestSuite() {
             description = Either.Left("unit test"),
             minFinalCltvExpiryDelta = Bolt11Invoice.DEFAULT_MIN_FINAL_EXPIRY_DELTA,
             features = Features(invoiceFeatures),
+            paymentMetadata = paymentMetadata,
             extraHops = extraHops
         )
     }
