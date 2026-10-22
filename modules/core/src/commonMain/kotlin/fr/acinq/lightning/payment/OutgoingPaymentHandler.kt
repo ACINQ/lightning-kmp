@@ -325,7 +325,7 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
             })
     }
 
-    private fun createPaymentOnion(request: PayInvoice, hop: NodeHop, currentBlockHeight: Int): Either<OutgoingPaymentPacket.OnionCreationFailure.PayloadTooLarge, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
+    private fun createPaymentOnion(request: PayInvoice, hop: NodeHop, currentBlockHeight: Int): Either<OutgoingPaymentPacket.OnionCreationFailure, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
         return when (val paymentRequest = request.paymentDetails.paymentRequest) {
             is Bolt11Invoice -> {
                 val minFinalExpiryDelta = paymentRequest.minFinalExpiryDelta ?: Channel.MIN_CLTV_EXPIRY_DELTA
