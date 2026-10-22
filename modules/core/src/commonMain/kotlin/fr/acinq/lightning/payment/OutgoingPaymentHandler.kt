@@ -77,27 +77,34 @@ class OutgoingPaymentHandler(val nodeParams: NodeParams, val walletParams: Walle
         val trampolineFees = (request.trampolineFeesOverride ?: walletParams.trampolineFees)[attemptNumber]
         logger.info { "trying payment with fee_base=${trampolineFees.feeBase}, fee_proportional=${trampolineFees.feeProportional}" }
         val trampolineAmount = request.amount + trampolineFees.calculateFees(request.amount)
-        val hop = NodeHop(walletParams.trampolineNode.id, request.recipient, trampolineFees.cltvExpiryDelta, trampolineFees.calculateFees(request.amount))
-        return selectChannel(trampolineAmount, channels).flatMap { channel ->
-            createOutgoingPayment(request, channel, hop, currentBlockHeight)
-        }.transform({ failure ->
-            logger.warning { "payment failed: $failure" }
-            if (attemptNumber == 0) {
-                db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentDetails))
+        val result = selectChannel(trampolineAmount, channels)
+            .flatMap { channel ->
+                val hop = NodeHop(walletParams.trampolineNode.id, request.recipient, trampolineFees.cltvExpiryDelta, trampolineFees.calculateFees(request.amount))
+                createOutgoingPayment(request, channel, hop, currentBlockHeight)
             }
-            db.completeLightningOutgoingPayment(request.paymentId, failure)
-            removeFromState(request.paymentId)
-            Failure(request, OutgoingPaymentFailure(failure, failures))
-        }, { (childPayment, sharedSecrets, cmd) ->
-            if (attemptNumber == 0) {
-                db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentDetails, listOf(childPayment), LightningOutgoingPayment.Status.Pending))
-            } else {
-                db.addLightningOutgoingPaymentParts(request.paymentId, listOf(childPayment))
+        return when(result) {
+            is Either.Left -> {
+                val failure = result.value
+                logger.warning { "payment failed: $failure" }
+                if (attemptNumber == 0) {
+                    db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentDetails))
+                }
+                db.completeLightningOutgoingPayment(request.paymentId, failure)
+                removeFromState(request.paymentId)
+                Either.Left(Failure(request, OutgoingPaymentFailure(failure, failures)))
             }
-            val payment = PaymentAttempt(request, attemptNumber, childPayment, sharedSecrets, failures)
-            pending[request.paymentId] = payment
-            Progress(request, payment.fees, listOf(cmd))
-        })
+            is Either.Right -> {
+                val (childPayment, sharedSecrets, cmd) = result.value
+                if (attemptNumber == 0) {
+                    db.addOutgoingPayment(LightningOutgoingPayment(request.paymentId, request.amount, request.recipient, request.paymentDetails, listOf(childPayment), LightningOutgoingPayment.Status.Pending))
+                } else {
+                    db.addLightningOutgoingPaymentParts(request.paymentId, listOf(childPayment))
+                }
+                val payment = PaymentAttempt(request, attemptNumber, childPayment, sharedSecrets, failures)
+                pending[request.paymentId] = payment
+                Either.Right(Progress(request, payment.fees, listOf(cmd)))
+            }
+        }
     }
 
     suspend fun sendPayment(request: PayInvoice, channels: Map<ByteVector32, ChannelState>, currentBlockHeight: Int): SendPaymentResult {
