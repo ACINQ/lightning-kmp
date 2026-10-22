@@ -43,7 +43,12 @@ data class WaitForOpenChannel(
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is OpenDualFundedChannel -> {
                     val open = cmd.message
-                    when (val res = Helpers.validateParamsNonInitiator(staticParams.nodeParams, open)) {
+                    val res = when {
+                        // A transaction with a lock time in the future cannot be mined: we would be unable to force-close until then.
+                        open.lockTime > currentBlockHeight + Channel.MAX_LOCKTIME_AHEAD_BLOCKS -> Either.Left(InvalidLockTime(open.temporaryChannelId, open.lockTime, currentBlockHeight))
+                        else -> Helpers.validateParamsNonInitiator(staticParams.nodeParams, open)
+                    }
+                    when (res) {
                         is Either.Right -> {
                             val channelType = res.value
                             val channelFeatures = ChannelFeatures(channelType, localFeatures = localChannelParams.features, remoteFeatures = remoteInit.features)

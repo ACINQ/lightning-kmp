@@ -807,6 +807,13 @@ sealed class ChannelStateWithCommitments : PersistedChannelState() {
 }
 
 object Channel {
+    /**
+     * Interactive transactions (channel funding and splices) use a lock time to prevent fee sniping, which should be close
+     * to the current block height. A lock time too far in the future would prevent the transaction from being mined, which
+     * would prevent us from force-closing until that lock time is reached. We allow a margin in case our peer has a
+     * more recent view of the blockchain than we do.
+     */
+    const val MAX_LOCKTIME_AHEAD_BLOCKS = 144
     // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
     const val MAX_ACCEPTED_HTLCS = 483
 
