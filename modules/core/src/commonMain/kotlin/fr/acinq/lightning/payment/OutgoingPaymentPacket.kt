@@ -49,7 +49,7 @@ object OutgoingPaymentPacket {
      * Build an encrypted onion packet from onion payloads and node public keys, when the packet has a fixed length.
      * Since payloads may contain untrusted data of arbitrary size (e.g. coming from an invoice), we verify that they fit instead of throwing.
      */
-    private fun tryBuildOnion(nodes: List<PublicKey>, payloads: List<PaymentOnion.PerHopPayload>, associatedData: ByteVector32, payloadLength: Int): Either<OnionCreationFailure.PayloadTooLarge, PacketAndSecrets> {
+    private fun tryBuildOnion(nodes: List<PublicKey>, payloads: List<PaymentOnion.PerHopPayload>, associatedData: ByteVector32, payloadLength: Int): Either<OnionCreationFailure, PacketAndSecrets> {
         val requiredLength = payloads.sumOf { it.write().size + Sphinx.MacLength }
         return if (requiredLength > payloadLength) {
             Either.Left(OnionCreationFailure.PayloadTooLarge(requiredLength, payloadLength))
@@ -70,7 +70,7 @@ object OutgoingPaymentPacket {
      * @param expiry cltv expiry that should be received by the final recipient.
      * @param hop the trampoline hop from the trampoline node to the recipient.
      */
-    fun buildPacketToTrampolineRecipient(invoice: Bolt11Invoice, amount: MilliSatoshi, expiry: CltvExpiry, hop: NodeHop): Either<OnionCreationFailure.PayloadTooLarge, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
+    fun buildPacketToTrampolineRecipient(invoice: Bolt11Invoice, amount: MilliSatoshi, expiry: CltvExpiry, hop: NodeHop): Either<OnionCreationFailure, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
         require(invoice.features.hasFeature(Feature.ExperimentalTrampolinePayment)) { "invoice must support trampoline" }
         val finalPayload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, invoice.paymentSecret, invoice.paymentMetadata)
         val trampolinePayload = PaymentOnion.NodeRelayPayload.create(amount, expiry, hop.nextNodeId)
@@ -98,7 +98,7 @@ object OutgoingPaymentPacket {
      * @param amount amount that should be received by the final recipient.
      * @param expiry cltv expiry that should be received by the final recipient.
      */
-    fun buildPacketToTrampolinePeer(invoice: Bolt11Invoice, amount: MilliSatoshi, expiry: CltvExpiry): Either<OnionCreationFailure.PayloadTooLarge, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
+    fun buildPacketToTrampolinePeer(invoice: Bolt11Invoice, amount: MilliSatoshi, expiry: CltvExpiry): Either<OnionCreationFailure, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
         require(invoice.features.hasFeature(Feature.ExperimentalTrampolinePayment)) { "invoice must support trampoline" }
         val trampolineOnion = run {
             val finalPayload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, invoice.paymentSecret, invoice.paymentMetadata)
@@ -121,7 +121,7 @@ object OutgoingPaymentPacket {
      * @param expiry cltv expiry that should be received by the final recipient.
      * @param hop the trampoline hop from the trampoline node to the recipient.
      */
-    fun buildPacketToLegacyRecipient(invoice: Bolt11Invoice, amount: MilliSatoshi, expiry: CltvExpiry, hop: NodeHop): Either<OnionCreationFailure.PayloadTooLarge, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
+    fun buildPacketToLegacyRecipient(invoice: Bolt11Invoice, amount: MilliSatoshi, expiry: CltvExpiry, hop: NodeHop): Either<OnionCreationFailure, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
         // NB: the final payload will never reach the recipient, since the trampoline node will convert that to a legacy payment.
         // We use the smallest final payload possible, otherwise we may overflow the trampoline onion size.
         val dummyFinalPayload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, invoice.paymentSecret, null)
@@ -157,7 +157,7 @@ object OutgoingPaymentPacket {
      * @param expiry cltv expiry that should be received by the final recipient.
      * @param hop the trampoline hop from the trampoline node to the recipient.
      */
-    fun buildPacketToBlindedRecipient(invoice: Bolt12Invoice, amount: MilliSatoshi, expiry: CltvExpiry, hop: NodeHop): Either<OnionCreationFailure.PayloadTooLarge, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
+    fun buildPacketToBlindedRecipient(invoice: Bolt12Invoice, amount: MilliSatoshi, expiry: CltvExpiry, hop: NodeHop): Either<OnionCreationFailure, Triple<MilliSatoshi, CltvExpiry, PacketAndSecrets>> {
         var blindedPaths = invoice.blindedPaths
         var trampolinePayload = PaymentOnion.RelayToBlindedPayload.create(amount, expiry, invoice.features, blindedPaths)
         var trampolineOnion = buildOnion(listOf(hop.nodeId), listOf(trampolinePayload), invoice.paymentHash)
