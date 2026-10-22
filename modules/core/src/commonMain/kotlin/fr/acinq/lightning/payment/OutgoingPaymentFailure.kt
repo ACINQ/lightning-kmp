@@ -22,6 +22,7 @@ sealed class FinalFailure {
     data object AlreadyPaid : FinalFailure() { override fun toString(): String = "this invoice has already been paid" }
     data object InvalidPaymentAmount : FinalFailure() { override fun toString(): String = "payment amount must be positive" }
     data object FeaturesNotSupported : FinalFailure() { override fun toString(): String = "payment request features not supported" }
+    data object InvoiceTooLarge : FinalFailure() { override fun toString(): String = "payment request contains fields that are too large to fit in the onion" }
     data object InvalidPaymentId : FinalFailure() { override fun toString(): String = "payment ID must be unique" }
     data object ChannelNotConnected : FinalFailure() { override fun toString(): String = "channel is not connected yet, please retry when connected" }
     data object ChannelOpening : FinalFailure() { override fun toString(): String = "channel creation is in progress, please retry when ready" }

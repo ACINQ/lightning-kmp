@@ -180,7 +180,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         //       /    \
         // b -> c      d
         val invoice = Bolt11Invoice.create(Chain.Regtest, finalAmount, paymentHash, privD, Either.Left("test"), CltvExpiryDelta(6), trampolineFeatures, paymentSecret, paymentMetadata)
-        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd)
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd).right!!
         assertEquals(amountBC, firstAmount)
         assertEquals(expiryBC, firstExpiry)
 
@@ -220,7 +220,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         //       /        \
         // a -> b          d
         val invoice = Bolt11Invoice.create(Chain.Regtest, finalAmount, paymentHash, privD, Either.Left("test"), CltvExpiryDelta(6), trampolineFeatures, paymentSecret, paymentMetadata)
-        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_bd)
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_bd).right!!
         assertEquals(amountAB, firstAmount)
         assertEquals(expiryAB, firstExpiry)
 
@@ -265,7 +265,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         // a -> b          d
         val routingHint = listOf(Bolt11Invoice.TaggedField.ExtraHop(c, channelUpdateCD.shortChannelId, channelUpdateCD.feeBaseMsat, channelUpdateCD.feeProportionalMillionths, channelUpdateCD.cltvExpiryDelta))
         val invoice = Bolt11Invoice.create(Chain.Regtest, finalAmount, paymentHash, privD, Either.Left("test"), CltvExpiryDelta(6), nonTrampolineFeatures, paymentSecret, paymentMetadata, extraHops = listOf(routingHint))
-        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToLegacyRecipient(invoice, finalAmount, finalExpiry, nodeHop_bd)
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToLegacyRecipient(invoice, finalAmount, finalExpiry, nodeHop_bd).right!!
         assertEquals(amountAB, firstAmount)
         assertEquals(expiryAB, firstExpiry)
 
@@ -340,7 +340,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         }
 
         // B pays that invoice using its trampoline node C to relay to the invoice's blinded path.
-        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToBlindedRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd)
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToBlindedRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd).right!!
         assertEquals(amountBC, firstAmount)
         assertEquals(expiryBC, firstExpiry)
 
@@ -424,7 +424,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
     @Test
     fun `fail to decrypt when the trampoline onion is invalid`() {
         val invoice = Bolt11Invoice.create(Chain.Regtest, finalAmount, paymentHash, privD, Either.Left("test"), CltvExpiryDelta(6), trampolineFeatures, paymentSecret, paymentMetadata)
-        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd)
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd).right!!
         val addC = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
         val (_, innerC, packetD) = decryptRelayToTrampoline(addC, privC)
         // C modifies the trampoline onion before forwarding the trampoline payment to D.
@@ -476,7 +476,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
     @Test
     fun `fail to decrypt when amount has been modified by trampoline node`() {
         val invoice = Bolt11Invoice.create(Chain.Regtest, finalAmount, paymentHash, privD, Either.Left("test"), CltvExpiryDelta(6), trampolineFeatures, paymentSecret, paymentMetadata)
-        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd)
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd).right!!
         val addC = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
         val (_, innerC, packetD) = decryptRelayToTrampoline(addC, privC)
         val (amountD, expiryD, onionD) = run {
@@ -491,7 +491,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
     @Test
     fun `fail to decrypt when expiry has been modified by trampoline node`() {
         val invoice = Bolt11Invoice.create(Chain.Regtest, finalAmount, paymentHash, privD, Either.Left("test"), CltvExpiryDelta(6), trampolineFeatures, paymentSecret, paymentMetadata)
-        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd)
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd).right!!
         val addC = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
         val (_, innerC, packetD) = decryptRelayToTrampoline(addC, privC)
         val (amountD, expiryD, onionD) = run {
@@ -648,7 +648,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
             Bolt12Invoice(request, paymentPreimage, randomKey(), 600, features, blindedPaths)
         }
         // B sends an HTLC to its trampoline node C: we prune the blinded paths to fit inside the onion.
-        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToBlindedRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd)
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToBlindedRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd).right!!
         assertEquals(OnionRoutingPacket.PaymentPacketLength, onion.packet.payload.size())
         val addC = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
         val (_, innerC) = decryptRelayToBlinded(addC, privC)
@@ -662,7 +662,7 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         val routingHints = (0 until 50L).map { i -> listOf(Bolt11Invoice.TaggedField.ExtraHop(randomKey().publicKey(), ShortChannelId(i), 5.msat, 25, CltvExpiryDelta(36))) }
         val invoice = Bolt11Invoice.create(Chain.Regtest, finalAmount, paymentHash, privD, Either.Left("test"), CltvExpiryDelta(6), nonTrampolineFeatures, paymentSecret, paymentMetadata, extraHops = routingHints)
         // A sends an HTLC to its trampoline node B: we prune the routing hints to fit inside the onion.
-        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToLegacyRecipient(invoice, finalAmount, finalExpiry, nodeHop_bd)
+        val (firstAmount, firstExpiry, onion) = OutgoingPaymentPacket.buildPacketToLegacyRecipient(invoice, finalAmount, finalExpiry, nodeHop_bd).right!!
         assertEquals(OnionRoutingPacket.PaymentPacketLength, onion.packet.payload.size())
         val addB = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
         val (_, innerB) = decryptRelayToLegacy(addB, privB)
@@ -670,5 +670,56 @@ class PaymentPacketTestsCommon : LightningTestSuite() {
         assertTrue(innerB.invoiceRoutingInfo.size < routingHints.size)
         innerB.invoiceRoutingInfo.forEach { assertTrue(routingHints.contains(it)) }
     }
-}
 
+    @Test
+    fun `fail to build trampoline onion when payment metadata is too large`() {
+        // A valid Bolt 11 invoice may contain a payment_metadata field of up to 639 bytes, which doesn't fit in the 400 bytes trampoline onion.
+        val largeMetadata = randomBytes(639).toByteVector()
+        val invoice = Bolt11Invoice.create(Chain.Regtest, finalAmount, paymentHash, privD, Either.Left("test"), CltvExpiryDelta(6), trampolineFeatures, paymentSecret, largeMetadata)
+        val result = OutgoingPaymentPacket.buildPacketToTrampolineRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd)
+        assertTrue(result.isLeft)
+        // When paying our trampoline node directly, the trampoline onion isn't restricted to 400 bytes.
+        assertTrue(OutgoingPaymentPacket.buildPacketToTrampolinePeer(invoice, finalAmount, finalExpiry).isRight)
+    }
+
+    @Test
+    fun `fail to build trampoline onion to legacy recipient when invoice fields are too large`() {
+        // A valid Bolt 11 invoice may contain a payment_metadata field and a features field of up to 639 bytes each.
+        // Since we cannot trim those fields, the trampoline onion cannot fit inside the outer onion.
+        val largeFeatures = Features(nonTrampolineFeatures.activated, unknown = setOf(UnknownFeature(4999))).toByteArray().toByteVector()
+        val tags = listOf(
+            Bolt11Invoice.TaggedField.PaymentHash(paymentHash),
+            Bolt11Invoice.TaggedField.MinFinalCltvExpiry(6),
+            Bolt11Invoice.TaggedField.PaymentSecret(paymentSecret),
+            Bolt11Invoice.TaggedField.Features(largeFeatures),
+            Bolt11Invoice.TaggedField.Description("test"),
+            Bolt11Invoice.TaggedField.PaymentMetadata(randomBytes(639).toByteVector()),
+        )
+        // NB: Bolt11Invoice.create() removes unknown features, so we need to create the invoice manually.
+        val invoice = Bolt11Invoice.read(Bolt11Invoice("lnbcrt", finalAmount, 1_700_000_000, d, tags, ByteVector.empty).sign(privD).write()).get()
+        assertEquals(1, invoice.features.unknown.size)
+        assertEquals(639, invoice.paymentMetadata?.size())
+        val result = OutgoingPaymentPacket.buildPacketToLegacyRecipient(invoice, finalAmount, finalExpiry, nodeHop_bd)
+        assertTrue(result.isLeft)
+    }
+
+    @Test
+    fun `fail to build trampoline onion to blinded paths when invoice features are too large`() {
+        // Bolt 12 invoice features aren't limited in size: an invoice may contain a features field that cannot fit in the trampoline onion.
+        val offerFeatures = Features(Feature.BasicMultiPartPayment to FeatureSupport.Optional)
+        val offer = OfferTypes.Offer.createNonBlindedOffer(finalAmount, "test offer", d, offerFeatures, Block.RegtestGenesisBlock.hash)
+        val invoice = run {
+            val payerKey = randomKey()
+            val request = OfferTypes.InvoiceRequest(offer, finalAmount, 1, offerFeatures, payerKey, "hello", Block.RegtestGenesisBlock.hash)
+            val paymentMetadata = OfferPaymentMetadata.V1(offer.offerId, finalAmount, paymentPreimage, payerKey.publicKey(), "hello", 1, currentTimestampMillis())
+            val blindedPayloadD = RouteBlindingEncryptedData(TlvStream(RouteBlindingEncryptedDataTlv.PathId(paymentMetadata.toPathId(privD))))
+            val blindedRouteDetails = RouteBlinding.create(randomKey(), listOf(d), listOf(blindedPayloadD.write().byteVector()))
+            val path = Bolt12Invoice.Companion.PaymentBlindedContactInfo(OfferTypes.ContactInfo.BlindedPath(blindedRouteDetails.route), createBlindedPaymentInfo(channelUpdateCD))
+            val invoiceFeatures = Features(offerFeatures.activated, unknown = setOf(UnknownFeature(9001)))
+            Bolt12Invoice(request, paymentPreimage, blindedRouteDetails.blindedPrivateKey(privD), 600, invoiceFeatures, listOf(path))
+        }
+        assertTrue(invoice.features.toByteArray().size > 1000)
+        val result = OutgoingPaymentPacket.buildPacketToBlindedRecipient(invoice, finalAmount, finalExpiry, nodeHop_cd)
+        assertTrue(result.isLeft)
+    }
+}
