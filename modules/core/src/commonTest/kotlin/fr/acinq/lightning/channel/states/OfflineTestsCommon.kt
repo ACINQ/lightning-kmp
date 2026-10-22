@@ -398,20 +398,20 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Syncing>>(bob3)
         val invalidReestablish = actionsBob3.findOutgoingMessage<ChannelReestablish>().copy(nextRemoteRevocationNumber = 42)
 
-        // Bob cannot prove that Alice is late: Alice trusts her DB and force-closes with her local commitment.
-        val aliceCommitTx = alice1.signCommitTx()
+        // Alice then asks Bob to publish his commitment to find out if Bob is lying.
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(invalidReestablish))
-        assertIs<LNChannel<Closing>>(alice4)
-        assertNotNull(alice4.state.localCommitPublished)
-        actionsAlice4.hasPublishTx(aliceCommitTx)
+        assertIs<LNChannel<WaitForRemotePublishFutureCommitment>>(alice4)
+        assertEquals(alice4.state.remoteChannelReestablish, invalidReestablish)
+        assertEquals(actionsAlice4.size, 2)
         val error = actionsAlice4.hasOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), ForcedLocalCommit(alice0.channelId).message)
+        assertEquals(error.toAscii(), PleasePublishYourCommitment(alice0.channelId).message)
         actionsAlice4.has<ChannelAction.Storage.StoreState>()
 
-        // Bob publishes the latest commitment before Alice's commitment confirms.
+        // Bob publishes the latest commitment.
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobCommitTx)))
         // Alice is able to claim her main output and the htlc (once it times out).
         assertIs<LNChannel<Closing>>(alice5)
+        assertEquals(actionsAlice5.size, 7)
         val remoteCommitPublished = alice5.state.remoteCommitPublished
         assertNotNull(remoteCommitPublished)
         assertEquals(remoteCommitPublished.htlcOutputs.size, 1)
@@ -420,6 +420,7 @@ class OfflineTestsCommon : LightningTestSuite() {
         listOf(mainTx, htlcTx).forEach { Transaction.correctlySpends(it, listOf(bobCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS) }
         actionsAlice5.hasWatchOutputsSpent(listOf(mainTx, htlcTx).flatMap { tx -> tx.txIn.map { it.outPoint } }.toSet())
         actionsAlice5.has<ChannelAction.Storage.StoreState>()
+        actionsAlice5.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
     }
 
     @Test
@@ -443,20 +444,20 @@ class OfflineTestsCommon : LightningTestSuite() {
         assertIs<LNChannel<Syncing>>(bob3)
         val invalidReestablish = actionsBob3.findOutgoingMessage<ChannelReestablish>().copy(nextLocalCommitmentNumber = 42)
 
-        // Bob cannot prove that Alice is late: Alice trusts her DB and force-closes with her local commitment.
-        val aliceCommitTx = alice1.signCommitTx()
+        // Alice then asks Bob to publish his commitment to find out if Bob is lying.
         val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(invalidReestablish))
-        assertIs<LNChannel<Closing>>(alice4)
-        assertNotNull(alice4.state.localCommitPublished)
-        actionsAlice4.hasPublishTx(aliceCommitTx)
+        assertIs<LNChannel<WaitForRemotePublishFutureCommitment>>(alice4)
+        assertEquals(alice4.state.remoteChannelReestablish, invalidReestablish)
+        assertEquals(actionsAlice4.size, 2)
         val error = actionsAlice4.hasOutgoingMessage<Error>()
-        assertEquals(error.toAscii(), ForcedLocalCommit(alice0.channelId).message)
+        assertEquals(error.toAscii(), PleasePublishYourCommitment(alice0.channelId).message)
         actionsAlice4.has<ChannelAction.Storage.StoreState>()
 
-        // Bob publishes the revoked commitment before Alice's commitment confirms.
+        // Bob publishes the revoked commitment.
         val (alice5, actionsAlice5) = alice4.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ChannelSpent(TestConstants.fundingAmount), bobRevokedCommitTx)))
         // Alice is able to claim all outputs.
         assertIs<LNChannel<Closing>>(alice5)
+        assertEquals(actionsAlice5.size, 9)
         val revokedCommitPublished = alice5.state.revokedCommitPublished.firstOrNull()
         assertNotNull(revokedCommitPublished)
         val mainTx = actionsAlice5.hasPublishTx(ChannelAction.Blockchain.PublishTx.Type.ClaimRemoteDelayedOutputTx)
@@ -465,6 +466,8 @@ class OfflineTestsCommon : LightningTestSuite() {
         actionsAlice5.hasWatchOutputsSpent(listOf(mainTx, penaltyTx).flatMap { tx -> tx.txIn.map { it.outPoint } }.toSet())
         assertEquals(actionsAlice5.find<ChannelAction.Storage.GetHtlcInfos>().revokedCommitTxId, bobRevokedCommitTx.txid)
         actionsAlice5.has<ChannelAction.Storage.StoreState>()
+        actionsAlice5.has<ChannelAction.Storage.StoreOutgoingPayment.ViaClose>()
+        actionsAlice5.hasOutgoingMessage<Error>()
     }
 
     @Test

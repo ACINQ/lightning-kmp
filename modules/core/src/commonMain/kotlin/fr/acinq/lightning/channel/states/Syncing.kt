@@ -127,7 +127,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                         }
                         is Normal -> {
                             when (val syncResult = handleSync(state.commitments, cmd.message)) {
-                                is SyncResult.Failure -> handleSyncFailure(state, cmd, cmd.message, syncResult)
+                                is SyncResult.Failure -> handleSyncFailure(state.commitments, cmd.message, syncResult)
                                 is SyncResult.Success -> {
                                     // normal case, our data is up-to-date
                                     val actions = ArrayList<ChannelAction>()
@@ -250,7 +250,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                         }
                         is ShuttingDown -> {
                             when (val syncResult = handleSync(state.commitments, cmd.message)) {
-                                is SyncResult.Failure -> handleSyncFailure(state, cmd, cmd.message, syncResult)
+                                is SyncResult.Failure -> handleSyncFailure(state.commitments, cmd.message, syncResult)
                                 is SyncResult.Success -> {
                                     val commitments1 = discardUnsignedUpdates(state.commitments)
                                     val (localCloseeNonce, localShutdown) = Helpers.Closing.createShutdown(channelKeys, state.commitments.latest, state.localShutdown.scriptPubKey)
@@ -374,8 +374,7 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
         }
     }
 
-    private suspend fun ChannelContext.handleSyncFailure(state: ChannelStateWithCommitments, cmd: ChannelCommand, remoteChannelReestablish: ChannelReestablish, syncFailure: SyncResult.Failure): Pair<ChannelState, List<ChannelAction>> {
-        val commitments = state.commitments
+    private fun ChannelContext.handleSyncFailure(commitments: Commitments, remoteChannelReestablish: ChannelReestablish, syncFailure: SyncResult.Failure): Pair<ChannelState, List<ChannelAction>> {
         return when (syncFailure) {
             is SyncResult.Failure.LocalLateProven -> {
                 // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
@@ -384,18 +383,16 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                 handleOutdatedCommitment(remoteChannelReestablish, commitments)
             }
             is SyncResult.Failure.LocalLateUnproven -> {
-                // they claim that they have a more recent commitment than the one we know of, but they cannot prove it: our local commitment is in sync (otherwise we would be
-                // in the case above), so it is not revoked and it is safe to publish it. If we waited for them to publish their commitment instead, a lying peer could prevent
-                // us from ever closing the channel: we trust our DB and force-close.
-                logger.warning { "counterparty says that they have a more recent commitment than the one we know of (they could be lying)!!! ourCommitmentNumber=${commitments.latest.nextRemoteCommit?.index ?: commitments.latest.remoteCommit.index} theirCommitmentNumber=${remoteChannelReestablish.nextLocalCommitmentNumber}" }
-                state.run { handleLocalError(cmd, ForcedLocalCommit(channelId)) }
+                // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
+                // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
+                // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
+                logger.warning { "counterparty says that they have a more recent commitment than the one we know of!!! ourCommitmentNumber=${commitments.latest.nextRemoteCommit?.index ?: commitments.latest.remoteCommit.index} theirCommitmentNumber=${remoteChannelReestablish.nextLocalCommitmentNumber}" }
+                handleOutdatedCommitment(remoteChannelReestablish, commitments)
             }
             is SyncResult.Failure.RemoteLying -> {
-                // they claim that we have an outdated commitment, but the proof they sent is invalid: an honest peer that was really ahead of us would be able to provide
-                // the correct per-commitment secret. If we waited for them to publish their commitment instead, a lying peer could prevent us from ever closing the channel:
-                // we trust our DB and force-close.
-                logger.warning { "counterparty claims that we have an outdated commitment, but they sent an invalid proof: ourLocalCommitmentNumber=${commitments.localCommitIndex} theirRemoteCommitmentNumber=${remoteChannelReestablish.nextRemoteRevocationNumber}" }
-                state.run { handleLocalError(cmd, ForcedLocalCommit(channelId)) }
+                // they are deliberately trying to fool us into thinking we have a late commitment, but we cannot risk publishing it ourselves, because it may really be revoked!
+                logger.warning { "counterparty claims that we have an outdated commitment, but they sent an invalid proof, so our commitment may or may not be revoked: ourLocalCommitmentNumber=${commitments.localCommitIndex} theirRemoteCommitmentNumber=${remoteChannelReestablish.nextRemoteRevocationNumber}" }
+                handleOutdatedCommitment(remoteChannelReestablish, commitments)
             }
             is SyncResult.Failure.RemoteLate -> {
                 logger.error { "counterparty appears to be using an outdated commitment, they may request a force-close, standing by..." }
