@@ -32,6 +32,16 @@ sealed class RouteBlindingEncryptedDataTlv : Tlv {
         }
     }
 
+    /** Flag to allow forwarding nodes to set `accountable` in their `update_add_htlc` */
+    data object UpgradeAccountability : RouteBlindingEncryptedDataTlv(), TlvValueReader<UpgradeAccountability> {
+        override val tag: Long = 3
+        override fun write(out: Output) {}
+        override fun read(input: Input): UpgradeAccountability {
+            require(input.availableBytes == 0)
+            return UpgradeAccountability
+        }
+    }
+
     /** Id of the next node. */
     data class OutgoingNodeId(val nodeId: EncodedNodeId) : RouteBlindingEncryptedDataTlv() {
         override val tag: Long get() = OutgoingNodeId.tag
@@ -144,6 +154,7 @@ data class RouteBlindingEncryptedData(val records: TlvStream<RouteBlindingEncryp
             false, @Suppress("UNCHECKED_CAST") mapOf(
                 RouteBlindingEncryptedDataTlv.Padding.tag to RouteBlindingEncryptedDataTlv.Padding as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.OutgoingChannelId.tag to RouteBlindingEncryptedDataTlv.OutgoingChannelId as TlvValueReader<RouteBlindingEncryptedDataTlv>,
+                RouteBlindingEncryptedDataTlv.UpgradeAccountability.tag to RouteBlindingEncryptedDataTlv.UpgradeAccountability as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.OutgoingNodeId.tag to RouteBlindingEncryptedDataTlv.OutgoingNodeId as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.PathId.tag to RouteBlindingEncryptedDataTlv.PathId as TlvValueReader<RouteBlindingEncryptedDataTlv>,
                 RouteBlindingEncryptedDataTlv.NextPathKey.tag to RouteBlindingEncryptedDataTlv.NextPathKey as TlvValueReader<RouteBlindingEncryptedDataTlv>,

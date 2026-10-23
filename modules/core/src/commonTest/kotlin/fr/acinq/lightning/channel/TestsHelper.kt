@@ -546,7 +546,7 @@ object TestsHelper {
     fun makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = randomBytes32(), paymentId: UUID = UUID.randomUUID()): Pair<ByteVector32, ChannelCommand.Htlc.Add> {
         val paymentHash = Crypto.sha256(paymentPreimage).toByteVector32()
         val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
-        val payload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, randomBytes32(), null)
+        val payload = PaymentOnion.FinalPayload.Standard.createSinglePartPayload(amount, expiry, randomBytes32(), null, upgradeAccountability = true)
         val onion = OutgoingPaymentPacket.buildOnion(listOf(destination), listOf(payload), paymentHash, OnionRoutingPacket.PaymentPacketLength).packet
         val cmd = ChannelCommand.Htlc.Add(amount, paymentHash, expiry, onion, paymentId, commit = false)
         return Pair(paymentPreimage, cmd)

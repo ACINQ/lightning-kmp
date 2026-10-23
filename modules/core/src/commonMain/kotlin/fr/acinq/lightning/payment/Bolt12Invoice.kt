@@ -4,14 +4,12 @@ import fr.acinq.bitcoin.*
 import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.bitcoin.utils.runTrying
-import fr.acinq.lightning.Feature
-import fr.acinq.lightning.FeatureSupport
 import fr.acinq.lightning.Features
-import fr.acinq.lightning.Features.Companion.invoke
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.utils.currentTimestampSeconds
 import fr.acinq.lightning.utils.toByteVector
 import fr.acinq.lightning.wire.*
+import fr.acinq.lightning.wire.OfferTypes.InvoiceAccountable
 import fr.acinq.lightning.wire.OfferTypes.ContactInfo.BlindedPath
 import fr.acinq.lightning.wire.OfferTypes.FallbackAddress
 import fr.acinq.lightning.wire.OfferTypes.InvoiceAmount
@@ -49,6 +47,8 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
     val blindedPaths: List<PaymentBlindedContactInfo> = records.get<InvoicePaths>()!!.paths.zip(records.get<InvoiceBlindedPay>()!!.paymentInfos).map { PaymentBlindedContactInfo(it.first, it.second) }
     val fallbacks: List<FallbackAddress>? = records.get<InvoiceFallbacks>()?.addresses
     val signature: ByteVector64 = records.get<Signature>()!!.signature
+
+    override val accountable: Boolean = records.get<InvoiceAccountable>() != null
 
     override fun isExpired(currentTimestampSeconds: Long): Boolean = createdAtSeconds + relativeExpirySeconds <= currentTimestampSeconds
 
@@ -112,6 +112,7 @@ data class Bolt12Invoice(val records: TlvStream<InvoiceTlv>) : PaymentRequest() 
             val amount = request.amount ?: (request.offer.amount!! * request.quantity)
             val tlvs: Set<InvoiceTlv> = removeSignature(request.records).records + setOfNotNull(
                 InvoicePaths(paths.map { it.route }),
+                InvoiceAccountable,
                 InvoiceBlindedPay(paths.map { it.paymentInfo }),
                 InvoiceCreatedAt(currentTimestampSeconds()),
                 InvoiceRelativeExpiry(invoiceExpirySeconds),
