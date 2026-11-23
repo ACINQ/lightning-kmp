@@ -202,11 +202,19 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                         else -> {
                             val htlcParts = payment.parts.filterIsInstance<HtlcPart>()
                             val willAddHtlcParts = payment.parts.filterIsInstance<WillAddHtlcPart>()
+                            // The funding fee deduced from HTLC parts counts towards the payment amount: we must validate it before
+                            // accepting the payment, regardless of whether it also contains on-the-fly funding parts.
+                            val liquidityPurchase = validateFundingFee(htlcParts)
                             when {
                                 payment.parts.size > nodeParams.maxAcceptedHtlcs -> {
                                     logger.warning { "rejecting on-the-fly funding: too many parts (${payment.parts.size} > ${nodeParams.maxAcceptedHtlcs}" }
                                     nodeParams._nodeEvents.emit(LiquidityEvents.Rejected(payment.amountReceived, 0.msat, LiquidityEvents.Source.OffChainPayment, LiquidityEvents.Rejected.Reason.TooManyParts(payment.parts.size)))
                                     rejectPayment(payment, incomingPayment, TemporaryNodeFailure)
+                                }
+                                liquidityPurchase is Either.Left -> {
+                                    logger.warning { "rejecting htlcs with invalid on-the-fly funding fee: ${liquidityPurchase.value.message}" }
+                                    val failure = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
+                                    rejectPayment(payment, incomingPayment, failure)
                                 }
                                 willAddHtlcParts.isNotEmpty() -> when (val result = validateOnTheFlyFundingRate(willAddHtlcParts.map { it.amount }.sum(), remoteFeatures, currentFeeCredit, currentFeerate, remoteFundingRates)) {
                                     is Either.Left -> {
@@ -246,7 +254,7 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                                     add(SendOnTheFlyFundingMessage(AddFeeCredit(nodeParams.chainHash, incomingPayment.paymentPreimage)))
                                                     htlcParts.forEach { add(WrappedChannelCommand(it.htlc.channelId, ChannelCommand.Htlc.Settlement.Fulfill(it.htlc.id, incomingPayment.paymentPreimage, true))) }
                                                 }
-                                                acceptPayment(incomingPayment, parts, liquidityPurchase = null, actions)
+                                                acceptPayment(incomingPayment, parts, liquidityPurchase.right, actions)
                                             }
                                             else -> {
                                                 // We're not adding to our fee credit, so we need to check our liquidity policy.
@@ -278,20 +286,13 @@ class IncomingPaymentHandler(val nodeParams: NodeParams, val db: PaymentsDb) {
                                         }
                                     }
                                 }
-                                else -> when (val liquidityPurchase = validateFundingFee(htlcParts)) {
-                                    is Either.Left -> {
-                                        logger.warning { "rejecting htlcs with invalid on-the-fly funding fee: ${liquidityPurchase.value.message}" }
-                                        val failure = IncorrectOrUnknownPaymentDetails(paymentPart.totalAmount, currentBlockHeight.toLong())
-                                        rejectPayment(payment, incomingPayment, failure)
+                                else -> {
+                                    val parts = htlcParts.map { part -> LightningIncomingPayment.Part.Htlc(part.amount, part.htlc.channelId, part.htlc.id, part.htlc.fundingFee) }
+                                    val actions = htlcParts.map { part ->
+                                        val cmd = ChannelCommand.Htlc.Settlement.Fulfill(part.htlc.id, incomingPayment.paymentPreimage, true)
+                                        WrappedChannelCommand(part.htlc.channelId, cmd)
                                     }
-                                    is Either.Right -> {
-                                        val parts = htlcParts.map { part -> LightningIncomingPayment.Part.Htlc(part.amount, part.htlc.channelId, part.htlc.id, part.htlc.fundingFee) }
-                                        val actions = htlcParts.map { part ->
-                                            val cmd = ChannelCommand.Htlc.Settlement.Fulfill(part.htlc.id, incomingPayment.paymentPreimage, true)
-                                            WrappedChannelCommand(part.htlc.channelId, cmd)
-                                        }
-                                        acceptPayment(incomingPayment, parts, liquidityPurchase.value, actions)
-                                    }
+                                    acceptPayment(incomingPayment, parts, liquidityPurchase.right, actions)
                                 }
                             }
                         }
