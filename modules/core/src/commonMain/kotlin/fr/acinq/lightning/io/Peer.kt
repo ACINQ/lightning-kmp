@@ -1085,7 +1085,16 @@ class Peer(
 
     private suspend fun processIncomingPayment(item: Either<WillAddHtlc, UpdateAddHtlc>) {
         val currentBlockHeight = getCurrentBlockHeight()
-        val currentFeerate = peerFeeratesFlow.filterNotNull().first().fundingFeerate
+        val currentFeerate = when (val feerates = peerFeeratesFlow.value) {
+            null -> {
+                // Our peer always sends recommended_feerates when connecting, before any payment: this is a protocol violation.
+                // We must not wait for it here, since it can only be processed by this event loop.
+                logger.error { "received payment before recommended_feerates, disconnecting" }
+                disconnect()
+                return
+            }
+            else -> feerates.fundingFeerate
+        }
         val currentFeeCredit = feeCreditFlow.value
         val result = when (item) {
             is Either.Right -> incomingPaymentHandler.process(item.value, theirInit!!.features, currentBlockHeight, currentFeerate, remoteFundingRates.value, currentFeeCredit)
