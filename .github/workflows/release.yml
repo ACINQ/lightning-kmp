@@ -35,7 +35,7 @@ jobs:
           java-version: 21
           distribution: 'adopt'
       - name: Check
-        run: ./gradlew check
+        run: ./gradlew check -PelectrumTests=${{ vars.RUN_ELECTRUM_TESTS == 'true' && 'include' || 'exclude' }}
       - name: Publish Linux
         if: matrix.os == 'ubuntu-latest'
         shell: bash

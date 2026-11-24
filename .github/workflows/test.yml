@@ -55,12 +55,13 @@ jobs:
           distribution: 'adopt'
 
       # 4 - tests
+      # Electrum tests depend on a live mainnet server: they only run if the RUN_ELECTRUM_TESTS repository variable is set to 'true'
       - name: Check with integration
         if: matrix.os == 'ubuntu-latest'
-        run: ./gradlew build -PintegrationTests=include
+        run: ./gradlew build -PintegrationTests=include -PelectrumTests=${{ vars.RUN_ELECTRUM_TESTS == 'true' && 'include' || 'exclude' }}
       - name: Check without integration
         if: matrix.os == 'macOS-latest'
-        run: ./gradlew build
+        run: ./gradlew build -PelectrumTests=${{ vars.RUN_ELECTRUM_TESTS == 'true' && 'include' || 'exclude' }}
 
       # Uncomment the lines below to store test results for debugging failed tests (useful for iOS)
       # - name: Store test results
