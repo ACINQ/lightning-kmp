@@ -294,6 +294,8 @@ tasks.withType<AbstractTestTask> {
     } else {
         filter.excludeTestsMatching("*IntegrationTest")
     }
+    // Those tests depend on a live mainnet electrum server and currently time out
+    filter.excludeTestsMatching("*ElectrumMiniWalletTest")
 }
 
 // Those tests do not work with the ios simulator
