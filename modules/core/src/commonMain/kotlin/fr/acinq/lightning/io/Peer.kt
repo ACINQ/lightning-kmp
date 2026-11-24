@@ -1174,6 +1174,14 @@ class Peer(
         return state2
     }
 
+    /**
+     * Restore a channel from the backup stored by our peer, when it is more recent than our local state.
+     *
+     * When we have local state for this channel, it is the source of truth and outdated backups are ignored.
+     *
+     * When we don't (e.g. after restoring from seed), we must trust our peer to send its latest backup: we can verify that
+     * the backup is authentic, but not that it is the latest one.
+     */
     private suspend fun maybeRestoreBackup(backup: PersistedChannelState): ChannelState {
         val local: ChannelState? = _channels[backup.channelId]
         return when {
