@@ -287,6 +287,8 @@ val dockerCleanup by tasks.creating(Exec::class) {
 }
 
 val includeIntegrationTests = project.findProperty("integrationTests") == "include"
+// Those tests depend on a live mainnet electrum server: they are disabled by default and can be enabled with -PelectrumTests=include
+val includeElectrumTests = project.findProperty("electrumTests") == "include"
 tasks.withType<AbstractTestTask> {
     if (includeIntegrationTests) {
         dependsOn(dockerTestEnv)
@@ -294,8 +296,9 @@ tasks.withType<AbstractTestTask> {
     } else {
         filter.excludeTestsMatching("*IntegrationTest")
     }
-    // Those tests depend on a live mainnet electrum server and currently time out
-    filter.excludeTestsMatching("*ElectrumMiniWalletTest")
+    if (!includeElectrumTests) {
+        filter.excludeTestsMatching("*Electrum*Test")
+    }
 }
 
 // Those tests do not work with the ios simulator
