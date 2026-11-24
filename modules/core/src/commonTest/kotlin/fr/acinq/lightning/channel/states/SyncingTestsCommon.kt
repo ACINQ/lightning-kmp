@@ -449,6 +449,24 @@ class SyncingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `reestablish channel -- commit_sig not received -- missing nonces`() {
+        val (alice, bob) = init()
+        val (nodes1, _, _) = TestsHelper.addHtlc(50_000_000.msat, payer = alice, payee = bob)
+        val (alice1, bob1) = nodes1
+        // Alice signs, but Bob doesn't receive her commit_sig.
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Commitment.Sign)
+        assertIs<LNChannel<Normal>>(alice2)
+        actionsAlice2.hasOutgoingMessage<CommitSig>()
+        val (alice3, _, reestablish) = disconnect(alice2, bob1)
+        // On reconnection, Bob doesn't send nonces for his next commitment: Alice cannot re-sign it.
+        val channelReestablishBob = reestablish.second.copy(tlvStream = TlvStream(reestablish.second.tlvStream.records.filterNot { it is ChannelReestablishTlv.NextLocalNonces }.toSet()))
+        val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
+        assertIs<Normal>(alice4.state)
+        assertNull(actionsAlice4.findOutgoingMessageOpt<CommitSig>())
+        assertNull(actionsAlice4.findOutgoingMessageOpt<CommitSigBatch>())
+    }
+
+    @Test
     fun `recv Disconnect after adding htlc but before processing settlement`() {
         val (alice, bob) = init()
         val (nodes1, _, add) = TestsHelper.addHtlc(55_000_000.msat, payer = bob, payee = alice)
