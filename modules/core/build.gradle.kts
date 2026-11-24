@@ -297,7 +297,7 @@ tasks.withType<AbstractTestTask> {
         filter.excludeTestsMatching("*IntegrationTest")
     }
     if (!includeElectrumTests) {
-        filter.excludeTestsMatching("*ElectrumMiniWalletTest")
+        filter.excludeTestsMatching("*Electrum*Test")
     }
 }
 
