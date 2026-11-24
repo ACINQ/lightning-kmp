@@ -689,6 +689,40 @@ class IncomingPaymentHandlerTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `receive multipart payment with a mix of HTLC and will_add_htlc added to fee credit -- invalid funding fee`() = runSuspendTest {
+        val channelId = randomBytes32()
+        val (amount1, amount2) = listOf(10_000.msat, 5_000.msat)
+        val totalAmount = amount1 + amount2
+        val (paymentHandler, incomingPayment, paymentSecret) = createFeeCreditFixture(totalAmount, LiquidityPolicy.Auto(100_000.sat, 50.sat, 100, skipAbsoluteFeeCheck = false, maxAllowedFeeCredit = 6_000.msat))
+
+        // Step 1 of 2:
+        //  - Alice sends an HTLC to Bob, deducing most of its amount as a funding fee for an unknown transaction
+        //  - Bob doesn't accept the MPP set yet
+        val fundingFee = LiquidityAds.FundingFee(9_000.msat, TxId(randomBytes32()))
+        val add = makeUpdateAddHtlc(0, channelId, paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount1, totalAmount, paymentSecret), fundingFee = fundingFee)
+        assertEquals(1_000.msat, add.amountMsat)
+        run {
+            val result = paymentHandler.process(add, feeCreditFeatures, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates, currentFeeCredit = 0.msat)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Pending>(result)
+            assertTrue(result.actions.isEmpty())
+        }
+
+        // Step 2 of 2:
+        //  - Alice sends will_add_htlc to Bob
+        //  - Bob rejects the whole set because of the invalid funding fee, and doesn't reveal the preimage
+        run {
+            val willAddHtlc = makeWillAddHtlc(paymentHandler, incomingPayment.paymentHash, makeMppPayload(amount2, totalAmount, paymentSecret))
+            val result = paymentHandler.process(willAddHtlc, feeCreditFeatures, TestConstants.defaultBlockHeight, TestConstants.feeratePerKw, TestConstants.fundingRates, currentFeeCredit = 0.msat)
+            assertIs<IncomingPaymentHandler.ProcessAddResult.Rejected>(result)
+            val expected = ChannelCommand.Htlc.Settlement.Fail(add.id, ChannelCommand.Htlc.Settlement.Fail.Reason.Failure(IncorrectOrUnknownPaymentDetails(totalAmount, TestConstants.defaultBlockHeight.toLong())), commit = true)
+            assertTrue(result.actions.contains(WrappedChannelCommand(channelId, expected)))
+            assertTrue(result.actions.none { it is SendOnTheFlyFundingMessage && it.message is AddFeeCredit })
+            assertTrue(result.actions.none { it is WrappedChannelCommand && it.channelCommand is ChannelCommand.Htlc.Settlement.Fulfill })
+            assertTrue(paymentHandler.db.getLightningIncomingPayment(incomingPayment.paymentHash)!!.parts.isEmpty())
+        }
+    }
+
+    @Test
     fun `receive multipart payment with a mix of HTLC and will_add_htlc above max_allowed_fee_credit`() = runSuspendTest {
         val channelId = randomBytes32()
         val currentFeeCredit = 3_000_000.msat
