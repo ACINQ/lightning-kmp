@@ -12,6 +12,7 @@ import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.reachNormal
 import fr.acinq.lightning.tests.TestConstants
 import fr.acinq.lightning.tests.utils.LightningTestSuite
+import fr.acinq.lightning.tests.utils.runSuspendTest
 import fr.acinq.lightning.utils.msat
 import fr.acinq.lightning.utils.sat
 import fr.acinq.lightning.wire.*
@@ -446,6 +447,21 @@ class SyncingTestsCommon : LightningTestSuite() {
         val (alice1, actions1) = alice.process(ChannelCommand.Close.ForceClose)
         assertIs<Closing>(alice1.state)
         actions1.hasOutgoingMessage<Error>()
+    }
+
+    @Test
+    fun `local error`() = runSuspendTest {
+        val (alice, bob) = init()
+        val (alice1, _, _) = disconnect(alice, bob)
+        // We log the error and stay in the same state.
+        val (state1, actions1) = alice1.state.run { alice1.ctx.handleLocalError(ChannelCommand.Commitment.Sign, RuntimeException("unexpected error")) }
+        assertEquals(alice1.state, state1)
+        assertTrue(actions1.isEmpty())
+        val (alice2, _) = alice1.process(ChannelCommand.Disconnected)
+        assertIs<Offline>(alice2.state)
+        val (state2, actions2) = alice2.state.run { alice2.ctx.handleLocalError(ChannelCommand.Commitment.Sign, RuntimeException("unexpected error")) }
+        assertEquals(alice2.state, state2)
+        assertTrue(actions2.isEmpty())
     }
 
     @Test

@@ -247,8 +247,9 @@ sealed class ChannelState {
             }
             is Closed -> Pair(state, emptyList())
             is Aborted -> Pair(state, emptyList())
-            is Offline -> state.run { handleLocalError(cmd, t) }
-            is Syncing -> state.run { handleLocalError(cmd, t) }
+            // We don't expect errors in those states: we simply log them and stay in the same state.
+            is Offline -> Pair(state, emptyList())
+            is Syncing -> Pair(state, emptyList())
             is WaitForRemotePublishFutureCommitment -> Pair(state, emptyList())
         }
     }
