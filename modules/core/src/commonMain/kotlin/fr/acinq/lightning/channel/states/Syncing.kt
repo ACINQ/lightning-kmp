@@ -437,14 +437,23 @@ data class Syncing(val state: PersistedChannelState, val channelReestablishSent:
                                 // We just sent a new commit_sig but they didn't receive it: we resend the same updates and sign them again,
                                 // and preserve the same ordering of messages.
                                 val signedUpdates = commitments.changes.localChanges.signed
-                                val commitSigs = commitments.active.mapNotNull { c ->
+                                val sigs = commitments.active.mapNotNull { c ->
                                     val commitInput = c.commitInput(channelKeys)
                                     val remoteNonce = remoteChannelReestablish.nextCommitNonces[c.fundingTxId]
                                     // Note that we ignore errors and simply skip failures to sign: we've already signed those updates before
                                     // the disconnection, so we don't expect any error here unless our peer sends an invalid nonce. In that
                                     // case, we simply won't send back our commit_sig until they fix their node.
                                     c.nextRemoteCommit?.sign(commitments.channelParams, c.remoteCommitParams, channelKeys, c.fundingTxIndex, c.remoteFundingPubkey, commitInput, c.commitmentFormat, remoteNonce, logger)?.right
-                                }.takeIf { it.isNotEmpty() }?.let { CommitSigs.fromSigs(it) }
+                                }
+                                // We must sign every active commitment: our peer rejects a batch that doesn't cover all of them (which would
+                                // lead to a force-close), so we don't send anything if we failed to sign at least one commitment.
+                                val commitSigs = when (sigs.size) {
+                                    commitments.active.size -> CommitSigs.fromSigs(sigs)
+                                    else -> {
+                                        logger.warning { "cannot retransmit commit_sig: signed ${sigs.size} out of ${commitments.active.size} active commitments" }
+                                        null
+                                    }
+                                }
                                 val retransmit = when (retransmitRevocation) {
                                     null -> buildList {
                                         addAll(signedUpdates)

@@ -483,6 +483,41 @@ class SyncingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `reestablish channel -- commit_sig not received -- missing nonce for one of the active commitments`() {
+        val (alice, bob) = init()
+        // We create a pending splice: we now have two active commitments.
+        val (alice0, bob0) = SpliceTestsCommon.spliceIn(alice, bob, listOf(500_000.sat))
+        assertEquals(2, alice0.commitments.active.size)
+        val (nodes1, _, _) = TestsHelper.addHtlc(50_000_000.msat, payer = alice0, payee = bob0)
+        val (alice1, bob1) = nodes1
+        // Alice signs, but Bob doesn't receive her commit_sig batch.
+        val (alice2, actionsAlice2) = alice1.process(ChannelCommand.Commitment.Sign)
+        assertIs<LNChannel<Normal>>(alice2)
+        assertEquals(2, actionsAlice2.findOutgoingMessage<CommitSigBatch>().messages.size)
+        val (alice3, _, reestablish) = disconnect(alice2, bob1)
+        // If Bob sends nonces for all active commitments, Alice re-signs all of them.
+        run {
+            val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(reestablish.second))
+            assertIs<Normal>(alice4.state)
+            assertEquals(2, actionsAlice4.findOutgoingMessage<CommitSigBatch>().messages.size)
+        }
+        // If Bob doesn't send a nonce for the latest commitment, Alice cannot sign it: she must not send a partial batch,
+        // which Bob would reject.
+        run {
+            val latestFundingTxId = alice3.commitments.active.first().fundingTxId
+            val nonces = reestablish.second.tlvStream.get<ChannelReestablishTlv.NextLocalNonces>()!!.nonces.filterNot { it.first == latestFundingTxId }
+            assertEquals(1, nonces.size)
+            val records = reestablish.second.tlvStream.records.filterNot { it is ChannelReestablishTlv.NextLocalNonces } + ChannelReestablishTlv.NextLocalNonces(nonces)
+            val channelReestablishBob = reestablish.second.copy(tlvStream = TlvStream(records.toSet()))
+            val (alice4, actionsAlice4) = alice3.process(ChannelCommand.MessageReceived(channelReestablishBob))
+            assertIs<Normal>(alice4.state)
+            assertNull(actionsAlice4.findOutgoingMessageOpt<CommitSig>())
+            assertNull(actionsAlice4.findOutgoingMessageOpt<CommitSigBatch>())
+            assertNull(actionsAlice4.findOutgoingMessageOpt<Error>())
+        }
+    }
+
+    @Test
     fun `recv Disconnect after adding htlc but before processing settlement`() {
         val (alice, bob) = init()
         val (nodes1, _, add) = TestsHelper.addHtlc(55_000_000.msat, payer = bob, payee = alice)
