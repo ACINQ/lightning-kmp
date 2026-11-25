@@ -165,9 +165,18 @@ object Scripts {
     fun witnessHtlcSuccess(localSig: ByteVector64, remoteSig: ByteVector64, preimage: ByteVector32, htlcOfferedScript: ByteVector) =
         ScriptWitness(listOf(ByteVector.empty, encodeWitnessEcdsaSig(remoteSig, SIGHASH_SINGLE or SIGHASH_ANYONECANPAY).byteVector(), encodeWitnessEcdsaSig(localSig, SIGHASH_ALL).byteVector(), preimage, htlcOfferedScript))
 
+    /**
+     * Remove the annex from a taproot witness, if any (see BIP 341): our peer may add an annex to the witness of a
+     * transaction that they sign, which shouldn't prevent us from extracting payment preimages.
+     */
+    private fun removeAnnex(witness: ScriptWitness): ScriptWitness = when {
+        witness.stack.size >= 2 && !witness.stack.last().isEmpty() && witness.stack.last()[0] == 0x50.toByte() -> ScriptWitness(witness.stack.dropLast(1))
+        else -> witness
+    }
+
     /** Extract payment preimages from a 2nd-stage HTLC Success transaction's witness script. */
     fun extractPreimagesFromHtlcSuccess(tx: Transaction): Set<ByteVector32> {
-        return tx.txIn.map { it.witness }.mapNotNull {
+        return tx.txIn.map { removeAnnex(it.witness) }.mapNotNull {
             when {
                 it.stack.size != 5 -> null
                 // anchor-outputs
@@ -188,7 +197,7 @@ object Scripts {
 
     /** Extract payment preimages from a claim-htlc transaction. */
     fun extractPreimagesFromClaimHtlcSuccess(tx: Transaction): Set<ByteVector32> {
-        return tx.txIn.map { it.witness }.mapNotNull {
+        return tx.txIn.map { removeAnnex(it.witness) }.mapNotNull {
             when {
                 // anchor-outputs
                 it.stack.size == 3 && it.stack[1].size() == 32 -> ByteVector32(it.stack[1])

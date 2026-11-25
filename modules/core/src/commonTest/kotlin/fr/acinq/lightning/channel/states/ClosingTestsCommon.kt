@@ -327,6 +327,32 @@ class ClosingTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv ClosingTxConfirmed -- local commit -- htlc output spent with preimage and annex`() {
+        val (alice0, bob0) = reachNormal()
+        assertEquals(Transactions.CommitmentFormat.SimpleTaprootChannels, alice0.commitments.latest.commitmentFormat)
+        val (nodes1, preimage, htlc) = addHtlc(50_000_000.msat, alice0, bob0)
+        val (alice1, _) = crossSign(nodes1.first, nodes1.second)
+        val (aliceClosing, localCommitPublished, _) = localClose(alice1, htlcTimeoutCount = 1)
+        val htlcOutpoint = localCommitPublished.htlcOutputs.first()
+
+        // Bob claims the HTLC output with the preimage (signature, preimage, script, control block), optionally adding an annex.
+        fun claimHtlcSuccess(annex: Boolean): Transaction {
+            val stack = listOf(Lightning.randomBytes(64).byteVector(), preimage, Lightning.randomBytes(40).byteVector(), Lightning.randomBytes(65).byteVector())
+            val witness = ScriptWitness(if (annex) stack + ByteVector("50" + "01".repeat(8)) else stack)
+            return Transaction(2, listOf(TxIn(htlcOutpoint, ByteVector.empty, 0xfffffffdL, witness)), listOf(TxOut(40_000.sat, Script.pay2wpkh(Lightning.randomKey().publicKey()))), 0)
+        }
+
+        listOf(false, true).forEach { annex ->
+            val spendTx = claimHtlcSuccess(annex)
+            val (alice2, actions2) = aliceClosing.process(ChannelCommand.WatchReceived(WatchSpentTriggered(alice0.channelId, WatchSpent.ClosingOutputSpent(htlc.amountMsat.truncateToSatoshi()), spendTx)))
+            assertEquals(preimage, actions2.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFulfill>().single().result.paymentPreimage)
+            val (alice3, _) = alice2.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 42, 1, localCommitPublished.commitTx)))
+            val (_, actions4) = alice3.process(ChannelCommand.WatchReceived(WatchConfirmedTriggered(alice0.channelId, WatchConfirmed.ClosingTxConfirmed, 43, 0, spendTx)))
+            assertTrue(actions4.filterIsInstance<ChannelAction.ProcessCmdRes.AddSettledFail>().isEmpty())
+        }
+    }
+
+    @Test
     fun `recv ClosingTxConfirmed -- local commit --  followed by UpdateFailHtlc not acked by remote`() {
         val (alice0, bob0) = reachNormal()
         val (aliceClosing, localCommitPublished, htlc) = run {
