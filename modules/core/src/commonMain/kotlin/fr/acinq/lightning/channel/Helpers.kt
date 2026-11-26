@@ -6,6 +6,8 @@ import fr.acinq.bitcoin.utils.Either
 import fr.acinq.bitcoin.utils.Try
 import fr.acinq.bitcoin.utils.runTrying
 import fr.acinq.lightning.CltvExpiryDelta
+import fr.acinq.lightning.Feature
+import fr.acinq.lightning.Features
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.NodeParams
 import fr.acinq.lightning.blockchain.WatchConfirmed
@@ -265,6 +267,12 @@ object Helpers {
         }
 
         fun isValidFinalScriptPubkey(scriptPubKey: ByteVector, allowAnySegwit: Boolean, allowOpReturn: Boolean): Boolean = isValidFinalScriptPubkey(scriptPubKey.toByteArray(), allowAnySegwit, allowOpReturn)
+
+        fun isValidFinalScriptPubkey(scriptPubKey: ByteVector, channelParams: ChannelParams): Boolean {
+            val allowAnySegwit = Features.canUseFeature(channelParams.localParams.features, channelParams.remoteParams.features, Feature.ShutdownAnySegwit)
+            val allowOpReturn = Features.canUseFeature(channelParams.localParams.features, channelParams.remoteParams.features, Feature.SimpleClose)
+            return isValidFinalScriptPubkey(scriptPubKey, allowAnySegwit, allowOpReturn)
+        }
 
         fun createShutdown(channelKeys: ChannelKeys, commitment: FullCommitment, localScriptOverride: ByteVector? = null): Pair<Transactions.LocalNonce?, Shutdown> {
             val localScript = localScriptOverride ?: commitment.channelParams.localParams.defaultFinalScriptPubKey

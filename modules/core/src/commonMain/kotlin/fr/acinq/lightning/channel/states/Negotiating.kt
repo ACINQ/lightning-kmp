@@ -36,7 +36,11 @@ data class Negotiating(
         return when (cmd) {
             is ChannelCommand.MessageReceived -> when (cmd.message) {
                 is Shutdown -> {
-                    if (cmd.message.scriptPubKey != remoteScript) {
+                    if (cmd.message.scriptPubKey != remoteScript && !Helpers.Closing.isValidFinalScriptPubkey(cmd.message.scriptPubKey, commitments.channelParams)) {
+                        // We will pay the fees for their script's weight when we create closing transactions: we must validate it.
+                        logger.warning { "they sent an invalid closing script, ignoring their shutdown (script=${cmd.message.scriptPubKey})" }
+                        Pair(this@Negotiating, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFinalScript(channelId).message))))
+                    } else if (cmd.message.scriptPubKey != remoteScript) {
                         // This may lead to a signature mismatch: peers must use closing_complete to update their closing script.
                         logger.warning { "received shutdown changing remote script, this may lead to a signature mismatch (previous=$remoteScript, current=${cmd.message.scriptPubKey})" }
                         val nextState = this@Negotiating.copy(remoteScript = cmd.message.scriptPubKey, remoteCloseeNonce = cmd.message.closeeNonce)
@@ -49,7 +53,11 @@ data class Negotiating(
                 is ClosingComplete -> {
                     // Note that if there is a failure here and we don't send our closing_sig, they may eventually disconnect.
                     // On reconnection, we will retransmit shutdown with our latest scripts, so future signing attempts should work.
-                    if (cmd.message.closeeScriptPubKey != localScript) {
+                    if (cmd.message.closerScriptPubKey != remoteScript && !Helpers.Closing.isValidFinalScriptPubkey(cmd.message.closerScriptPubKey, commitments.channelParams)) {
+                        // We will use their script in our own closing transactions, where we pay the fees for its weight: we must validate it.
+                        logger.warning { "they sent an invalid closing script, ignoring their closing_complete (script=${cmd.message.closerScriptPubKey})" }
+                        Pair(this@Negotiating, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFinalScript(channelId).message))))
+                    } else if (cmd.message.closeeScriptPubKey != localScript) {
                         logger.warning { "their closing_complete is not using our latest script: this may happen if we changed our script while they were sending closing_complete" }
                         // No need to persist their latest script, they will re-send it on reconnection.
                         val nextState = this@Negotiating.copy(remoteScript = cmd.message.closerScriptPubKey)
