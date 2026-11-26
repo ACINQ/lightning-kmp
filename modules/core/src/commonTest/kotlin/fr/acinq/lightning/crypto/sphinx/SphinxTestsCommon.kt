@@ -12,11 +12,14 @@ import fr.acinq.lightning.crypto.sphinx.Sphinx.decodePayloadLength
 import fr.acinq.lightning.crypto.sphinx.Sphinx.generateFiller
 import fr.acinq.lightning.tests.utils.LightningTestSuite
 import fr.acinq.lightning.utils.msat
+import fr.acinq.lightning.utils.toByteVector
+import fr.acinq.lightning.utils.xor
 import fr.acinq.lightning.wire.*
 import fr.acinq.secp256k1.Hex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class SphinxTestsCommon : LightningTestSuite() {
@@ -136,6 +139,43 @@ class SphinxTestsCommon : LightningTestSuite() {
 
         // The legacy fixed-size payload is not supported.
         assertFails { decodePayloadLength(Hex.decode("00")) }
+        // Lengths that would overflow are rejected.
+        assertFails { decodePayloadLength(Hex.decode("ff7fffffffffffffff")) }
+        assertFails { decodePayloadLength(Hex.decode("fe7fffffff")) }
+    }
+
+    @Test
+    fun `reject onion with invalid per-hop payload length`() {
+        val packetLength = OnionRoutingPacket.PaymentPacketLength
+        val sessionKey = PrivateKey(ByteVector32("2222222222222222222222222222222222222222222222222222222222222222"))
+        val sharedSecret = Sphinx.computeSharedSecret(publicKeys.first(), sessionKey)
+        val stream = Sphinx.generateStream(Sphinx.generateKey("rho", sharedSecret), 2 * packetLength)
+        val mu = Sphinx.generateKey("mu", sharedSecret)
+
+        // The sender knows our shared secret, so they fully control the decrypted per-hop payload and can compute a valid mac.
+        fun createPacket(lengthPrefix: String): OnionRoutingPacket {
+            val prefix = Hex.decode(lengthPrefix)
+            val plaintext = prefix + ByteArray(packetLength - prefix.size) { 0x41 }
+            val payload = (plaintext xor stream.copyOf(packetLength)).toByteVector()
+            return OnionRoutingPacket(0, sessionKey.publicKey().value, payload, Sphinx.mac(mu, payload + associatedData))
+        }
+
+        val invalidLengths = listOf(
+            "fe80000000", // overflows when converted to an int
+            "ff7fffffffffffffff", // overflows when converted to an int
+            "fe00010000", // larger than our decrypted buffer
+            "fd0a00", // larger than the packet, but smaller than our decrypted buffer
+            "fd04f4", // 1268 + 3 + 32 = 1303 > 1300
+        )
+        invalidLengths.forEach {
+            val packet = createPacket(it)
+            assertEquals(Either.Left(InvalidOnionVersion(Sphinx.hash(packet))), Sphinx.peel(privKeys.first(), associatedData, packet))
+        }
+
+        // Payloads filling the whole packet are valid: 1265 + 3 + 32 = 1300.
+        val decrypted = Sphinx.peel(privKeys.first(), associatedData, createPacket("fd04f1"))
+        assertIs<Either.Right<DecryptedPacket>>(decrypted)
+        assertEquals(1268, decrypted.value.payload.size())
     }
 
     @Test

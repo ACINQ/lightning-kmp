@@ -105,6 +105,9 @@ object Sphinx {
         val size = LightningCodecs.bigSize(input)
         require(size > 0) { "legacy onion format is not supported" }
         val sizeLength = payload.size - input.availableBytes
+        // The size is chosen by the sender: we must ensure that it doesn't overflow.
+        // Note that bigSize values larger than Long.MAX_VALUE are negative and rejected above.
+        require(size <= Int.MAX_VALUE - MacLength - sizeLength) { "invalid per-hop payload length: $size" }
         return MacLength + size.toInt() + sizeLength
     }
 
@@ -164,15 +167,23 @@ object Sphinx {
                         // we have to pessimistically generate a long cipher stream.
                         val stream = generateStream(rho, 2 * packetLength)
                         val bin = (packet.payload.toByteArray() + ByteArray(packetLength)) xor stream
-                        when (val perHopPayloadLength = runTrying { decodePayloadLength(bin) }) {
+                        // The per-hop payload length is chosen by the sender: we must validate it before extracting our payload.
+                        val decrypted = runTrying {
+                            val perHopPayloadLength = decodePayloadLength(bin)
+                            // Our per-hop payload (including its trailing mac) must fit in the onion packet.
+                            require(perHopPayloadLength <= packetLength) { "per-hop payload length ($perHopPayloadLength) exceeds packet length ($packetLength)" }
+                            val perHopPayload = bin.copyOfRange(0, perHopPayloadLength - MacLength).toByteVector()
+                            val hmac = ByteVector32(bin.copyOfRange(perHopPayloadLength - MacLength, perHopPayloadLength))
+                            val nextOnionPayload = bin.copyOfRange(perHopPayloadLength, perHopPayloadLength + packetLength).toByteVector()
+                            Triple(perHopPayload, hmac, nextOnionPayload)
+                        }
+                        when (decrypted) {
                             is Try.Success -> {
-                                val perHopPayload = bin.take(perHopPayloadLength.result - MacLength).toByteArray().toByteVector()
-                                val hmac = ByteVector32(bin.slice(perHopPayloadLength.result - MacLength..perHopPayloadLength.result).toByteArray())
-                                val nextOnionPayload = bin.drop(perHopPayloadLength.result).take(packetLength).toByteArray().toByteVector()
+                                val (perHopPayload, hmac, nextOnionPayload) = decrypted.result
                                 val nextPubKey = blind(packetEphKey, computeBlindingFactor(packetEphKey, sharedSecret))
                                 Either.Right(DecryptedPacket(perHopPayload, OnionRoutingPacket(0, nextPubKey.value, nextOnionPayload, hmac), sharedSecret))
                             }
-                            else -> Either.Left(InvalidOnionVersion(hash(packet)))
+                            is Try.Failure -> Either.Left(InvalidOnionVersion(hash(packet)))
                         }
                     } else {
                         Either.Left(InvalidOnionHmac(hash(packet)))
