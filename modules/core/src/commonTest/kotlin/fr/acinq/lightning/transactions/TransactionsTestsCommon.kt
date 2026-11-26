@@ -726,4 +726,23 @@ class TransactionsTestsCommon : LightningTestSuite() {
         }
     }
 
+    @Test
+    fun `extract preimages from taproot htlc transactions with an annex`() {
+        // Taproot claim-htlc-success transaction (signature, preimage, script, control block) with an annex.
+        val tx = Transaction.read("02000000000101fe979cc08d6185f91d2a7217210c68f4289aade689c0c1636ac4ed71c707c0c2020000000001000000012f8601000000000016001490f4e4263bd6aa290d9a08e154aa2ac0013859d505409976b2ce24d2730f2c66961f027bb9c82554d6d1afcd143c2c0778d4026e90008bf81c318e88bbe56ecbeb2c5466a1ffaf7fca631139de752e080839450ea409205f8a108e3b9f6d46960a7f5c4fbe35e19709e89a6f194ff4c5405d382a6923b03f82012088a9145f1024ad0d880e149e7dc5ab1aedb8295015c77e88204dd2cc5fdd0bae82b070187cbf7feff0eec98b20dcc63b6f4aeee1e5b8c117e4ad51b241c188f59a35be3b271dd2de4047a40f70a08846df2a5e57e5171f0c0ed6491b8c76176639846dd407898210f9f225ea8b9772843954b4a1a3390409e335f4da1583045063727300000000")
+        val witness = tx.txIn.first().witness.stack
+        assertEquals(5, witness.size)
+        assertEquals(0x50.toByte(), witness.last()[0])
+        val preimage = ByteVector32(witness[1])
+        assertEquals(setOf(preimage), Scripts.extractPreimagesFromClaimHtlcSuccess(tx))
+        assertEquals(setOf(preimage), Scripts.extractPreimagesFromClaimHtlcSuccess(tx.updateWitness(0, ScriptWitness(witness.dropLast(1)))))
+        assertEquals(emptySet(), Scripts.extractPreimagesFromHtlcSuccess(tx))
+
+        // Taproot htlc-success transaction (remote signature, local signature, preimage, script, control block) with an annex.
+        val htlcSuccessWitness = listOf(randomBytes64(), randomBytes64(), preimage, witness[2], witness[3])
+        val htlcSuccessTx = tx.updateWitness(0, ScriptWitness(htlcSuccessWitness))
+        assertEquals(setOf(preimage), Scripts.extractPreimagesFromHtlcSuccess(htlcSuccessTx))
+        assertEquals(setOf(preimage), Scripts.extractPreimagesFromHtlcSuccess(htlcSuccessTx.updateWitness(0, ScriptWitness(htlcSuccessWitness + ByteVector("50")))))
+    }
+
 }
