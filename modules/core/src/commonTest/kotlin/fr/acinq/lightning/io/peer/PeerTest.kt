@@ -15,6 +15,7 @@ import fr.acinq.lightning.Lightning.randomBytes32
 import fr.acinq.lightning.Lightning.randomKey
 import fr.acinq.lightning.blockchain.WatchConfirmed
 import fr.acinq.lightning.blockchain.WatchConfirmedTriggered
+import fr.acinq.lightning.blockchain.fee.FeeratePerByte
 import fr.acinq.lightning.blockchain.fee.FeeratePerKw
 import fr.acinq.lightning.channel.*
 import fr.acinq.lightning.channel.TestsHelper.createWallet
@@ -113,6 +114,29 @@ class PeerTest : LightningTestSuite() {
     @Test
     fun `init peer -- bundled`() = runSuspendTest {
         newPeers(this, Pair(TestConstants.Alice.nodeParams, TestConstants.Bob.nodeParams), Pair(TestConstants.Alice.walletParams, TestConstants.Bob.walletParams))
+    }
+
+    @Test
+    fun `receive messages before init`() = runSuspendTest {
+        val alice = buildPeer(this, TestConstants.Alice.nodeParams, TestConstants.Alice.walletParams)
+        val logger = MDCLogger(alice.nodeParams.loggerFactory.newLogger("PeerConnection"))
+        val connection = PeerConnection(1, Channel(Channel.UNLIMITED), logger)
+        alice.send(Connected(connection))
+        assertIs<Init>(connection.output.receive())
+
+        // Our peer sends recommended_feerates and will_add_htlc before init, which is a protocol violation: we ignore them and disconnect.
+        alice.send(MessageReceived(connection.id, RecommendedFeerates(Block.RegtestGenesisBlock.hash, fundingFeerate = FeeratePerKw(FeeratePerByte(20.sat)), commitmentFeerate = FeeratePerKw(FeeratePerByte(1.sat)))))
+        val invoice = alice.createInvoice(randomBytes32(), 50_000_000.msat, Either.Left("will_add_htlc before init"))
+        val payload = PaymentOnion.FinalPayload.Standard.createMultiPartPayload(50_000_000.msat, 50_000_000.msat, CltvExpiryDelta(144).toCltvExpiry(0), invoice.paymentSecret, null)
+        val onion = OutgoingPaymentPacket.buildOnion(listOf(alice.nodeParams.nodeId), listOf(payload), invoice.paymentHash, OnionRoutingPacket.PaymentPacketLength).packet
+        alice.send(MessageReceived(connection.id, WillAddHtlc(Block.RegtestGenesisBlock.hash, randomBytes32(), payload.amount, invoice.paymentHash, payload.expiry, onion)))
+
+        // The event loop is still running: we process the next connection.
+        val connection2 = PeerConnection(2, Channel(Channel.UNLIMITED), logger)
+        alice.send(Connected(connection2))
+        assertIs<Init>(connection2.output.receive())
+        assertTrue(connection.output.tryReceive().isFailure)
+        assertNull(alice.peerFeeratesFlow.value)
     }
 
     @Test

@@ -1224,6 +1224,12 @@ class Peer(
                     return
                 }
                 val msg = cmd.msg
+                if (theirInit == null && msg !is Init) {
+                    // Our peer must start with init: we need their features to process other messages.
+                    logger.error { "received ${msg::class.simpleName} before init, disconnecting" }
+                    disconnect()
+                    return
+                }
                 msg.let { if (it !is Ping && it !is Pong && it !is RecommendedFeerates) logger.info { "received $it" } }
                 when (msg) {
                     is UnknownMessage -> {
