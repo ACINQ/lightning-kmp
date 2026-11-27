@@ -559,6 +559,27 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertEquals(1, actions1.findPublishTxs().size)
     }
 
+    @Test
+    fun `recv ClosingComplete -- lock time too far in the future`() {
+        val (alice, bob, _, _) = init()
+        // Bob signs closing transactions using a lock time far in the future: they couldn't be mined before that lock time.
+        listOf(alice.currentBlockHeight + Channel.MAX_LOCKTIME_AHEAD_BLOCKS + 1, 499_999_999).forEach { lockTime ->
+            val bob1 = bob.copy(ctx = bob.ctx.copy(currentBlockHeight = lockTime))
+            val (_, actionsBob2) = bob1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw * 1.5))
+            val closingCompleteBob = actionsBob2.findOutgoingMessage<ClosingComplete>()
+            assertEquals(lockTime.toLong(), closingCompleteBob.lockTime)
+            val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(closingCompleteBob))
+            assertEquals(alice, alice1)
+            assertEquals(1, actions1.size)
+            actions1.hasOutgoingMessage<Warning>()
+        }
+        // Bob's closing transactions are accepted once Alice reaches a block height close enough to their lock time.
+        val bob1 = bob.copy(ctx = bob.ctx.copy(currentBlockHeight = alice.currentBlockHeight + Channel.MAX_LOCKTIME_AHEAD_BLOCKS))
+        val (_, actionsBob2) = bob1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw * 1.5))
+        val (_, actions1) = alice.process(ChannelCommand.MessageReceived(actionsBob2.findOutgoingMessage<ClosingComplete>()))
+        actions1.hasOutgoingMessage<ClosingSig>()
+    }
+
     companion object {
         data class Fixture(val alice: LNChannel<Negotiating>, val bob: LNChannel<Negotiating>, val closingCompleteAlice: ClosingComplete, val closingCompleteBob: ClosingComplete)
 
