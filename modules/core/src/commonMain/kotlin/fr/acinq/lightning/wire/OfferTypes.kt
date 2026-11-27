@@ -955,12 +955,13 @@ object OfferTypes {
             }
 
             fun validate(records: TlvStream<InvoiceRequestTlv>): Either<InvalidTlvPayload, InvoiceRequest> {
-                when (val offer = Offer.validate(filterOfferFields(records))) {
+                val offer = when (val offer = Offer.validate(filterOfferFields(records))) {
                     is Left -> return Left(offer.value)
-                    is Right -> {}
+                    is Right -> offer.value
                 }
                 if (records.get<InvoiceRequestMetadata>() == null) return Left(MissingRequiredTlv(0))
-                if (records.get<InvoiceRequestAmount>() == null && records.get<OfferAmount>() == null) return Left(MissingRequiredTlv(82))
+                // We don't support currency conversion: if the offer amount isn't in msat, the invoice request must provide an amount.
+                if (records.get<InvoiceRequestAmount>() == null && offer.amount == null) return Left(MissingRequiredTlv(82))
                 if (records.get<InvoiceRequestPayerId>() == null) return Left(MissingRequiredTlv(88))
                 if (records.get<Signature>() == null) return Left(MissingRequiredTlv(240))
                 if (records.unknown.any { !isInvoiceRequestTlv(it) }) return Left(ForbiddenTlv(records.unknown.find { !isInvoiceRequestTlv(it) }!!.tag))
