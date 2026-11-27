@@ -27,6 +27,7 @@ import fr.acinq.lightning.wire.OfferTypes.InvoiceRequestTlv
 import fr.acinq.lightning.wire.OfferTypes.Offer
 import fr.acinq.lightning.wire.OfferTypes.OfferAmount
 import fr.acinq.lightning.wire.OfferTypes.OfferChains
+import fr.acinq.lightning.wire.OfferTypes.OfferCurrency
 import fr.acinq.lightning.wire.OfferTypes.OfferDescription
 import fr.acinq.lightning.wire.OfferTypes.OfferIssuer
 import fr.acinq.lightning.wire.OfferTypes.OfferIssuerId
@@ -235,6 +236,39 @@ class OfferTypesTestsCommon : LightningTestSuite() {
             assertEquals(MissingRequiredTlv(tlv.tag), InvoiceRequest.validate(incomplete).left)
             val incompleteEncoded = Bech32.encodeBytes(InvoiceRequest.hrp, InvoiceRequest.tlvSerializer.write(incomplete), Bech32.Encoding.Beck32WithoutChecksum)
             assertTrue(InvoiceRequest.decode(incompleteEncoded).isFailure)
+        }
+    }
+
+    @Test
+    fun `invoice request without amount for an offer in another currency`() {
+        val payerKey = PrivateKey.fromHex("527d410ec920b626ece685e8af9abc976a48dbf2fe698c1b35d90a1c5fa2fbca")
+        // We don't support currency conversion: the invoice request must provide an amount.
+        listOf(null, InvoiceRequestAmount(10_000.msat)).forEach { requestAmount ->
+            val tlvsWithoutSignature = setOfNotNull(
+                InvoiceRequestMetadata(ByteVector.fromHex("abcdef")),
+                OfferCurrency("USD"),
+                OfferAmount(5.msat),
+                OfferDescription("offer in USD"),
+                OfferIssuerId(nodeId),
+                requestAmount,
+                InvoiceRequestPayerId(payerKey.publicKey()),
+            )
+            val signature = signSchnorr(InvoiceRequest.signatureTag, rootHash(TlvStream(tlvsWithoutSignature)), payerKey)
+            val tlvs = TlvStream(tlvsWithoutSignature + Signature(signature))
+            val encoded = Bech32.encodeBytes(InvoiceRequest.hrp, InvoiceRequest.tlvSerializer.write(tlvs), Bech32.Encoding.Beck32WithoutChecksum)
+            when (requestAmount) {
+                null -> {
+                    assertEquals(MissingRequiredTlv(82), InvoiceRequest.validate(tlvs).left)
+                    assertTrue(InvoiceRequest.decode(encoded).isFailure)
+                }
+                else -> {
+                    val request = InvoiceRequest.validate(tlvs).right
+                    assertNotNull(request)
+                    assertNull(request.offer.amount)
+                    assertEquals(10_000.msat, request.requestedAmount)
+                    assertEquals(request, InvoiceRequest.decode(encoded).get())
+                }
+            }
         }
     }
 
