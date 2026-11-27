@@ -512,6 +512,24 @@ class ShutdownTestsCommon : LightningTestSuite() {
     }
 
     @Test
+    fun `recv Shutdown -- invalid script`() {
+        val (alice0, bob0) = init()
+        val bobScript = alice0.state.remoteShutdown.scriptPubKey
+        // Bob tries to replace his closing script with a large invalid script, that Alice would pay for.
+        val invalidScript = ByteVector(ByteArray(10_000) { 0x51 })
+        val (alice1, actionsAlice1) = alice0.process(ChannelCommand.MessageReceived(alice0.state.remoteShutdown.copy(scriptPubKey = invalidScript)))
+        assertEquals(alice0, alice1)
+        assertEquals(1, actionsAlice1.size)
+        actionsAlice1.hasOutgoingMessage<Warning>()
+        // Once HTLCs are settled, Alice's closing transactions use Bob's previous script.
+        val (alice2, bob1) = fulfillHtlc(0, r1, alice0, bob0)
+        val (alice3, bob2) = fulfillHtlc(1, r2, alice2, bob1)
+        val (_, alice4) = crossSign(bob2, alice3)
+        assertIs<LNChannel<Negotiating>>(alice4)
+        assertEquals(bobScript, alice4.state.remoteScript)
+    }
+
+    @Test
     fun `recv ChannelCommand_Close_ForceClose`() {
         val (alice, _) = init()
         val (alice1, actions1) = alice.process(ChannelCommand.Close.ForceClose)

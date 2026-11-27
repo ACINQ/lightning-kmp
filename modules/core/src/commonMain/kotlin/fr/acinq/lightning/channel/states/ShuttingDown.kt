@@ -99,7 +99,11 @@ data class ShuttingDown(
                         }
                     }
                     is Shutdown -> {
-                        if (cmd.message.scriptPubKey != remoteShutdown.scriptPubKey) {
+                        if (cmd.message.scriptPubKey != remoteShutdown.scriptPubKey && !Helpers.Closing.isValidFinalScriptPubkey(cmd.message.scriptPubKey, commitments.channelParams)) {
+                            // We will pay the fees for their script's weight when we create closing transactions: we must validate it.
+                            logger.warning { "they sent an invalid closing script, ignoring their shutdown (script=${cmd.message.scriptPubKey})" }
+                            Pair(this@ShuttingDown, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFinalScript(channelId).message))))
+                        } else if (cmd.message.scriptPubKey != remoteShutdown.scriptPubKey) {
                             logger.debug { "our peer updated their shutdown script (previous=${remoteShutdown.scriptPubKey}, current=${cmd.message.scriptPubKey})" }
                             val nextState = this@ShuttingDown.copy(remoteShutdown = cmd.message)
                             Pair(nextState, listOf(ChannelAction.Storage.StoreState(nextState)))

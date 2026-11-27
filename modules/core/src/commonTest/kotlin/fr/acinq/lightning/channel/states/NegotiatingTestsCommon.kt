@@ -520,6 +520,45 @@ class NegotiatingTestsCommon : LightningTestSuite() {
         assertNotEquals(closingTxAlice.txid, closingTxBob.txid)
     }
 
+    @Test
+    fun `recv Shutdown -- invalid script`() {
+        val (alice, _, closingCompleteAlice, _) = init()
+        // Bob tries to replace his closing script with a large invalid script, that Alice would pay for.
+        val invalidScript = ByteVector(ByteArray(10_000) { 0x51 })
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(Shutdown(alice.channelId, invalidScript)))
+        assertEquals(alice, alice1)
+        assertEquals(1, actions1.size)
+        actions1.hasOutgoingMessage<Warning>()
+        // Alice's next closing transaction still uses Bob's previous script.
+        val (alice2, actions2) = alice1.process(ChannelCommand.Close.MutualClose(CompletableDeferred(), null, TestConstants.feeratePerKw * 1.5))
+        assertIs<LNChannel<Negotiating>>(alice2)
+        val closingCompleteAlice2 = actions2.findOutgoingMessage<ClosingComplete>()
+        assertEquals(closingCompleteAlice.closeeScriptPubKey, closingCompleteAlice2.closeeScriptPubKey)
+        assertTrue(closingCompleteAlice2.fees < closingCompleteAlice.fees * 2)
+    }
+
+    @Test
+    fun `recv ClosingComplete -- invalid closer script`() {
+        val (alice, _, _, closingCompleteBob) = init()
+        // Bob tries to replace his closing script with a large invalid script, that Alice would use in her next closing transactions.
+        val invalidScript = ByteVector(ByteArray(10_000) { 0x51 })
+        listOf(
+            closingCompleteBob.copy(closerScriptPubKey = invalidScript),
+            closingCompleteBob.copy(closerScriptPubKey = invalidScript, closeeScriptPubKey = Script.write(Script.pay2wpkh(randomKey().publicKey())).byteVector()),
+        ).forEach { closingComplete ->
+            val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(closingComplete))
+            assertEquals(alice, alice1)
+            assertEquals(1, actions1.size)
+            actions1.hasOutgoingMessage<Warning>()
+        }
+        // Bob's valid closing_complete is accepted.
+        val (alice1, actions1) = alice.process(ChannelCommand.MessageReceived(closingCompleteBob))
+        assertIs<LNChannel<Negotiating>>(alice1)
+        assertEquals(closingCompleteBob.closerScriptPubKey, alice1.state.remoteScript)
+        actions1.hasOutgoingMessage<ClosingSig>()
+        assertEquals(1, actions1.findPublishTxs().size)
+    }
+
     companion object {
         data class Fixture(val alice: LNChannel<Negotiating>, val bob: LNChannel<Negotiating>, val closingCompleteAlice: ClosingComplete, val closingCompleteBob: ClosingComplete)
 
