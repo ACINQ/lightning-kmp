@@ -57,6 +57,11 @@ data class Negotiating(
                         // We will use their script in our own closing transactions, where we pay the fees for its weight: we must validate it.
                         logger.warning { "they sent an invalid closing script, ignoring their closing_complete (script=${cmd.message.closerScriptPubKey})" }
                         Pair(this@Negotiating, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidFinalScript(channelId).message))))
+                    } else if (cmd.message.lockTime > currentBlockHeight + Channel.MAX_LOCKTIME_AHEAD_BLOCKS) {
+                        // A transaction with a lock time in the future cannot be mined: since we prefer using a signed mutual close
+                        // instead of force-closing, this would let our peer lock our funds until that lock time is reached.
+                        logger.warning { "ignoring closing_complete: lock time is too far in the future (lockTime=${cmd.message.lockTime}, currentBlockHeight=$currentBlockHeight)" }
+                        Pair(this@Negotiating, listOf(ChannelAction.Message.Send(Warning(channelId, InvalidLockTime(channelId, cmd.message.lockTime, currentBlockHeight).message))))
                     } else if (cmd.message.closeeScriptPubKey != localScript) {
                         logger.warning { "their closing_complete is not using our latest script: this may happen if we changed our script while they were sending closing_complete" }
                         // No need to persist their latest script, they will re-send it on reconnection.
