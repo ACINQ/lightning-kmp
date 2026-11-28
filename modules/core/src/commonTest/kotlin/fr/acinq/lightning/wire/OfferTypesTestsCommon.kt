@@ -522,6 +522,12 @@ class OfferTypesTestsCommon : LightningTestSuite() {
         assertEquals(key.publicKey(), path.route.blindedNodeIds.last())
         val expectedOffer = Offer.decode("lno1zrxq8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0qf70a6j2x2akrhazctejaaqr8y4qtzjtjzmfesay6mzr3s789uryuqsr8dpgfgxuk56vh7cl89769zdpdrkqwtypzhu2t8ehp73dqeeq65lsqvlx5pj8mw2kz54p4f6ct66stdfxz0df8nqq7svjjdjn2dv8sz28y7z07yg3vqyfyy8ywevqc8kzp36lhd5cqwlpkg8vdcqsfvz89axkmv5sgdysmwn95tpsct6mdercmz8jh2r82qqscrf6uc3tse5gw5sv5xjdfw8f6c").get()
         assertEquals(expectedOffer, offer)
+        val (compactOffer, _) = nodeParams.compactOffer(trampolineNode)
+        val defaultOfferData = Offer.tlvSerializer.write(offer.records)
+        val compactOfferData = Offer.tlvSerializer.write(compactOffer.records)
+        assertTrue { compactOfferData.size < defaultOfferData.size }
+        assertTrue { defaultOfferData.size == 206 }
+        assertTrue { compactOfferData.size == 190 }
     }
 
     @Test

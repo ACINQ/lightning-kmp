@@ -68,9 +68,10 @@ object RouteBlinding {
      * @param sessionKey session key of the blinded path, the corresponding public key will be the first path key.
      * @param publicKeys public keys of each node on the route, starting from the introduction point.
      * @param payloads payloads that should be encrypted for each node on the route.
+     * @param allowCompactFormat when true, allows the encryptedData to be empty for the final recipient
      * @return a blinded route.
      */
-    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteVector>): BlindedRouteDetails {
+    fun create(sessionKey: PrivateKey, publicKeys: List<PublicKey>, payloads: List<ByteVector>, allowCompactFormat: Boolean = false): BlindedRouteDetails {
         require(publicKeys.size == payloads.size) { "a payload must be provided for each node in the blinded path" }
         var e = sessionKey
         val (blindedHops, pathKeys) = publicKeys.zip(payloads).map { pair ->
@@ -78,15 +79,19 @@ object RouteBlinding {
             val pathKey = e.publicKey()
             val sharedSecret = Sphinx.computeSharedSecret(publicKey, e)
             val blindedPublicKey = Sphinx.blind(publicKey, Sphinx.generateKey("blinded_node_id", sharedSecret))
-            val rho = Sphinx.generateKey("rho", sharedSecret)
-            val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(
-                rho.toByteArray(),
-                Sphinx.zeroes(12),
-                payload.toByteArray(),
-                byteArrayOf()
-            )
             e *= PrivateKey(Crypto.sha256(pathKey.value.toByteArray() + sharedSecret.toByteArray()))
-            Pair(BlindedHop(blindedPublicKey, ByteVector(encryptedPayload + mac)), pathKey)
+            if (payload.isEmpty() && allowCompactFormat) {
+                Pair(BlindedHop(blindedPublicKey, payload), pathKey)
+            } else {
+                val rho = Sphinx.generateKey("rho", sharedSecret)
+                val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(
+                    rho.toByteArray(),
+                    Sphinx.zeroes(12),
+                    payload.toByteArray(),
+                    byteArrayOf()
+                )
+                Pair(BlindedHop(blindedPublicKey, ByteVector(encryptedPayload + mac)), pathKey)
+            }
         }.unzip()
         return BlindedRouteDetails(BlindedRoute(EncodedNodeId(publicKeys.first()), pathKeys.first(), blindedHops), pathKeys.last())
     }
@@ -117,19 +122,23 @@ object RouteBlinding {
         encryptedPayload: ByteVector
     ): Either<InvalidTlvPayload, Pair<ByteVector, PublicKey>> {
         val sharedSecret = Sphinx.computeSharedSecret(pathKey, privateKey)
-        val rho = Sphinx.generateKey("rho", sharedSecret)
-        return try {
-            val decrypted = ChaCha20Poly1305.decrypt(
-                rho.toByteArray(),
-                Sphinx.zeroes(12),
-                encryptedPayload.dropRight(16).toByteArray(),
-                byteArrayOf(),
-                encryptedPayload.takeRight(16).toByteArray()
-            )
-            val nextPathKey = Sphinx.blind(pathKey, Sphinx.computeBlindingFactor(pathKey, sharedSecret))
-            Either.Right(Pair(ByteVector(decrypted), nextPathKey))
-        } catch (_: Throwable) {
-            Either.Left(CannotDecodeTlv(OnionPaymentPayloadTlv.EncryptedRecipientData.tag))
+        val nextPathKey = Sphinx.blind(pathKey, Sphinx.computeBlindingFactor(pathKey, sharedSecret))
+        if (encryptedPayload.isEmpty()) {
+            return Either.Right(Pair(encryptedPayload, nextPathKey))
+        } else {
+            return try {
+                val rho = Sphinx.generateKey("rho", sharedSecret)
+                val decrypted = ChaCha20Poly1305.decrypt(
+                    rho.toByteArray(),
+                    Sphinx.zeroes(12),
+                    encryptedPayload.dropRight(16).toByteArray(),
+                    byteArrayOf(),
+                    encryptedPayload.takeRight(16).toByteArray()
+                )
+                Either.Right(Pair(ByteVector(decrypted), nextPathKey))
+            } catch (_: Throwable) {
+                Either.Left(CannotDecodeTlv(OnionPaymentPayloadTlv.EncryptedRecipientData.tag))
+            }
         }
     }
 }

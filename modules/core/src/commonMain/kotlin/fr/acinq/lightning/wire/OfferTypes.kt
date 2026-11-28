@@ -809,12 +809,14 @@ object OfferTypes {
                 features: Features,
                 blindedPathSessionKey: PrivateKey,
                 pathId: ByteVector? = null,
+                allowCompactFormat: Boolean = false
             ): OfferAndKey {
                 require(amount == null || description != null) { "an offer description must be provided if the amount isn't null" }
                 val blindedRouteDetails = OnionMessages.buildRouteToRecipient(
                     blindedPathSessionKey,
                     listOf(OnionMessages.IntermediateNode(EncodedNodeId.WithPublicKey.Plain(trampolineNodeId))),
-                    OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodePrivateKey.publicKey()), pathId)
+                    OnionMessages.Destination.Recipient(EncodedNodeId.WithPublicKey.Wallet(nodePrivateKey.publicKey()), pathId),
+                    allowCompactFormat
                 )
                 val tlvs = setOfNotNull(
                     if (chainHash != Block.LivenetGenesisBlock.hash) OfferChains(listOf(chainHash)) else null,
