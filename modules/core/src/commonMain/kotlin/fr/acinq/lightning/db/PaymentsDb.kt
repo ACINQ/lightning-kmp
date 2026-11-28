@@ -1,6 +1,7 @@
 package fr.acinq.lightning.db
 
 import fr.acinq.bitcoin.*
+import fr.acinq.bitcoin.utils.Try
 import fr.acinq.lightning.MilliSatoshi
 import fr.acinq.lightning.ShortChannelId
 import fr.acinq.lightning.payment.*
@@ -212,7 +213,19 @@ data class Bolt12IncomingPayment(
     override val parts: List<Part> = emptyList(),
     override val liquidityPurchaseDetails: LiquidityAds.LiquidityTransactionDetails? = null,
     override val createdAt: Long = currentTimestampMillis()
-) : LightningIncomingPayment(preimage)
+) : LightningIncomingPayment(preimage) {
+    /** Verify that the provided payment proof is valid and applies to this payment. */
+    fun verifyPayerProof(proof: String): Boolean {
+        return when (val p = PayerProof.decode(proof)) {
+            is Try.Success -> {
+                val sigsOk = p.result.verifySigs()
+                val matchesPayments = p.result.paymentHash == paymentHash
+                return sigsOk && matchesPayments
+            }
+            is Try.Failure -> false
+        }
+    }
+}
 
 /** Trustless swap-in (dual-funding or splice-in) */
 sealed class OnChainIncomingPayment : IncomingPayment() {
@@ -376,6 +389,21 @@ data class LightningOutgoingPayment(
         // For a swap-out, recipientAmount is the amount paid to the swap service. It contains the swap-out fee, but not the routing fee.
         is Details.SwapOut -> recipientAmount + routingFee
         else -> recipientAmount + fees
+    }
+
+    /** Return the Bolt12 payment proof, if this was a Bolt12 payment for which we received the preimage. */
+    fun payerProof(note: String? = null): PayerProof? {
+        return when (status) {
+            is Status.Succeeded -> when (details) {
+                is Details.Blinded -> {
+                    // We include the minimal amount of details from the invoice in our proof for privacy.
+                    val fields = PayerProof.Companion.IncludedFields()
+                    PayerProof.create(details.paymentRequest, status.preimage, details.payerKey, fields, note)
+                }
+                else -> null
+            }
+            else -> null
+        }
     }
 
     sealed class Details {
